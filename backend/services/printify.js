@@ -8,6 +8,44 @@ class PrintifyService {
     this.baseUrl = 'https://api.printify.com/v1';
   }
 
+  async syncProducts() {
+    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
+      console.warn(`⚠️ Printify token missing. Simulating 50 product sync.`);
+      // Insert mock products to DB to simulate
+      const db = require('../db');
+      for(let i=1; i<=10; i++) {
+        db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
+          [`Premium Street Hoodie v${i}`, `Exclusive Printify collection. Sync mock.`, 300, `https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=400&q=80`, 999, 'printify']);
+      }
+      return 10; // Mocked 10 products
+    }
+
+    try {
+      const response = await axios.get(`${this.baseUrl}/shops/${this.shopId}/products.json?limit=50`, {
+        headers: { 'Authorization': `Bearer ${this.token}` }
+      });
+
+      const products = response.data.data;
+      const db = require('../db');
+
+      products.forEach(p => {
+        const title = p.title;
+        const description = p.description;
+        const imageUrl = p.images && p.images.length > 0 ? p.images[0].src : '';
+        const price = 250; // We'll let pricing engine fix this later
+        
+        db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
+          [title, description, price, imageUrl, 999, 'printify']);
+      });
+
+      console.log(`✅ Synced ${products.length} products from Printify.`);
+      return products.length;
+    } catch (error) {
+      console.error('❌ Printify sync failed:', error.message);
+      throw error;
+    }
+  }
+
   async sendOrderToProduction(orderId, customerName, customerEmail, address, items) {
     if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
       console.warn(`⚠️ Printify token missing. Simulating sending order #${orderId} to Printify.`);

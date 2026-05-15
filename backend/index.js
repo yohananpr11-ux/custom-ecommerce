@@ -95,6 +95,47 @@ app.get('/api/products/:id', (req, res) => {
   });
 });
 
+// Active Coupon State (In-Memory for simplicity, could be DB)
+let currentActiveCoupon = null;
+
+// Get Active Coupon
+app.get('/api/coupons/active', (req, res) => {
+  res.json({ coupon: currentActiveCoupon });
+});
+
+// Admin Set Coupon (Triggered by Meni Telegram Webhook)
+app.post('/api/admin/set-coupon', (req, res) => {
+  const { code, discount_pct, duration_hours } = req.body;
+  if (!code || !discount_pct) {
+    currentActiveCoupon = null; // Clear coupon if empty
+    return res.json({ success: true, message: 'Coupon cleared.' });
+  }
+
+  currentActiveCoupon = { code, discount_pct };
+  
+  // Clear coupon after duration
+  if (duration_hours) {
+    setTimeout(() => {
+      if (currentActiveCoupon && currentActiveCoupon.code === code) {
+        currentActiveCoupon = null;
+        console.log(`Coupon ${code} expired.`);
+      }
+    }, duration_hours * 60 * 60 * 1000);
+  }
+
+  res.json({ success: true, message: `Coupon ${code} set to ${discount_pct}% off.` });
+});
+
+// Admin Printify Sync
+app.post('/api/admin/printify-sync', async (req, res) => {
+  try {
+    const productsSynced = await printify.syncProducts();
+    res.json({ success: true, count: productsSynced });
+  } catch (error) {
+    res.status(500).json({ error: 'Sync failed' });
+  }
+});
+
 // General Order Creation Helper
 const createPendingOrder = (customerName, customerEmail, address, items, totalAmount) => {
   return new Promise((resolve, reject) => {
