@@ -210,7 +210,7 @@ app.post('/api/checkout/payplus', async (req, res) => {
     }
 
     // Return a mocked URL for demonstration if no keys
-    const mockPaymentUrl = \`https://payment.payplus.co.il/mock-checkout/\${orderId}\`;
+    const mockPaymentUrl = `https://payment.payplus.co.il/mock-checkout/${orderId}`;
     res.json({ success: true, paymentUrl: mockPaymentUrl });
   } catch (err) {
     console.error(err);
