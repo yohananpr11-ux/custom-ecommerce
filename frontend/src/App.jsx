@@ -2,8 +2,25 @@ import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import './index.css'
 
-function App() {
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError(error) { return { hasError: true }; }
+  componentDidCatch(error, errorInfo) {
+    console.error("React Error:", error);
+    fetch('https://custom-ecommerce-qp30.onrender.com/api/contact', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'System', email: 'error@system', message: `Frontend Crash: ${error.message}` })
+    }).catch(() => {});
+  }
+  render() {
+    if (this.state.hasError) return <div className="container" style={{padding: '100px 20px', textAlign: 'center'}}><h1>Oops! Something broke.</h1><p>Our team has been notified.</p></div>;
+    return this.props.children;
+  }
+}
+
+function MainApp() {
   const [products, setProducts] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
   const [cart, setCart] = useState([])
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('payplus')
@@ -14,8 +31,8 @@ function App() {
   useEffect(() => {
     fetch('https://custom-ecommerce-qp30.onrender.com/api/products')
       .then(res => res.json())
-      .then(data => setProducts(data))
-      .catch(err => console.error("Failed to load products", err))
+      .then(data => { setProducts(data); setIsLoading(false); })
+      .catch(err => { console.error(err); setIsLoading(false); })
       
     // Listen for coupon updates
     fetch('https://custom-ecommerce-qp30.onrender.com/api/coupons/active')
@@ -96,19 +113,55 @@ function App() {
     );
   }
 
+  if (path === '/contact') {
+    return (
+      <div className="container legal-page">
+        <h1>Contact Us</h1>
+        <form className="contact-form" onSubmit={(e) => {
+          e.preventDefault();
+          fetch('https://custom-ecommerce-qp30.onrender.com/api/contact', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: e.target.name.value, email: e.target.email.value, message: e.target.message.value })
+          }).then(() => { alert('Message sent to support.'); window.location.href='/'; })
+        }}>
+          <input name="name" type="text" placeholder="Your Name" required />
+          <input name="email" type="email" placeholder="Your Email" required />
+          <textarea name="message" placeholder="How can we help?" required></textarea>
+          <button type="submit" className="checkout-btn">Send Message</button>
+        </form>
+      </div>
+    );
+  }
+
+  if (path === '/privacy' || path === '/terms' || path === '/refund') {
+    const title = path.substring(1).replace(/^\w/, c => c.toUpperCase()) + " Policy";
+    return (
+      <div className="container legal-page">
+        <h1>{title}</h1>
+        <p>This is a legally binding document generated for Drip Street. By using this service...</p>
+        <button className="checkout-btn" style={{ maxWidth: '200px', marginTop: '40px' }} onClick={() => window.location.href = '/'}>Back</button>
+      </div>
+    );
+  }
+
+  if (path !== '/' && path !== '/cart') {
+    return <div className="container legal-page" style={{textAlign: 'center'}}><h1>404 Not Found</h1><button className="checkout-btn" style={{ maxWidth: '200px' }} onClick={() => window.location.href = '/'}>Return Home</button></div>;
+  }
+
   return (
     <>
       <header className="header container">
-        <h1 className="logo">DRIP STREET</h1>
+        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }}><h1 className="logo">DRIP STREET</h1></a>
         <div className="search-bar">
           <input 
             type="text" 
             placeholder="Search premium apparel..." 
             value={searchQuery}
+            aria-label="Search products"
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <button className="cart-btn" onClick={() => setIsCartOpen(true)}>
+        <button className="cart-btn" aria-label="Open cart" onClick={() => setIsCartOpen(true)}>
           CART ({cart.length})
         </button>
       </header>
@@ -146,36 +199,61 @@ function App() {
 
         <motion.div layout className="products-grid">
           <AnimatePresence>
-            {filteredProducts.map(product => (
-              <motion.div 
-                key={product.id} 
-                layout
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.3 }}
-                className="product-card"
-              >
-                <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image" />
-                <div className="product-info">
-                  <h3 className="product-title">{product.title}</h3>
-                  <span className="product-price">₪{product.price.toFixed(2)}</span>
+            {isLoading ? (
+              Array.from({length: 4}).map((_, i) => (
+                <div key={`skel-${i}`} className="product-card skeleton-card">
+                  <div className="skeleton skeleton-image"></div>
+                  <div style={{ marginTop: '16px' }}>
+                    <div className="skeleton skeleton-text"></div>
+                    <div className="skeleton skeleton-text" style={{ width: '40%' }}></div>
+                  </div>
                 </div>
-                <p className="product-desc">{product.description}</p>
-                <button className="add-to-cart" onClick={() => addToCart(product)}>
-                  Add to Cart
-                </button>
-              </motion.div>
-            ))}
+              ))
+            ) : (
+              filteredProducts.map(product => (
+                <motion.div 
+                  key={product.id} 
+                  layout
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.3 }}
+                  className="product-card"
+                >
+                  <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image" />
+                  <div className="product-info">
+                    <h3 className="product-title">{product.title}</h3>
+                    <span className="product-price">₪{product.price.toFixed(2)}</span>
+                  </div>
+                  <p className="product-desc">{product.description}</p>
+                  <button className="add-to-cart" aria-label={`Add ${product.title} to cart`} onClick={() => addToCart(product)}>
+                    Add to Cart
+                  </button>
+                </motion.div>
+              ))
+            )}
           </AnimatePresence>
         </motion.div>
       </main>
+
+      <footer className="footer container">
+        <div className="payment-logos">
+          <span>VISA</span> • <span>MASTERCARD</span> • <span>BIT</span>
+        </div>
+        <div className="footer-links">
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+          <a href="/refund">Refund Policy</a>
+          <a href="/contact">Contact Support</a>
+        </div>
+        <p>© 2026 Drip Street. All rights reserved.</p>
+      </footer>
 
       {/* Cart Drawer */}
       <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`}>
         <div className="cart-header">
           <h2>Your Cart</h2>
-          <button className="close-cart" onClick={() => setIsCartOpen(false)}>×</button>
+          <button className="close-cart" aria-label="Close cart" onClick={() => setIsCartOpen(false)}>×</button>
         </div>
         <div className="cart-items">
           {cart.map(item => (
@@ -224,4 +302,10 @@ function App() {
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
+  )
+}

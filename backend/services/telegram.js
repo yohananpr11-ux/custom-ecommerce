@@ -44,6 +44,25 @@ class TelegramService {
     
     await this.sendMessage(message);
   }
+
+  async notifySupportMessage(name, email, message) {
+    if (!this.token || !this.chatId) return;
+
+    const text = `✉️ <b>הודעה חדשה מלקוח (צור קשר)</b>\n\n` +
+                 `<b>שם:</b> ${name}\n` +
+                 `<b>אימייל:</b> ${email}\n\n` +
+                 `<b>הודעה:</b>\n${message}`;
+
+    try {
+      await axios.post(`${this.baseUrl}/sendMessage`, {
+        chat_id: this.chatId,
+        text: text,
+        parse_mode: 'HTML'
+      });
+    } catch (error) {
+      console.error('Failed to send Telegram support message:', error.message);
+    }
+  }
 }
 
 module.exports = new TelegramService();

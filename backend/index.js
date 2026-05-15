@@ -136,6 +136,15 @@ app.post('/api/admin/printify-sync', async (req, res) => {
   }
 });
 
+// Contact Form Endpoint
+app.post('/api/contact', async (req, res) => {
+  const { name, email, message } = req.body;
+  if (!name || !email || !message) return res.status(400).json({ error: 'Missing fields' });
+  
+  await telegram.notifySupportMessage(name, email, message);
+  res.json({ success: true, message: 'Message sent to Meni.' });
+});
+
 // General Order Creation Helper
 const createPendingOrder = (customerName, customerEmail, address, items, totalAmount) => {
   return new Promise((resolve, reject) => {
@@ -214,4 +223,11 @@ pricingEngine.start();
 
 app.listen(PORT, () => {
   console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
+});
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled Exception:', err);
+  telegram.sendMessage(`🚨 <b>Critical Server Error</b>\n\nRoute: ${req.url}\nError: ${err.message}`).catch(console.error);
+  res.status(500).json({ error: 'Internal Server Error' });
 });
