@@ -12,6 +12,11 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
+// Pulse Check Route
+app.get('/', (req, res) => {
+  res.send('Server is running and connected to Meni (Telegram).');
+});
+
 // Get all products
 app.get('/api/products', (req, res) => {
   db.all("SELECT * FROM products", [], (err, rows) => {

@@ -8,7 +8,7 @@ function App() {
 
   useEffect(() => {
     // Fetch products from backend
-    fetch('http://localhost:4000/api/products')
+    fetch('https://custom-ecommerce-qp30.onrender.com/api/products')
       .then(res => res.json())
       .then(data => setProducts(data))
       .catch(err => console.error("Failed to load products", err))
@@ -28,7 +28,7 @@ function App() {
 
   const checkout = async () => {
     try {
-      const response = await fetch('http://localhost:4000/api/checkout', {
+      const response = await fetch('https://custom-ecommerce-qp30.onrender.com/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
