@@ -5,6 +5,7 @@ function App() {
   const [products, setProducts] = useState([])
   const [cart, setCart] = useState([])
   const [isCartOpen, setIsCartOpen] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState('payplus') // 'payplus' or 'stripe'
 
   useEffect(() => {
     // Fetch products from backend
@@ -28,27 +29,49 @@ function App() {
 
   const checkout = async () => {
     try {
-      const response = await fetch('https://custom-ecommerce-qp30.onrender.com/api/checkout', {
+      const endpoint = paymentMethod === 'stripe' ? '/api/checkout/stripe' : '/api/checkout/payplus';
+      const response = await fetch(`https://custom-ecommerce-qp30.onrender.com${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerName: 'Test Customer',
-          customerEmail: 'test@example.com',
-          address: '123 Street, Tel Aviv',
+          customerName: 'Yohanan Test',
+          customerEmail: 'yohanan@example.com',
+          address: 'Dizengoff 99, Tel Aviv',
           items: cart,
           totalAmount: cartTotal
         })
       });
       const data = await response.json();
-      if (data.success) {
-        alert('Order placed successfully! ' + data.message);
-        setCart([]);
-        setIsCartOpen(false);
+      if (data.success && data.paymentUrl) {
+        window.location.href = data.paymentUrl;
+      } else {
+        alert('Checkout initialization failed.');
       }
     } catch (error) {
       console.error(error);
-      alert('Checkout failed.');
+      alert('Checkout failed due to a network error.');
     }
+  }
+
+  const path = window.location.pathname;
+
+  if (path === '/success') {
+    return (
+      <div className="container" style={{ textAlign: 'center', padding: '100px 20px' }}>
+        <h1 style={{ fontSize: '48px', marginBottom: '24px' }}>Payment Successful! 🎉</h1>
+        <p style={{ fontSize: '20px', color: '#888', marginBottom: '32px' }}>
+          Thank you for your order. We're processing it now and you'll receive a confirmation email shortly.
+        </p>
+        <button className="checkout-btn" style={{ maxWidth: '250px' }} onClick={() => window.location.href = '/'}>
+          Return to Store
+        </button>
+      </div>
+    );
+  }
+
+  if (path === '/cart') {
+    // Basic cancel/cart redirect
+    window.history.pushState({}, '', '/');
   }
 
   return (
@@ -106,15 +129,42 @@ function App() {
         <div className="cart-footer">
           <div className="cart-total">
             <span>Total</span>
-            <span>₪{cartTotal.toFixed(2)}</span>
+            <span>₪{cartTotal.toFixed(2)} {paymentMethod === 'stripe' && `(~$${(cartTotal / 3.7).toFixed(2)})`}</span>
           </div>
+          
+          <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+            <p style={{ margin: '0 0 8px', fontSize: '14px', color: '#888' }}>Pay with:</p>
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input 
+                  type="radio" 
+                  name="payment" 
+                  value="payplus" 
+                  checked={paymentMethod === 'payplus'} 
+                  onChange={() => setPaymentMethod('payplus')} 
+                />
+                Credit Card / Bit (₪)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input 
+                  type="radio" 
+                  name="payment" 
+                  value="stripe" 
+                  checked={paymentMethod === 'stripe'} 
+                  onChange={() => setPaymentMethod('stripe')} 
+                />
+                Stripe ($)
+              </label>
+            </div>
+          </div>
+
           <button 
             className="checkout-btn" 
             onClick={checkout}
             disabled={cart.length === 0}
             style={{ opacity: cart.length === 0 ? 0.5 : 1 }}
           >
-            Checkout
+            Checkout with {paymentMethod === 'stripe' ? 'Stripe' : 'PayPlus'}
           </button>
         </div>
       </div>

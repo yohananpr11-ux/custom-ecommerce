@@ -8,8 +8,62 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock');
 
 app.use(cors());
+
+// --- Webhooks must be before express.json() to parse raw body for Stripe ---
+app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async (req, res) => {
+  const payload = req.body;
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    // If we have a real secret, verify the signature. Otherwise, mock verification for testing.
+    if (process.env.STRIPE_WEBHOOK_SECRET) {
+      event = stripe.webhooks.constructEvent(payload, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } else {
+      event = JSON.parse(payload);
+    }
+  } catch (err) {
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the checkout.session.completed event
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const orderId = session.client_reference_id;
+    const amount = session.amount_total / 100;
+    
+    console.log(`[Stripe Webhook] Payment successful for Order #${orderId}`);
+    
+    // Update DB status
+    db.run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
+    
+    // Notify Meni
+    telegram.sendMessage(`💰 <b>תשלום בדולרים התקבל! (Stripe)</b>\n\nהזמנה #${orderId} שולמה בהצלחה. סכום: $${amount}`);
+    
+    // Here we would trigger Printify fulfillment since payment is confirmed
+    db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
+      // In a full implementation, we fetch order items from DB and trigger Printify
+    });
+  }
+  res.json({received: true});
+});
+
+app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
+  const { transaction_uid, status, custom_field } = req.body;
+  const orderId = custom_field; // We pass orderId in custom_field during PayPlus creation
+  
+  if (status === 'success') {
+    console.log(`[PayPlus Webhook] Payment successful for Order #${orderId}`);
+    db.run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
+    telegram.sendMessage(`💰 <b>תשלום בשקלים התקבל! (PayPlus/Grow)</b>\n\nהזמנה #${orderId} שולמה בהצלחה דרך אשראי/Bit.`);
+  }
+  
+  res.json({received: true});
+});
+
 app.use(express.json());
 
 // Pulse Check Route
@@ -41,66 +95,77 @@ app.get('/api/products/:id', (req, res) => {
   });
 });
 
-// Checkout / Place Order
-app.post('/api/checkout', (req, res) => {
+// General Order Creation Helper
+const createPendingOrder = (customerName, customerEmail, address, items, totalAmount) => {
+  return new Promise((resolve, reject) => {
+    db.run(`INSERT INTO orders (customerName, customerEmail, address, totalAmount, status) VALUES (?, ?, ?, ?, ?)`, 
+      [customerName, customerEmail, address, totalAmount, 'pending_payment'], 
+      function(err) {
+        if (err) return reject(err);
+        const orderId = this.lastID;
+        items.forEach(item => {
+          db.run(`INSERT INTO order_items (orderId, productId, quantity, price) VALUES (?, ?, ?, ?)`,
+            [orderId, item.id, item.quantity, item.price]);
+        });
+        resolve(orderId);
+      });
+  });
+};
+
+// Checkout via Stripe (USD)
+app.post('/api/checkout/stripe', async (req, res) => {
   const { customerName, customerEmail, address, items, totalAmount } = req.body;
   
-  if (!items || items.length === 0) {
-    return res.status(400).json({ error: 'Cart is empty' });
+  try {
+    const orderId = await createPendingOrder(customerName, customerEmail, address, items, totalAmount);
+    
+    // Create Stripe Session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: items.map(item => ({
+        price_data: {
+          currency: 'usd',
+          product_data: { name: item.title },
+          unit_amount: Math.round((item.price / 3.7) * 100), // convert NIS to USD cents roughly
+        },
+        quantity: item.quantity,
+      })),
+      mode: 'payment',
+      success_url: 'https://custom-ecommerce-seven.vercel.app/success?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: 'https://custom-ecommerce-seven.vercel.app/cart',
+      client_reference_id: orderId.toString(),
+      customer_email: customerEmail,
+    });
+
+    res.json({ success: true, paymentUrl: session.url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to initialize Stripe checkout' });
   }
-
-  // Transaction-like logic
-  db.run(`INSERT INTO orders (customerName, customerEmail, address, totalAmount, status) VALUES (?, ?, ?, ?, ?)`, 
-    [customerName, customerEmail, address, totalAmount, 'paid'], 
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to create order' });
-      }
-      
-      const orderId = this.lastID;
-      
-      const localItems = [];
-      const printifyItems = [];
-
-      // Insert items and reduce stock
-      items.forEach(item => {
-        db.run(`INSERT INTO order_items (orderId, productId, quantity, price) VALUES (?, ?, ?, ?)`,
-          [orderId, item.id, item.quantity, item.price]);
-          
-        if (item.type === 'printify') {
-          printifyItems.push(item);
-        } else {
-          localItems.push(item);
-          // Only reduce stock for local items
-          db.run(`UPDATE products SET stock = stock - ? WHERE id = ?`, [item.quantity, item.id]);
-        }
-      });
-      
-      // Trigger Telegram Notification
-      console.log(`[Order #${orderId}] New order received from ${customerName}. Total: ₪${totalAmount}`);
-      telegram.notifyNewOrder(orderId, customerName, totalAmount, items);
-      
-      // Auto-Fulfill Printify Items
-      if (printifyItems.length > 0) {
-        printify.sendOrderToProduction(orderId, customerName, customerEmail, address, printifyItems)
-          .catch(err => console.error("Printify Fulfillment Error:", err));
-      }
-      
-      res.json({ success: true, orderId, message: 'Order placed successfully!' });
-  });
 });
 
-// Mock Payment Gateway Route (PayPal / Meshulam / Grow)
-app.post('/api/create-payment', (req, res) => {
-  const { totalAmount } = req.body;
-  // Here we would call the Payment Provider's API to get a checkout session URL
-  // Example: const session = await paypal.createOrder(totalAmount);
+// Checkout via PayPlus/Grow (NIS)
+app.post('/api/checkout/payplus', async (req, res) => {
+  const { customerName, customerEmail, address, items, totalAmount } = req.body;
   
-  res.json({ 
-    success: true, 
-    paymentUrl: 'https://sandbox.paypal.com/checkoutnow?token=MOCK_TOKEN',
-    transactionId: `TXN-${Date.now()}`
-  });
+  try {
+    const orderId = await createPendingOrder(customerName, customerEmail, address, items, totalAmount);
+    
+    // Integration logic for PayPlus
+    // Normally we make an axios.post to api.payplus.co.il with payload
+    const hasPayPlusKey = process.env.PAYPLUS_API_KEY && process.env.PAYPLUS_API_KEY !== 'YOUR_PAYPLUS_KEY';
+    
+    if (hasPayPlusKey) {
+      // Execute actual PayPlus API call here
+    }
+
+    // Return a mocked URL for demonstration if no keys
+    const mockPaymentUrl = \`https://payment.payplus.co.il/mock-checkout/\${orderId}\`;
+    res.json({ success: true, paymentUrl: mockPaymentUrl });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to initialize PayPlus checkout' });
+  }
 });
 
 // Start background cron jobs
