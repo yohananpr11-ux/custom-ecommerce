@@ -18,4 +18,4 @@ services:
       - key: PRINTIFY_API_TOKEN
         sync: false
       - key: PRINTIFY_SHOP_ID
-        sync: false
+        value: "27495153"

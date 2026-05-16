@@ -10,14 +10,13 @@ class PrintifyService {
 
   async syncProducts() {
     if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
-      console.warn(`⚠️ Printify token missing. Simulating 50 product sync.`);
-      // Insert mock products to DB to simulate
+      console.warn(`⚠️ Printify token missing. Simulating 10 product sync.`);
       const db = require('../db');
       for(let i=1; i<=10; i++) {
         db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
           [`Premium Street Hoodie v${i}`, `Exclusive Printify collection. Sync mock.`, 300, `https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=400&q=80`, 999, 'printify']);
       }
-      return 10; // Mocked 10 products
+      return 10;
     }
 
     try {
@@ -27,19 +26,57 @@ class PrintifyService {
 
       const products = response.data.data;
       const db = require('../db');
+      let syncedCount = 0;
 
-      products.forEach(p => {
+      for (const p of products) {
         const title = p.title;
-        const description = p.description;
-        const imageUrl = p.images && p.images.length > 0 ? p.images[0].src : '';
-        const price = 250; // We'll let pricing engine fix this later
+        const description = p.description ? p.description.replace(/<[^>]*>/g, '').substring(0, 500) : '';
         
-        db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
-          [title, description, price, imageUrl, 999, 'printify']);
-      });
+        // Get the best image (prefer front mockup)
+        let imageUrl = '';
+        if (p.images && p.images.length > 0) {
+          const frontImg = p.images.find(img => img.position === 'front' && img.is_default);
+          imageUrl = frontImg ? frontImg.src : p.images[0].src;
+        }
+        
+        // Calculate price from enabled variants
+        const enabledVariants = p.variants ? p.variants.filter(v => v.is_enabled) : [];
+        let baseCostCents = 0;
+        if (enabledVariants.length > 0) {
+          baseCostCents = Math.min(...enabledVariants.map(v => v.cost || v.price || 0));
+        }
+        
+        // Use pricing engine to calculate optimal retail price in NIS
+        const pricingEngine = require('./pricing');
+        const baseCostUSD = baseCostCents / 100;
+        const retailPrice = pricingEngine.calculateOptimalPriceNIS(baseCostUSD, 4.5);
 
-      console.log(`✅ Synced ${products.length} products from Printify.`);
-      return products.length;
+        // Store the first enabled variant ID for order fulfillment
+        const printifyProductId = p.id;
+        const printifyVariantId = enabledVariants.length > 0 ? enabledVariants[0].id : null;
+
+        // Check if product already exists to avoid duplicates
+        await new Promise((resolve, reject) => {
+          db.get(`SELECT id FROM products WHERE title = ? AND type = 'printify'`, [title], (err, existing) => {
+            if (err) return reject(err);
+            if (existing) {
+              // Update existing product
+              db.run(`UPDATE products SET price = ?, imageUrl = ?, description = ? WHERE id = ?`,
+                [retailPrice, imageUrl, description, existing.id]);
+            } else {
+              // Insert new product
+              db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
+                [title, description, retailPrice, imageUrl, 999, 'printify']);
+            }
+            syncedCount++;
+            resolve();
+          });
+        });
+      }
+
+      console.log(`✅ Synced ${syncedCount} products from Printify.`);
+      await telegram.sendMessage(`🔄 <b>סנכרון Printify הושלם!</b>\n\n${syncedCount} מוצרים סונכרנו בהצלחה מ-Printify אל החנות.`);
+      return syncedCount;
     } catch (error) {
       console.error('❌ Printify sync failed:', error.message);
       throw error;
