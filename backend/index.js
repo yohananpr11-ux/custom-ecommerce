@@ -250,6 +250,20 @@ pricingEngine.start();
 
 app.listen(PORT, () => {
   console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
+  
+  // Auto-sync Printify products on startup (critical for Render where DB is ephemeral)
+  setTimeout(async () => {
+    try {
+      const hasPrintifyKey = process.env.PRINTIFY_API_TOKEN && process.env.PRINTIFY_API_TOKEN !== 'YOUR_PRINTIFY_TOKEN';
+      if (hasPrintifyKey) {
+        console.log('🔄 Auto-syncing Printify products on startup...');
+        const count = await printify.syncProducts();
+        console.log(`✅ Auto-sync complete: ${count} Printify products loaded.`);
+      }
+    } catch (err) {
+      console.error('⚠️ Auto-sync failed (non-fatal):', err.message);
+    }
+  }, 3000); // Wait 3s for DB to fully initialize
 });
 
 // Global Error Handler
