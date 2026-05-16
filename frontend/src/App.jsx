@@ -21,7 +21,14 @@ class ErrorBoundary extends React.Component {
 function MainApp() {
   const [products, setProducts] = useState([])
   const [isLoading, setIsLoading] = useState(true)
-  const [cart, setCart] = useState([])
+  const [cart, setCart] = useState(() => {
+    try {
+      const saved = localStorage.getItem('drip_street_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  })
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('payplus')
   const [searchQuery, setSearchQuery] = useState('')
@@ -40,6 +47,15 @@ function MainApp() {
       .then(data => { if(data.coupon) setActiveCoupon(data.coupon) })
       .catch(console.error)
   }, [])
+
+  // Sync cart to local storage
+  useEffect(() => {
+    try {
+      localStorage.setItem('drip_street_cart', JSON.stringify(cart))
+    } catch (e) {
+      console.error('Failed to save cart:', e)
+    }
+  }, [cart])
 
   const categories = ['All', 'New Arrivals', 'Best Sellers', 'Hoodies', 'T-Shirts']
 
