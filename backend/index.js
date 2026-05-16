@@ -43,9 +43,20 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     // Notify Meni
     telegram.sendMessage(`💰 <b>תשלום בדולרים התקבל! (Stripe)</b>\n\nהזמנה #${orderId} שולמה בהצלחה. סכום: $${amount}`);
     
-    // Here we would trigger Printify fulfillment since payment is confirmed
+    // Trigger Printify fulfillment since payment is confirmed
     db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
-      // In a full implementation, we fetch order items from DB and trigger Printify
+      if (!err && order) {
+        db.all(`SELECT * FROM order_items WHERE orderId = ?`, [orderId], async (err, items) => {
+          if (!err && items && items.length > 0) {
+            try {
+              await printify.sendOrderToProduction(orderId, order.customerName, order.customerEmail, order.address, items);
+              telegram.sendMessage(`🏭 <b>הזמנה #${orderId} נשלחה לייצור!</b>\nההזמנה הועברה בהצלחה למפעל ב-Printify.`);
+            } catch (pErr) {
+              telegram.sendMessage(`🚨 <b>שגיאה בשליחה לייצור</b>\nהזמנה #${orderId} שולמה אבל נכשלה בהעברה ל-Printify.`);
+            }
+          }
+        });
+      }
     });
   }
   res.json({received: true});
@@ -59,6 +70,22 @@ app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
     console.log(`[PayPlus Webhook] Payment successful for Order #${orderId}`);
     db.run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
     telegram.sendMessage(`💰 <b>תשלום בשקלים התקבל! (PayPlus/Grow)</b>\n\nהזמנה #${orderId} שולמה בהצלחה דרך אשראי/Bit.`);
+    
+    // Trigger Printify fulfillment since payment is confirmed
+    db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
+      if (!err && order) {
+        db.all(`SELECT * FROM order_items WHERE orderId = ?`, [orderId], async (err, items) => {
+          if (!err && items && items.length > 0) {
+            try {
+              await printify.sendOrderToProduction(orderId, order.customerName, order.customerEmail, order.address, items);
+              telegram.sendMessage(`🏭 <b>הזמנה #${orderId} נשלחה לייצור!</b>\nההזמנה הועברה בהצלחה למפעל ב-Printify.`);
+            } catch (pErr) {
+              telegram.sendMessage(`🚨 <b>שגיאה בשליחה לייצור</b>\nהזמנה #${orderId} שולמה אבל נכשלה בהעברה ל-Printify.`);
+            }
+          }
+        });
+      }
+    });
   }
   
   res.json({received: true});

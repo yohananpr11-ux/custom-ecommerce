@@ -84,16 +84,24 @@ function MainApp() {
   const discount = activeCoupon ? baseCartTotal * (activeCoupon.discount_pct / 100) : 0
   const cartTotal = baseCartTotal - discount
 
-  const checkout = async () => {
+  const proceedToCheckout = () => {
+    setIsCartOpen(false);
+    window.history.pushState({}, '', '/checkout');
+    // We use a custom event or just a state if we had a router, but since we rely on window.location.pathname:
+    window.dispatchEvent(new Event('popstate'));
+  }
+
+  const submitCheckout = async (e) => {
+    e.preventDefault();
     try {
       const endpoint = paymentMethod === 'stripe' ? '/api/checkout/stripe' : '/api/checkout/payplus';
       const response = await fetch(`https://custom-ecommerce-qp30.onrender.com${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerName: 'Yohanan Premium',
-          customerEmail: 'yohanan@example.com',
-          address: 'Dizengoff 99, Tel Aviv',
+          customerName: e.target.customerName.value,
+          customerEmail: e.target.customerEmail.value,
+          address: e.target.address.value,
           items: cart,
           totalAmount: cartTotal,
           couponCode: activeCoupon ? activeCoupon.code : null
@@ -101,6 +109,7 @@ function MainApp() {
       });
       const data = await response.json();
       if (data.success && data.paymentUrl) {
+        localStorage.removeItem('drip_street_cart'); // clear cart on success
         window.location.href = data.paymentUrl;
       } else {
         alert('Checkout initialization failed.');
@@ -110,9 +119,14 @@ function MainApp() {
     }
   }
 
-  const path = window.location.pathname;
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  useEffect(() => {
+    const handleLocationChange = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
 
-  if (path === '/success') {
+  if (currentPath === '/success') {
     return (
       <div className="container" style={{ textAlign: 'center', padding: '100px 20px' }}>
         <motion.h1 
@@ -129,7 +143,51 @@ function MainApp() {
     );
   }
 
-  if (path === '/contact') {
+  if (currentPath === '/checkout') {
+    return (
+      <div className="container checkout-page">
+        <h1 style={{ marginTop: '40px' }}>Secure Checkout</h1>
+        <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
+          <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1', minWidth: '300px' }}>
+            <h3>Shipping Details</h3>
+            <input name="customerName" type="text" placeholder="Full Name" required />
+            <input name="customerEmail" type="email" placeholder="Email Address" required />
+            <input name="address" type="text" placeholder="Full Address (Street, City, Zip)" required />
+            
+            <h3 style={{ marginTop: '24px' }}>Payment Method</h3>
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
+                Credit Card / Bit (₪)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
+                Stripe ($)
+              </label>
+            </div>
+            <button type="submit" className="checkout-btn">Complete Order</button>
+          </form>
+          
+          <div style={{ flex: '1', minWidth: '300px', backgroundColor: '#111', padding: '24px', borderRadius: '12px', height: 'fit-content' }}>
+            <h3>Order Summary</h3>
+            {cart.map(item => (
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <span>{item.quantity}x {item.title}</span>
+                <span>₪{(item.price * item.quantity).toFixed(2)}</span>
+              </div>
+            ))}
+            <hr style={{ borderColor: '#333', margin: '16px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '18px' }}>
+              <span>Total</span>
+              <span>₪{cartTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentPath === '/contact') {
     return (
       <div className="container legal-page">
         <h1>Contact Us</h1>
@@ -149,18 +207,29 @@ function MainApp() {
     );
   }
 
-  if (path === '/privacy' || path === '/terms' || path === '/refund') {
-    const title = path.substring(1).replace(/^\w/, c => c.toUpperCase()) + " Policy";
+  if (currentPath === '/privacy' || currentPath === '/terms' || currentPath === '/refund') {
+    const title = currentPath.substring(1).replace(/^\w/, c => c.toUpperCase()) + " Policy";
     return (
-      <div className="container legal-page">
+      <div className="container legal-page" style={{ maxWidth: '800px', marginTop: '40px' }}>
         <h1>{title}</h1>
-        <p>This is a legally binding document generated for Drip Street. By using this service...</p>
+        <p style={{ lineHeight: '1.8', color: '#ccc' }}>
+          This is a legally binding document generated for Drip Street. By using this service, you agree to our policies.
+          <br/><br/>
+          <strong>1. Information We Collect</strong><br/>
+          We collect information you provide directly to us when you make a purchase.
+          <br/><br/>
+          <strong>2. Processing Payments</strong><br/>
+          Payments are processed securely via Stripe and PayPlus. We do not store your credit card information.
+          <br/><br/>
+          <strong>3. Returns & Refunds</strong><br/>
+          Due to the nature of our products, returns are accepted within 14 days of delivery if the item is unworn.
+        </p>
         <button className="checkout-btn" style={{ maxWidth: '200px', marginTop: '40px' }} onClick={() => window.location.href = '/'}>Back</button>
       </div>
     );
   }
 
-  if (path !== '/' && path !== '/cart') {
+  if (currentPath !== '/' && currentPath !== '/cart') {
     return <div className="container legal-page" style={{textAlign: 'center'}}><h1>404 Not Found</h1><button className="checkout-btn" style={{ maxWidth: '200px' }} onClick={() => window.location.href = '/'}>Return Home</button></div>;
   }
 
@@ -309,8 +378,8 @@ function MainApp() {
             </div>
           </div>
 
-          <button className="checkout-btn" onClick={checkout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
-            Checkout with {paymentMethod === 'stripe' ? 'Stripe' : 'PayPlus'}
+          <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
+            Proceed to Checkout
           </button>
         </div>
       </div>
