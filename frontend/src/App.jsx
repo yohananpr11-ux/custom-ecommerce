@@ -168,6 +168,7 @@ function applyProductColorOverrides(productData, productId) {
   Object.entries(override).forEach(([colorName, colorOverride]) => {
     const normalizedColorName = String(colorName).toLowerCase();
     const existingColorIndex = colors.findIndex((c) => String(c.name || '').toLowerCase() === normalizedColorName);
+    const resolvedColorName = existingColorIndex === -1 ? colorName : colors[existingColorIndex].name;
 
     if (existingColorIndex === -1) {
       colors.push({
@@ -181,7 +182,7 @@ function applyProductColorOverrides(productData, productId) {
       };
     }
 
-    imagesByColor[colorName] = [{ src: colorOverride.image, position: 'front' }];
+    imagesByColor[resolvedColorName] = [{ src: colorOverride.image, position: 'front' }];
   });
 
   next.colors = colors;
