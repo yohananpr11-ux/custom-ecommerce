@@ -54,15 +54,16 @@ class PricingEngine {
       // Tank tops: dynamic pricing based on manufacturing cost
       if (category === 'tank') {
         const costInILS = baseCostUSD * this.exchangeRateUSDILS;
-        // 2.5x multiplier: costs ~$12 (₪45) → retail ₪109.90, maintains margin
         const profitMarginMultiplier = 2.5;
         const targetPrice = costInILS * profitMarginMultiplier;
-        // Round to marketing-friendly price ending in .90
-        return Math.floor(targetPrice / 10) * 10 + 9.90;
+        const finalPrice = Math.floor(targetPrice / 10) * 10 + 9.90;
+        console.log(`🔧 [TANK PRICING] Title: "${title}" | BaseCost: $${baseCostUSD} | CostILS: ₪${costInILS.toFixed(2)} | Target: ₪${targetPrice.toFixed(2)} | Final: ₪${finalPrice.toFixed(2)}`);
+        return finalPrice;
       }
       
       // Fixed prices for tees and hoodies
       const fixedPrice = this.targetPricesILS[category] || 89.90;
+      return fixedPrice;
       return fixedPrice;
     }
     
