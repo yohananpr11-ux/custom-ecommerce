@@ -140,20 +140,51 @@ function isTeeProduct(product) {
   return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
 }
 
-const CUSTOM_BLACK_IMAGE = '/shirt-black-design.png';
-const BLACK_OVERRIDE_PRODUCT_IDS = new Set(['1']);
+const BLACK_COLOR_OVERRIDES = {
+  '1': {
+    black: {
+      image: '/shirt-black-design.png',
+      hex: '#111111'
+    }
+  },
+  '2': {
+    black: {
+      image: '/shirt-black-white-logo.png',
+      hex: '#111111'
+    }
+  }
+};
 
-function applyBlackColorOverride(productData, productId) {
-  if (!productData || !BLACK_OVERRIDE_PRODUCT_IDS.has(String(productId))) return productData;
+function applyProductColorOverrides(productData, productId) {
+  if (!productData) return productData;
+
+  const override = BLACK_COLOR_OVERRIDES[String(productId)];
+  if (!override) return productData;
 
   const next = { ...productData };
   const colors = Array.isArray(next.colors) ? [...next.colors] : [];
-  const hasBlack = colors.some((c) => String(c.name || '').toLowerCase() === 'black');
-  if (!hasBlack) colors.push({ name: 'black', hex: '#111111' });
-  next.colors = colors;
-
   const imagesByColor = { ...(next.imagesByColor || {}) };
-  imagesByColor.black = [{ src: CUSTOM_BLACK_IMAGE, position: 'front' }];
+
+  Object.entries(override).forEach(([colorName, colorOverride]) => {
+    const normalizedColorName = String(colorName).toLowerCase();
+    const existingColorIndex = colors.findIndex((c) => String(c.name || '').toLowerCase() === normalizedColorName);
+
+    if (existingColorIndex === -1) {
+      colors.push({
+        name: colorName,
+        hex: colorOverride.hex || '#111111'
+      });
+    } else {
+      colors[existingColorIndex] = {
+        ...colors[existingColorIndex],
+        hex: colors[existingColorIndex].hex || colorOverride.hex || '#111111'
+      };
+    }
+
+    imagesByColor[colorName] = [{ src: colorOverride.image, position: 'front' }];
+  });
+
+  next.colors = colors;
   next.imagesByColor = imagesByColor;
 
   return next;
@@ -203,7 +234,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
           data.imagesByColor = imagesByColor;
         }
 
-        const productWithOverrides = applyBlackColorOverride(data, productId);
+        const productWithOverrides = applyProductColorOverrides(data, productId);
         setProduct(productWithOverrides);
         
         // Select first non-black color
