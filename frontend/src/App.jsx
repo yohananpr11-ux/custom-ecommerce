@@ -118,6 +118,13 @@ const productTitleMap = {
   'Unisex Softstyle T-Shirt': 'טי-שירט יוניסקס בייסיק',
   'Unisex Jersey Short Sleeve Tee': 'טי-שירט פרימיום',
   'Unisex Heavy Blend™ Hooded Sweatshirt': 'קפוצ\'ון אוברסייז קלאסי',
+  'Gildan 64000': 'טי-שירט Gildan',
+  'Bella+Canvas 3001': 'טי-שירט Bella+Canvas',
+  'Gildan 18500': 'קפוצ\'ון Gildan',
+  'Drum Machine Blueprint': 'טי-שירט Blueprint',
+  'Retro Synth': 'טי-שירט Synth ריטרו',
+  'Circuit Board': 'טי-שירט Circuit Board',
+  'Minimal Grid': 'טי-שירט מינימליסטי',
 };
 
 function getProductTitle(title, locale) {
@@ -205,7 +212,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
             
             {product.colors && product.colors.length > 0 && (
               <div className="pdp-section">
-                <h3>Color: <span style={{fontWeight:'normal', color:'#aaa'}}>{selectedColor}</span></h3>
+                <h3>צבע</h3>
                 <div className="pdp-options">
                   {product.colors.map(c => (
                     <button 
@@ -214,6 +221,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
                       style={{ backgroundColor: c.hex }}
                       onClick={() => setSelectedColor(c.name)}
                       aria-label={`Select color ${c.name}`}
+                      title={c.name}
                     />
                   ))}
                 </div>
@@ -222,7 +230,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
 
             {product.sizes && product.sizes.length > 0 && (
               <div className="pdp-section">
-                <h3>Size: <span style={{fontWeight:'normal', color:'#aaa'}}>{selectedSize}</span></h3>
+                <h3>גודל</h3>
                 <div className="pdp-options">
                   {product.sizes.map(s => (
                     <button 
