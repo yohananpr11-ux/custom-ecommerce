@@ -33,6 +33,35 @@ const getClientIp = (req) => {
   return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
 };
 
+const getOrderTotalAmount = (orderId) => new Promise((resolve, reject) => {
+  db.get(`SELECT totalAmount FROM orders WHERE id = ?`, [orderId], (err, row) => {
+    if (err) return reject(err);
+    resolve(row && typeof row.totalAmount === 'number' ? row.totalAmount : 0);
+  });
+});
+
+const getPaidRevenueTotal = () => new Promise((resolve, reject) => {
+  db.get(`SELECT COALESCE(SUM(totalAmount), 0) AS totalPaid FROM orders WHERE status = 'paid'`, [], (err, row) => {
+    if (err) return reject(err);
+    const totalPaid = row && typeof row.totalPaid === 'number' ? row.totalPaid : 0;
+    resolve(totalPaid);
+  });
+});
+
+const sendPaymentNotification = async ({ provider, orderId, amountText }) => {
+  try {
+    const totalPaid = await getPaidRevenueTotal();
+    await telegram.sendMessage(
+      `💰 <b>תשלום התקבל! (${provider})</b>\n\n`
+      + `<b>הזמנה:</b> #${orderId}\n`
+      + `<b>סכום עסקה:</b> ${amountText}\n`
+      + `<b>סה"כ נכנס (שולם):</b> ₪${totalPaid.toFixed(2)}`
+    );
+  } catch (err) {
+    await telegram.sendMessage(`⚠️ <b>תשלום נקלט אבל חישוב סכום מצטבר נכשל</b>\nהזמנה #${orderId}`).catch(() => null);
+  }
+};
+
 const parsePrintifyPayload = (rawBody) => {
   if (!rawBody) return {};
   if (typeof rawBody === 'object') return rawBody;
@@ -232,9 +261,7 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     
     // Update DB status
     db.run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
-    
-    // Notify Meni
-    telegram.sendMessage(`💰 <b>תשלום בדולרים התקבל! (Stripe)</b>\n\nהזמנה #${orderId} שולמה בהצלחה. סכום: $${amount}`);
+    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText: `$${amount.toFixed(2)}` });
     
     // Trigger Printify fulfillment since payment is confirmed
     db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
@@ -271,7 +298,8 @@ app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
   if (status === 'success') {
     console.log(`[PayPlus Webhook] Payment successful for Order #${orderId}`);
     db.run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
-    telegram.sendMessage(`💰 <b>תשלום בשקלים התקבל! (PayPlus/Grow)</b>\n\nהזמנה #${orderId} שולמה בהצלחה דרך אשראי/Bit.`);
+    const orderTotalAmount = await getOrderTotalAmount(orderId);
+    await sendPaymentNotification({ provider: 'PayPlus/Grow', orderId, amountText: `₪${orderTotalAmount.toFixed(2)}` });
     
     // Trigger Printify fulfillment since payment is confirmed
     db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
