@@ -24,7 +24,7 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     if (process.env.STRIPE_WEBHOOK_SECRET) {
       event = stripe.webhooks.constructEvent(payload, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } else {
-      event = JSON.parse(payload);
+      event = JSON.parse(payload.toString('utf8'));
     }
   } catch (err) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -118,10 +118,14 @@ app.get('/api/products', (req, res) => {
       res.status(500).json({ error: err.message });
       return;
     }
+
+    // Prefer real Printify catalog and hide local mock products when Printify items exist.
+    const hasPrintifyProducts = rows.some(r => r.type === 'printify');
+    const visibleRows = hasPrintifyProducts ? rows.filter(r => r.type === 'printify') : rows;
     
     // Add priceUSD dynamically using the live rate
     const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
-    const productsWithUSD = rows.map(r => ({
+    const productsWithUSD = visibleRows.map(r => ({
       ...r,
       priceUSD: parseFloat((r.price / exchangeRate).toFixed(2))
     }));

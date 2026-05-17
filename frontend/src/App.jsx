@@ -10,8 +10,8 @@ const BUNDLE_TEE_COUNT = 3;
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
-  static getDerivedStateFromError(error) { return { hasError: true }; }
-  componentDidCatch(error, errorInfo) {
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error) {
     console.error("React Error:", error);
     fetch(`${API_BASE}/api/contact`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -263,7 +263,7 @@ function MainApp() {
     try {
       const saved = localStorage.getItem('drip_street_cart');
       return saved ? JSON.parse(saved) : [];
-    } catch (e) {
+    } catch {
       return [];
     }
   })
@@ -327,7 +327,7 @@ function MainApp() {
     const handleOpenCart = () => setIsCartOpen(true);
     window.addEventListener('open-cart', handleOpenCart);
     return () => window.removeEventListener('open-cart', handleOpenCart);
-  }, [])
+  }, [chatSessionId])
 
   const t = (key, replaces = {}) => {
     let text = translations[locale]?.[key] || translations['en']?.[key] || key;
@@ -338,6 +338,7 @@ function MainApp() {
   };
 
   const curSym = currency === 'USD' ? '$' : '₪';
+  const displayVal = (nisValue) => (currency === 'USD' ? (nisValue / exchangeRate) : nisValue);
 
   useEffect(() => {
     try {
@@ -391,22 +392,23 @@ function MainApp() {
   };
 
   const addToCart = (product) => {
-    const existing = cart.find(item => item.id === product.id)
+    const cartId = product.cartId || `${product.id}`;
+    const existing = cart.find(item => (item.cartId || `${item.id}`) === cartId)
     if (existing) {
-      setCart(cart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item))
+      setCart(cart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: item.quantity + 1 } : item)))
     } else {
-      setCart([...cart, { ...product, quantity: 1 }])
+      setCart([...cart, { ...product, cartId, quantity: 1 }])
     }
     setIsCartOpen(true)
   }
 
-  const removeFromCart = (productId) => {
-    setCart(cart.filter(item => item.id !== productId))
+  const removeFromCart = (cartId) => {
+    setCart(cart.filter(item => (item.cartId || `${item.id}`) !== cartId))
   }
 
-  const updateQuantity = (productId, newQty) => {
-    if (newQty <= 0) return removeFromCart(productId);
-    setCart(cart.map(item => item.id === productId ? { ...item, quantity: newQty } : item))
+  const updateQuantity = (cartId, newQty) => {
+    if (newQty <= 0) return removeFromCart(cartId);
+    setCart(cart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: newQty } : item)))
   }
 
   // ============ PRICING LOGIC ============
@@ -481,11 +483,11 @@ function MainApp() {
       const data = await response.json();
       if (data.success && data.paymentUrl) {
         localStorage.removeItem('drip_street_cart');
-        window.location.href = data.paymentUrl;
+        window.location.assign(data.paymentUrl);
       } else {
         alert('Checkout initialization failed.');
       }
-    } catch (error) {
+    } catch {
       alert('Checkout failed due to a network error.');
     }
   }
@@ -546,7 +548,7 @@ function MainApp() {
             {cart.map(item => {
               const itemPrice = currency === 'USD' ? (item.priceUSD || (item.price / exchangeRate)) : item.price;
               return (
-                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <div key={item.cartId || item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <span>{item.quantity}x {item.title}</span>
                   <span>{curSym}{(itemPrice * item.quantity).toFixed(2)}</span>
                 </div>
@@ -851,15 +853,15 @@ function MainApp() {
             const itemDealBadgeText = currency === 'USD' ? '3 for $61.90' : '3 ב-229₪';
             
             return (
-              <div key={item.id} className="cart-item">
+              <div key={item.cartId || item.id} className="cart-item">
                 <div style={{ flex: 1 }}>
                   <strong>{item.title}</strong>
                   {isTeeProduct(item) && <span className="cart-deal-hint">{itemDealBadgeText}</span>}
                   <div className="cart-qty-controls">
-                    <button onClick={() => updateQuantity(item.id, item.quantity - 1)}>−</button>
+                    <button onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity - 1)}>−</button>
                     <span>{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, item.quantity + 1)}>+</button>
-                    <button className="remove-btn" onClick={() => removeFromCart(item.id)}>🗑</button>
+                    <button onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity + 1)}>+</button>
+                    <button className="remove-btn" onClick={() => removeFromCart(item.cartId || `${item.id}`)}>🗑</button>
                   </div>
                 </div>
                 <div style={{ fontWeight: 600 }}>{curSym}{(itemPrice * item.quantity).toFixed(2)}</div>
