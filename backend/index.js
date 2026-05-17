@@ -299,7 +299,7 @@ app.post('/api/admin/update-prices', async (req, res) => {
 });
 
 // Temporary Admin Endpoint: Register Printify webhooks from Render env vars
-app.post('/api/admin/register-webhooks', async (req, res) => {
+const registerWebhooksHandler = async (req, res) => {
   const PRINTIFY_API_TOKEN = process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_TOKEN;
   const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
   const WEBHOOK_URL = process.env.PRINTIFY_WEBHOOK_URL
@@ -367,7 +367,10 @@ app.post('/api/admin/register-webhooks', async (req, res) => {
       details: err.response && err.response.data ? err.response.data : err.message
     });
   }
-});
+};
+
+app.post('/api/admin/register-webhooks', registerWebhooksHandler);
+app.get('/api/admin/register-webhooks', registerWebhooksHandler);
 
 // Contact Form Endpoint
 app.post('/api/contact', async (req, res) => {
