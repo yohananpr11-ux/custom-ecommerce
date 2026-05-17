@@ -161,9 +161,11 @@ class PrintifyService {
           const variantCost = (variant.cost || 0) / 100;
           const variantPrice = retailPrice;
           const isAvailable = variant.is_available !== false ? 1 : 0;
+          const stockQtyRaw = Number(variant.quantity);
+          const stockQty = Number.isFinite(stockQtyRaw) ? Math.max(0, stockQtyRaw) : null;
 
-          db.run(`INSERT INTO product_variants (productId, printifyVariantId, color, colorHex, size, price, cost, isEnabled, isAvailable, imageUrl) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-            [productId, variant.id, color, colorHex, size, variantPrice, variantCost, isAvailable, variantImageUrl]);
+          db.run(`INSERT INTO product_variants (productId, printifyVariantId, color, colorHex, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+            [productId, variant.id, color, colorHex, size, variantPrice, variantCost, stockQty, isAvailable, variantImageUrl]);
         }
 
         syncedCount++;

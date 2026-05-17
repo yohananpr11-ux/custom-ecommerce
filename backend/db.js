@@ -41,6 +41,7 @@ db.serialize(() => {
       size TEXT,
       price REAL,
       cost REAL,
+      stockQty INTEGER,
       isEnabled INTEGER DEFAULT 1,
       isAvailable INTEGER DEFAULT 1,
       FOREIGN KEY (productId) REFERENCES products(id)
@@ -98,6 +99,7 @@ db.serialize(() => {
   
   // Migrate: add imageUrl to product_variants table
   db.run(`ALTER TABLE product_variants ADD COLUMN imageUrl TEXT`, () => {});
+  db.run(`ALTER TABLE product_variants ADD COLUMN stockQty INTEGER`, () => {});
   
   // Purge any local placeholder products to prevent non-fulfillment checkout errors
   db.run("DELETE FROM products WHERE type = 'local'", (err) => {

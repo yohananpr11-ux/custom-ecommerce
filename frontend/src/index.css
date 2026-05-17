@@ -263,6 +263,10 @@ body {
   color: #fff;
   margin-bottom: 34px;
   letter-spacing: 0.2px;
+  display: inline-block;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .pdp-section {
@@ -332,6 +336,24 @@ body {
   color: #000;
   border-color: #fff;
 }
+.size-btn:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+  border-color: #2a2a2a;
+}
+
+.low-stock-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(226, 183, 20, 0.38);
+  background: rgba(226, 183, 20, 0.1);
+  color: #f0d36f;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
 
 .add-to-cart-large {
   margin-top: 34px;
@@ -345,6 +367,25 @@ body {
   text-transform: uppercase;
   border-radius: 3px;
   box-shadow: 0 8px 24px rgba(255, 255, 255, 0.12);
+}
+.buy-now-inline {
+  width: 100%;
+  min-height: 52px;
+  margin-top: -20px;
+  margin-bottom: 32px;
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  font-size: 15px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.buy-now-inline:hover {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .pdp-desc {
@@ -884,6 +925,15 @@ body {
     font-size: 18px;
     padding: 20px 18px;
   }
+
+  .buy-now-inline {
+    min-height: 48px;
+    font-size: 14px;
+  }
+
+  .sticky-buy-bar {
+    display: flex;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1104,4 +1154,44 @@ body {
   font-size: 14px;
   line-height: 1.4;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.sticky-buy-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1700;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(13, 13, 13, 0.96);
+  border-top: 1px solid #2a2a2a;
+  backdrop-filter: blur(8px);
+  animation: stickySlideIn 0.22s ease-out;
+}
+
+.sticky-buy-btn {
+  flex: 1;
+  min-height: 48px;
+  border: none;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #000;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.sticky-buy-btn.secondary {
+  background: #1f1f1f;
+  border: 1px solid #3b3b3b;
+  color: #fff;
+}
+
+@keyframes stickySlideIn {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }

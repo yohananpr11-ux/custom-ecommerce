@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import './index.css'
 
@@ -248,12 +248,15 @@ function applyProductColorOverrides(productData, productId) {
   return next;
 }
 
-function ProductDetailPage({ productId, addToCart, showToast, t, currency, curSym, locale }) {
+function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
   const [activeTab, setActiveTab] = useState('');
+  const [showStickyCta, setShowStickyCta] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const mainCtaRef = useRef(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -310,16 +313,85 @@ function ProductDetailPage({ productId, addToCart, showToast, t, currency, curSy
       });
   }, [productId]);
 
+  const productVariants = product && Array.isArray(product.variants) ? product.variants : [];
+  const productSizes = product && Array.isArray(product.sizes) ? product.sizes : [];
+
+  const selectedVariant = useMemo(() => (
+    findMatchingVariant(productVariants, selectedColor, selectedSize)
+  ), [productVariants, selectedColor, selectedSize]);
+
+  const availableSizesForColor = useMemo(() => {
+    const normalizedColor = normalizeValue(selectedColor);
+    const sizes = new Set();
+    productVariants.forEach((variant) => {
+      if (
+        normalizeValue(variant.color) === normalizedColor
+        && Number(variant.isEnabled) !== 0
+        && Number(variant.isAvailable) !== 0
+      ) {
+        sizes.add(variant.size);
+      }
+    });
+    return sizes;
+  }, [productVariants, selectedColor]);
+
+  useEffect(() => {
+    if (!selectedColor || productSizes.length === 0) return;
+    if (availableSizesForColor.size === 0) return;
+
+    if (!availableSizesForColor.has(selectedSize)) {
+      const fallbackSize = productSizes.find((size) => availableSizesForColor.has(size));
+      if (fallbackSize) setSelectedSize(fallbackSize);
+    }
+  }, [selectedColor, selectedSize, availableSizesForColor, productSizes]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    const syncViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    syncViewport();
+    if (mediaQuery.addEventListener) mediaQuery.addEventListener('change', syncViewport);
+    else mediaQuery.addListener(syncViewport);
+
+    return () => {
+      if (mediaQuery.removeEventListener) mediaQuery.removeEventListener('change', syncViewport);
+      else mediaQuery.removeListener(syncViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mainCtaRef.current || !isMobileViewport) {
+      setShowStickyCta(false);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        setShowStickyCta(!entry.isIntersecting);
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -8% 0px' }
+    );
+
+    observer.observe(mainCtaRef.current);
+    return () => observer.disconnect();
+  }, [isMobileViewport]);
+
+  const selectedVariantStock = selectedVariant && Number.isFinite(Number(selectedVariant.stockQty))
+    ? Number(selectedVariant.stockQty)
+    : null;
+  const isLowStock = selectedVariantStock !== null && selectedVariantStock > 0 && selectedVariantStock < 5;
+
   if (loading) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>Loading...</div>;
   if (!product) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>Product not found</div>;
 
-  const handleAdd = () => {
+  const handleAdd = (mode = 'cart') => {
     let variantId = null;
     if (product.variants && product.variants.length > 0) {
       const matchedVariant = findMatchingVariant(product.variants, selectedColor, selectedSize);
       if (!matchedVariant || !matchedVariant.id) {
         showToast('בחר צבע ומידה זמינים כדי להוסיף לסל');
-        return;
+        return false;
       }
       variantId = matchedVariant.id;
     }
@@ -335,7 +407,9 @@ function ProductDetailPage({ productId, addToCart, showToast, t, currency, curSy
       selectedColor,
       selectedSize,
       variantId
-    });
+    }, { openCart: mode !== 'buy', onAdded: mode === 'buy' ? () => goToCheckout() : null });
+
+    return true;
   };
 
   const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / 3.75)) : product.price;
@@ -389,11 +463,15 @@ function ProductDetailPage({ productId, addToCart, showToast, t, currency, curSy
             {product.sizes && product.sizes.length > 1 && (
               <div className="pdp-section">
                 <h3>גודל</h3>
+                {isLowStock && (
+                  <div className="low-stock-badge">נשארו יחידות אחרונות במידה זו</div>
+                )}
                 <div className="pdp-options">
                   {product.sizes.map(s => (
                     <button 
                       key={s}
                       className={`size-btn ${selectedSize === s ? 'active' : ''}`}
+                      disabled={availableSizesForColor.size > 0 && !availableSizesForColor.has(s)}
                       onClick={() => setSelectedSize(s)}
                     >
                       {s}
@@ -403,8 +481,11 @@ function ProductDetailPage({ productId, addToCart, showToast, t, currency, curSy
               </div>
             )}
 
-            <button className="checkout-btn add-to-cart-large" onClick={handleAdd}>
+            <button ref={mainCtaRef} className="checkout-btn add-to-cart-large" onClick={() => handleAdd('cart')}>
               {t('add_to_cart')}
+            </button>
+            <button className="buy-now-inline" onClick={() => handleAdd('buy')}>
+              קנה עכשיו
             </button>
 
             <div className="pdp-accordion">
@@ -436,6 +517,17 @@ function ProductDetailPage({ productId, addToCart, showToast, t, currency, curSy
           </div>
         </div>
       </div>
+
+      {showStickyCta && (
+        <div className="sticky-buy-bar">
+          <button className="sticky-buy-btn secondary" onClick={() => handleAdd('cart')}>
+            {t('add_to_cart')}
+          </button>
+          <button className="sticky-buy-btn" onClick={() => handleAdd('buy')}>
+            קנה עכשיו
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -638,15 +730,28 @@ function MainApp() {
       });
   };
 
-  const addToCart = (product) => {
+  const goToCheckoutNow = () => {
+    setIsCartOpen(false);
+    window.history.pushState({}, '', '/checkout');
+    window.dispatchEvent(new Event('popstate'));
+  };
+
+  const addToCart = (product, options = {}) => {
+    const { openCart = true, onAdded } = options;
     const cartId = product.cartId || `${product.id}`;
-    const existing = cart.find(item => (item.cartId || `${item.id}`) === cartId)
-    if (existing) {
-      setCart(cart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: item.quantity + 1 } : item)))
-    } else {
-      setCart([...cart, { ...product, cartId, quantity: 1 }])
-    }
-    setIsCartOpen(true)
+    setCart((prevCart) => {
+      const existing = prevCart.find(item => (item.cartId || `${item.id}`) === cartId);
+      const nextCart = existing
+        ? prevCart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: item.quantity + 1 } : item))
+        : [...prevCart, { ...product, cartId, quantity: 1 }];
+
+      if (typeof onAdded === 'function') {
+        setTimeout(() => onAdded(nextCart), 0);
+      }
+
+      return nextCart;
+    });
+    if (openCart) setIsCartOpen(true)
   }
 
   const removeFromCart = (cartId) => {
@@ -913,7 +1018,7 @@ function MainApp() {
   // ============ ROUTE: PRODUCT DETAIL PAGE ============
   if (currentPath.startsWith('/product/')) {
     const productId = currentPath.split('/')[2];
-    return <ProductDetailPage productId={productId} addToCart={addToCart} showToast={showToast} t={t} currency={currency} curSym={curSym} locale={locale} />;
+    return <ProductDetailPage productId={productId} addToCart={addToCart} goToCheckout={goToCheckoutNow} showToast={showToast} t={t} currency={currency} curSym={curSym} locale={locale} />;
   }
 
   // ============ ROUTE: 404 ============
