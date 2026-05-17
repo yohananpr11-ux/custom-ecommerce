@@ -155,6 +155,7 @@ const getCartUnitPrice = (item, currency, exchangeRate) => {
 const expandCartUnits = (cart) => {
   const units = [];
   cart.forEach((item) => {
+    if (!isTeeProduct(item)) return;
     const quantity = Number(item.quantity) || 0;
     const unitPrice = Number(item.price || 0);
     for (let index = 0; index < quantity; index += 1) {
@@ -170,14 +171,17 @@ const expandCartUnits = (cart) => {
 };
 
 const calculateBundlePricing = (cart) => {
-  const units = expandCartUnits(cart);
-  const totalQuantity = units.length;
-  const bundleSets = Math.floor(totalQuantity / BUNDLE_ITEM_COUNT);
+  const teeUnits = expandCartUnits(cart);
+  const teeCount = teeUnits.length;
+  const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const bundleSets = Math.floor(teeCount / BUNDLE_ITEM_COUNT);
   const bundleUnitsCount = bundleSets * BUNDLE_ITEM_COUNT;
 
-  const baseSubtotal = units.reduce((sum, unit) => sum + unit.unitPrice, 0);
-  const remainderSubtotal = units.slice(bundleUnitsCount).reduce((sum, unit) => sum + unit.unitPrice, 0);
-  const subtotalAfterDiscounts = (bundleSets * BUNDLE_ITEM_PRICE) + remainderSubtotal;
+  const teeSubtotal = teeUnits.reduce((sum, unit) => sum + unit.unitPrice, 0);
+  const nonTeeSubtotal = cart.filter(item => !isTeeProduct(item)).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const baseSubtotal = teeSubtotal + nonTeeSubtotal;
+  const remainderTeeSubtotal = teeUnits.slice(bundleUnitsCount).reduce((sum, unit) => sum + unit.unitPrice, 0);
+  const subtotalAfterDiscounts = (bundleSets * BUNDLE_ITEM_PRICE) + remainderTeeSubtotal + nonTeeSubtotal;
   const bundleDiscount = Math.max(0, baseSubtotal - subtotalAfterDiscounts);
 
   return {
@@ -1017,6 +1021,7 @@ function MainApp() {
       <div className="announcement-bar">
         {t('announcement')}
       </div>
+      <script>{`document.documentElement.dir = '${locale === 'he' ? 'rtl' : 'ltr'}'; document.documentElement.lang = '${locale}';`}</script>
 
       <header className="header container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
