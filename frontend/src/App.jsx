@@ -139,10 +139,16 @@ function getProductTitle(title, locale) {
   return title;
 }
 
-/** Check if a product is a tee (not hoodie) */
+/** Check if a product is a tee (not hoodie or tank) */
 function isTeeProduct(product) {
+  if (!product || !product.title) return false;
   const t = product.title.toLowerCase();
-  return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
+  // Exclude hoodies, sweatshirts, and tank tops - they don't qualify for bundle
+  if (t.includes('hoodie') || t.includes('sweatshirt') || t.includes('tank')) {
+    return false;
+  }
+  // Include only actual t-shirts/tees
+  return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt'));
 }
 
 const getCartUnitPrice = (item, currency, exchangeRate) => {

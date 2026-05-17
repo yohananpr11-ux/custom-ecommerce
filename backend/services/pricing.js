@@ -13,6 +13,7 @@ class PricingEngine {
       'softstyle':   89.90,   // Gildan 64000 basic tee
       'jersey':      119.90,  // Bella+Canvas 3001 premium tee
       'hoodie':      159.90,  // Gildan 18500 hooded sweatshirt
+      'tank':        null,    // Tank tops: dynamic pricing based on cost (no fixed target)
     };
 
     // Shipping cost displayed separately at checkout
@@ -28,6 +29,7 @@ class PricingEngine {
     if (lower.includes('softstyle') || lower.includes('gildan 64000') || lower.includes('64000')) return 'softstyle';
     if (lower.includes('jersey') || lower.includes('bella') || lower.includes('canvas') || lower.includes('3001')) return 'jersey';
     if (lower.includes('hoodie') || lower.includes('hooded') || lower.includes('sweatshirt') || lower.includes('18500')) return 'hoodie';
+    if (lower.includes('tank') || lower.includes('tank top')) return 'tank';
     if (lower.includes('tee') || lower.includes('t-shirt') || lower.includes('shirt')) return 'softstyle'; // fallback tee
     return 'softstyle'; // ultimate fallback
   }
@@ -41,12 +43,27 @@ class PricingEngine {
   }
 
   /**
-   * Calculate optimal price - uses fixed target prices instead of cost-based formula
+   * Calculate optimal price - fixed targets for tees/hoodies, dynamic for tanks
    */
   calculateOptimalPriceNIS(baseCostUSD, shippingCostUSD = 0, title = '', type = 'printify') {
     if (title) {
-      return this.getTargetPrice(title, type);
+      const category = this.getProductCategory(title);
+      
+      // Tank tops: dynamic pricing based on manufacturing cost
+      if (category === 'tank') {
+        const costInILS = baseCostUSD * this.exchangeRateUSDILS;
+        // 2.5x multiplier: costs ~$12 (₪45) → retail ₪109.90, maintains margin
+        const profitMarginMultiplier = 2.5;
+        const targetPrice = costInILS * profitMarginMultiplier;
+        // Round to marketing-friendly price ending in .90
+        return Math.floor(targetPrice / 10) * 10 + 9.90;
+      }
+      
+      // Fixed prices for tees and hoodies
+      const fixedPrice = this.targetPricesILS[category] || 89.90;
+      return fixedPrice;
     }
+    
     // Fallback: cost-based calculation for unknown products
     const totalCostUSD = baseCostUSD + shippingCostUSD;
     const totalCostNIS = totalCostUSD * this.exchangeRateUSDILS;

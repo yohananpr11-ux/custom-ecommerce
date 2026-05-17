@@ -98,14 +98,41 @@ const expandOrderUnits = (items = []) => {
   return units.sort((a, b) => b.unitPrice - a.unitPrice);
 };
 
+const isTeeProduct = (product = {}) => {
+  if (!product || !product.title) return false;
+  const title = (product.title || '').toLowerCase();
+  // Exclude hoodies, sweatshirts, and tank tops - they don't qualify for bundle
+  if (title.includes('hoodie') || title.includes('sweatshirt') || title.includes('tank')) {
+    return false;
+  }
+  // Include only actual t-shirts/tees
+  return (title.includes('tee') || title.includes('t-shirt') || title.includes('shirt'));
+};
+
+const expandOrderUnitsForBundle = (items = []) => {
+  const units = [];
+  items.forEach((item) => {
+    if (!isTeeProduct(item)) return;
+    const quantity = Number(item.quantity) || 0;
+    const unitPrice = Number(item.price) || 0;
+    for (let index = 0; index < quantity; index += 1) {
+      units.push({ unitPrice });
+    }
+  });
+  return units.sort((a, b) => b.unitPrice - a.unitPrice);
+};
+
 const calculateOrderPricing = (items = [], couponCode = null) => {
-  const units = expandOrderUnits(items);
-  const totalQuantity = units.length;
-  const bundleSets = Math.floor(totalQuantity / BUNDLE_ITEM_COUNT);
+  const teeUnits = expandOrderUnitsForBundle(items);
+  const teeCount = teeUnits.length;
+  const totalQuantity = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+  const bundleSets = Math.floor(teeCount / BUNDLE_ITEM_COUNT);
   const bundleUnitsCount = bundleSets * BUNDLE_ITEM_COUNT;
-  const baseSubtotal = units.reduce((sum, unit) => sum + unit.unitPrice, 0);
-  const remainderSubtotal = units.slice(bundleUnitsCount).reduce((sum, unit) => sum + unit.unitPrice, 0);
-  const subtotalAfterBundle = (bundleSets * BUNDLE_ITEM_PRICE_NIS) + remainderSubtotal;
+  const teeSubtotal = teeUnits.reduce((sum, unit) => sum + unit.unitPrice, 0);
+  const nonTeeSubtotal = items.filter(item => !isTeeProduct(item)).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const baseSubtotal = teeSubtotal + nonTeeSubtotal;
+  const remainderTeesSubtotal = teeUnits.slice(bundleUnitsCount).reduce((sum, unit) => sum + unit.unitPrice, 0);
+  const subtotalAfterBundle = (bundleSets * BUNDLE_ITEM_PRICE_NIS) + remainderTeesSubtotal + nonTeeSubtotal;
   const bundleDiscount = Math.max(0, baseSubtotal - subtotalAfterBundle);
   const couponDiscount = currentActiveCoupon && couponCode && currentActiveCoupon.code === couponCode
     ? Math.max(0, subtotalAfterBundle * (Number(currentActiveCoupon.discount_pct) / 100))
