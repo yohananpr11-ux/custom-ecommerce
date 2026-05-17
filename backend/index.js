@@ -80,6 +80,52 @@ const getOrderTotalAmount = (orderId) => new Promise((resolve, reject) => {
   });
 });
 
+const BUNDLE_ITEM_PRICE_NIS = 229;
+const BUNDLE_ITEM_COUNT = 3;
+const SHIPPING_COST_NIS = 29.90;
+const FREE_SHIPPING_THRESHOLD = 5;
+
+const expandOrderUnits = (items = []) => {
+  const units = [];
+  items.forEach((item) => {
+    const quantity = Number(item.quantity) || 0;
+    const unitPrice = Number(item.price) || 0;
+    for (let index = 0; index < quantity; index += 1) {
+      units.push({ unitPrice });
+    }
+  });
+
+  return units.sort((a, b) => b.unitPrice - a.unitPrice);
+};
+
+const calculateOrderPricing = (items = [], couponCode = null) => {
+  const units = expandOrderUnits(items);
+  const totalQuantity = units.length;
+  const bundleSets = Math.floor(totalQuantity / BUNDLE_ITEM_COUNT);
+  const bundleUnitsCount = bundleSets * BUNDLE_ITEM_COUNT;
+  const baseSubtotal = units.reduce((sum, unit) => sum + unit.unitPrice, 0);
+  const remainderSubtotal = units.slice(bundleUnitsCount).reduce((sum, unit) => sum + unit.unitPrice, 0);
+  const subtotalAfterBundle = (bundleSets * BUNDLE_ITEM_PRICE_NIS) + remainderSubtotal;
+  const bundleDiscount = Math.max(0, baseSubtotal - subtotalAfterBundle);
+  const couponDiscount = currentActiveCoupon && couponCode && currentActiveCoupon.code === couponCode
+    ? Math.max(0, subtotalAfterBundle * (Number(currentActiveCoupon.discount_pct) / 100))
+    : 0;
+  const subtotalAfterDiscounts = Math.max(0, subtotalAfterBundle - couponDiscount);
+  const shippingCost = totalQuantity >= FREE_SHIPPING_THRESHOLD ? 0 : (totalQuantity > 0 ? SHIPPING_COST_NIS : 0);
+  const totalAmount = Math.max(0, subtotalAfterDiscounts + shippingCost);
+
+  return {
+    totalQuantity,
+    bundleSets,
+    bundleDiscount,
+    couponDiscount,
+    shippingCost,
+    baseSubtotal,
+    subtotalAfterDiscounts,
+    totalAmount,
+  };
+};
+
 const dbGetAsync = (query, params = []) => new Promise((resolve, reject) => {
   db.get(query, params, (err, row) => {
     if (err) return reject(err);
@@ -671,10 +717,11 @@ app.post('/api/contact', async (req, res) => {
 });
 
 // General Order Creation Helper
-const createPendingOrder = (customerName, customerEmail, address, items, totalAmount) => {
+const createPendingOrder = (customerName, customerEmail, address, items, couponCode) => {
   return new Promise((resolve, reject) => {
+    const pricing = calculateOrderPricing(items, couponCode);
     db.run(`INSERT INTO orders (customerName, customerEmail, address, totalAmount, status) VALUES (?, ?, ?, ?, ?)`, 
-      [customerName, customerEmail, address, totalAmount, 'pending_payment'], 
+      [customerName, customerEmail, address, pricing.totalAmount, 'pending_payment'], 
       function(err) {
         if (err) return reject(err);
         const orderId = this.lastID;
@@ -683,31 +730,33 @@ const createPendingOrder = (customerName, customerEmail, address, items, totalAm
             [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null]);
         });
 
-        telegram.notifyNewOrder(orderId, customerName, totalAmount, items).catch(() => null);
+        telegram.notifyNewOrder(orderId, customerName, pricing.totalAmount, items).catch(() => null);
 
-        resolve(orderId);
+        resolve({ orderId, pricing });
       });
   });
 };
 
 // Checkout via Stripe (USD)
 app.post('/api/checkout/stripe', async (req, res) => {
-  const { customerName, customerEmail, address, items, totalAmount } = req.body;
+  const { customerName, customerEmail, address, items, couponCode } = req.body;
   
   try {
-    const orderId = await createPendingOrder(customerName, customerEmail, address, items, totalAmount);
+    const { orderId, pricing } = await createPendingOrder(customerName, customerEmail, address, items, couponCode);
+    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
+    const stripeAmountCents = Math.max(50, Math.round((pricing.totalAmount / exchangeRate) * 100));
     
     // Create Stripe Session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      line_items: items.map(item => ({
+      line_items: [{
         price_data: {
           currency: 'usd',
-          product_data: { name: item.title },
-          unit_amount: Math.round((item.price / 3.7) * 100), // convert NIS to USD cents roughly
+          product_data: { name: `Drip Street bundle order #${orderId}` },
+          unit_amount: stripeAmountCents,
         },
-        quantity: item.quantity,
-      })),
+        quantity: 1,
+      }],
       mode: 'payment',
       success_url: `${FRONTEND_BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${FRONTEND_BASE_URL}/cart`,
@@ -724,10 +773,10 @@ app.post('/api/checkout/stripe', async (req, res) => {
 
 // Checkout via PayPlus/Grow (NIS)
 app.post('/api/checkout/payplus', async (req, res) => {
-  const { customerName, customerEmail, address, items, totalAmount } = req.body;
+  const { customerName, customerEmail, address, items, couponCode } = req.body;
   
   try {
-    const orderId = await createPendingOrder(customerName, customerEmail, address, items, totalAmount);
+    const { orderId, pricing } = await createPendingOrder(customerName, customerEmail, address, items, couponCode);
     
     // Integration logic for PayPlus
     // Normally we make an axios.post to api.payplus.co.il with payload
@@ -739,7 +788,7 @@ app.post('/api/checkout/payplus', async (req, res) => {
 
     // Return a mocked URL for demonstration if no keys
     const mockPaymentUrl = `https://payment.payplus.co.il/mock-checkout/${orderId}`;
-    res.json({ success: true, paymentUrl: mockPaymentUrl });
+    res.json({ success: true, paymentUrl: mockPaymentUrl, amount: pricing.totalAmount });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to initialize PayPlus checkout' });

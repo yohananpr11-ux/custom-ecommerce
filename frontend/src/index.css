@@ -871,6 +871,27 @@ body {
     margin-top: 24px;
   }
 
+  .bundle-banner {
+    margin: 14px 0 8px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .bundle-banner.active {
+    background: rgba(76, 175, 80, 0.12);
+    color: #8dff9e;
+    border: 1px solid rgba(76, 175, 80, 0.28);
+  }
+
+  .bundle-banner.hint {
+    background: rgba(255, 255, 255, 0.04);
+    color: #f0d7a8;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
   .cat-btn {
     padding: 6px 16px;
     font-size: 12px;

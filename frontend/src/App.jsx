@@ -5,8 +5,8 @@ import './index.css'
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
 const SHIPPING_COST = 29.90;
 const FREE_SHIPPING_THRESHOLD = 5;
-const BUNDLE_TEE_PRICE = 229; // 3 tees for 229₪
-const BUNDLE_TEE_COUNT = 3;
+const BUNDLE_ITEM_PRICE = 229;
+const BUNDLE_ITEM_COUNT = 3;
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
@@ -28,7 +28,7 @@ class ErrorBoundary extends React.Component {
 const translations = {
   he: {
     logo: "DRIP STREET",
-    announcement: "משלוח חינם בקניית 5 פריטים ומעלה | מארז 3 חולצות ב-229 ₪",
+    announcement: "משלוח חינם בקניית 5 פריטים ומעלה | מבצע 3 פריטים ב-229 ₪",
     search_placeholder: "חפש פריטים...",
     cart: "סל קניות",
     hero_title: "ELEVATE YOUR STYLE",
@@ -53,7 +53,9 @@ const translations = {
     payment_stripe: "PayPal / Stripe",
     order_summary: "סיכום הזמנה",
     subtotal: "סכום",
-    bundle_deal: "🎁 3 טי-שירטס",
+    bundle_deal: "🎁 מבצע 3 פריטים",
+    bundle_active: "🎉 מבצע 3 פריטים הוחל בהצלחה!",
+    bundle_hint: "הוסף פריט נוסף לקבלת מחיר המבצע!",
     shipping: "משלוח",
     free: "חינם",
     vat: "סה'כ",
@@ -71,7 +73,7 @@ const translations = {
   },
   en: {
     logo: "DRIP STREET",
-    announcement: "Complimentary shipping on 5+ items | 3-Tee Bundle for 229 ₪",
+    announcement: "Complimentary shipping on 5+ items | 3-item bundle for 229 ₪",
     search_placeholder: "Search items...",
     cart: "Cart",
     hero_title: "ELEVATE YOUR STYLE",
@@ -96,7 +98,9 @@ const translations = {
     payment_stripe: "Stripe ($)",
     order_summary: "Order Summary",
     subtotal: "Subtotal",
-    bundle_deal: "🎁 Bundle Deal (3 Tees)",
+    bundle_deal: "🎁 3-item bundle",
+    bundle_active: "🎉 3-item bundle applied successfully!",
+    bundle_hint: "Add one more item to unlock the bundle price!",
     shipping: "Shipping",
     free: "FREE",
     vat: "VAT (0% - Osek Patur)",
@@ -140,6 +144,50 @@ function isTeeProduct(product) {
   const t = product.title.toLowerCase();
   return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
 }
+
+const getCartUnitPrice = (item, currency, exchangeRate) => {
+  if (currency === 'USD') {
+    return Number(item.priceUSD || (item.price / exchangeRate) || 0);
+  }
+  return Number(item.price || 0);
+};
+
+const expandCartUnits = (cart) => {
+  const units = [];
+  cart.forEach((item) => {
+    const quantity = Number(item.quantity) || 0;
+    const unitPrice = Number(item.price || 0);
+    for (let index = 0; index < quantity; index += 1) {
+      units.push({
+        title: item.title,
+        unitPrice,
+        cartId: item.cartId || `${item.id}`,
+      });
+    }
+  });
+
+  return units.sort((a, b) => b.unitPrice - a.unitPrice);
+};
+
+const calculateBundlePricing = (cart) => {
+  const units = expandCartUnits(cart);
+  const totalQuantity = units.length;
+  const bundleSets = Math.floor(totalQuantity / BUNDLE_ITEM_COUNT);
+  const bundleUnitsCount = bundleSets * BUNDLE_ITEM_COUNT;
+
+  const baseSubtotal = units.reduce((sum, unit) => sum + unit.unitPrice, 0);
+  const remainderSubtotal = units.slice(bundleUnitsCount).reduce((sum, unit) => sum + unit.unitPrice, 0);
+  const subtotalAfterDiscounts = (bundleSets * BUNDLE_ITEM_PRICE) + remainderSubtotal;
+  const bundleDiscount = Math.max(0, baseSubtotal - subtotalAfterDiscounts);
+
+  return {
+    totalQuantity,
+    bundleSets,
+    bundleDiscount,
+    baseSubtotal,
+    subtotalAfterDiscounts,
+  };
+};
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
 const GLOBAL_ERROR_TOAST_HE = 'אירעה שגיאה זמנית, אנא נסה שוב';
@@ -727,45 +775,19 @@ function MainApp() {
 
   // ============ PRICING LOGIC ============
   
-  // Count total items in cart
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const bundlePricing = calculateBundlePricing(cart);
+  const baseSubtotal = bundlePricing.baseSubtotal;
+  const bundleSets = bundlePricing.bundleSets;
+  const bundleDiscount = bundlePricing.bundleDiscount;
+  const bundleActive = bundleSets > 0;
   
-  // Count tee items for bundle deal
-  const teeItemsCount = cart
-    .filter(item => isTeeProduct(item))
-    .reduce((sum, item) => sum + item.quantity, 0);
-  
-  // Calculate base subtotal (before promotions)
-  const baseSubtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-  
-  // Calculate bundle discount: "3 tees for 229₪"
-  const bundleSets = Math.floor(teeItemsCount / BUNDLE_TEE_COUNT);
-  let bundleDiscount = 0;
-  if (bundleSets > 0) {
-    // Get tee items sorted by price descending (discount the most expensive ones first)
-    const teeItems = cart.filter(item => isTeeProduct(item));
-    const teePrices = [];
-    teeItems.forEach(item => {
-      for (let i = 0; i < item.quantity; i++) teePrices.push(item.price);
-    });
-    teePrices.sort((a, b) => b - a);
-    
-    const teesInBundle = bundleSets * BUNDLE_TEE_COUNT;
-    const originalBundleTotal = teePrices.slice(0, teesInBundle).reduce((s, p) => s + p, 0);
-    bundleDiscount = originalBundleTotal - (bundleSets * BUNDLE_TEE_PRICE);
-    if (bundleDiscount < 0) bundleDiscount = 0;
-  }
-  
-  // Coupon discount
   const couponDiscount = activeCoupon ? (baseSubtotal - bundleDiscount) * (activeCoupon.discount_pct / 100) : 0;
   
-  // Shipping
   const isFreeShipping = totalItems >= FREE_SHIPPING_THRESHOLD;
   const shippingCost = isFreeShipping ? 0 : (totalItems > 0 ? SHIPPING_COST : 0);
   const itemsToFreeShipping = FREE_SHIPPING_THRESHOLD - totalItems;
-  
-  // Final total
-  const subtotalAfterDiscounts = baseSubtotal - bundleDiscount - couponDiscount;
+  const subtotalAfterDiscounts = Math.max(0, bundlePricing.subtotalAfterDiscounts - couponDiscount);
   const cartTotal = subtotalAfterDiscounts + shippingCost;
 
   // ============ NAVIGATION ============
@@ -805,6 +827,8 @@ function MainApp() {
           address: e.target.address.value,
           items: cart,
           totalAmount: cartTotal,
+          bundleCount: BUNDLE_ITEM_COUNT,
+          bundlePrice: BUNDLE_ITEM_PRICE,
           shippingCost: shippingCost,
           bundleDiscount: bundleDiscount,
           couponCode: activeCoupon ? activeCoupon.code : null
@@ -1067,7 +1091,9 @@ function MainApp() {
             ) : (
               filteredProducts.map(product => {
                 const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-                const dealBadgeText = currency === 'USD' ? '3 for $61.90' : '3 ב-229₪';
+                const dealBadgeText = currency === 'USD'
+                  ? `${curSym}${displayVal(BUNDLE_ITEM_PRICE).toFixed(2)} for 3 items`
+                  : '3 פריטים ב-229₪';
                 
                 return (
                   <motion.div 
@@ -1088,9 +1114,7 @@ function MainApp() {
                       {product.backImageUrl && (
                         <img loading="lazy" src={product.backImageUrl} alt={`${product.title} back`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
-                      {isTeeProduct(product) && (
-                        <span className="deal-badge">{dealBadgeText}</span>
-                      )}
+                      <span className="deal-badge">{dealBadgeText}</span>
                     </div>
                     <div className="product-info">
                       <h3 
@@ -1133,6 +1157,12 @@ function MainApp() {
           <button className="close-cart" aria-label="Close cart" onClick={() => setIsCartOpen(false)}>×</button>
         </div>
 
+        {bundleActive ? (
+          <div className="bundle-banner active">{t('bundle_active')}</div>
+        ) : totalItems === 2 ? (
+          <div className="bundle-banner hint">{t('bundle_hint')}</div>
+        ) : null}
+
         {/* Free Shipping Progress Bar */}
         {totalItems > 0 && (
           <div className="shipping-progress">
@@ -1156,14 +1186,12 @@ function MainApp() {
 
         <div className="cart-items">
           {cart.map(item => {
-            const itemPrice = currency === 'USD' ? (item.priceUSD || (item.price / exchangeRate)) : item.price;
-            const itemDealBadgeText = currency === 'USD' ? '3 for $61.90' : '3 ב-229₪';
+            const itemPrice = getCartUnitPrice(item, currency, exchangeRate);
             
             return (
               <div key={item.cartId || item.id} className="cart-item">
                 <div style={{ flex: 1 }}>
                   <strong>{item.title}</strong>
-                  {isTeeProduct(item) && <span className="cart-deal-hint">{itemDealBadgeText}</span>}
                   <div className="cart-qty-controls">
                     <button onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity - 1)}>−</button>
                     <span>{item.quantity}</span>
