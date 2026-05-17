@@ -163,6 +163,16 @@ app.post('/api/admin/printify-sync', async (req, res) => {
   }
 });
 
+// Admin Force Price Update
+app.post('/api/admin/update-prices', async (req, res) => {
+  try {
+    await pricingEngine.runPricingUpdate();
+    res.json({ success: true, message: 'Prices updated to target values.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Price update failed' });
+  }
+});
+
 // Contact Form Endpoint
 app.post('/api/contact', async (req, res) => {
   const { name, email, message } = req.body;
