@@ -115,14 +115,11 @@ class PrintifyService {
 
         // Filter out BLACK variants (can't see black design on black shirt)
         const filteredVariants = enabledVariants.filter(v => {
-          if (!v.options) return true;
-          for (const optId of v.options) {
-            const opt = optionMap[optId];
-            if (opt && opt.title && opt.title.toLowerCase() === 'black') {
-              return false; // Skip black variants
-            }
-          }
-          return true;
+          const variantTitle = v.title || '';
+          const isBlack = variantTitle.toLowerCase().includes('black') || 
+                         (v.options && v.options.length > 0 && 
+                          v.options.some(optId => optionMap[optId]?.title?.toLowerCase() === 'black'));
+          return !isBlack;
         });
 
         // Insert each filtered variant

@@ -228,7 +228,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
               </div>
             )}
 
-            {product.sizes && product.sizes.length > 0 && (
+            {product.sizes && product.sizes.length > 1 && (
               <div className="pdp-section">
                 <h3>גודל</h3>
                 <div className="pdp-options">
