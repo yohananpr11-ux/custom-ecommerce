@@ -1,9 +1,55 @@
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
+
+const pickFirstId = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  const first = value.split(',').map((part) => part.trim()).find(Boolean);
+  return first || null;
+};
+
+const readEnvFile = (filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    return dotenv.parse(fileContent);
+  } catch {
+    return {};
+  }
+};
+
+const resolveChatId = () => {
+  if (process.env.TELEGRAM_OWNER_CHAT_ID) return process.env.TELEGRAM_OWNER_CHAT_ID;
+
+  const fromAllowed = pickFirstId(process.env.TELEGRAM_ALLOWED_USER_IDS || '');
+  if (fromAllowed) return fromAllowed;
+
+  const userProfile = process.env.USERPROFILE || '';
+  const meniCoreEnvPaths = [
+    process.env.MENI_CORE_ENV_PATH,
+    process.env.MENI_CORE_PATH ? path.join(process.env.MENI_CORE_PATH, '.env') : null,
+    userProfile ? path.join(userProfile, 'OneDrive', 'שולחן העבודה', 'MENI_CORE', '.env') : null,
+    userProfile ? path.join(userProfile, 'OneDrive', 'Desktop', 'MENI_CORE', '.env') : null,
+    userProfile ? path.join(userProfile, 'Desktop', 'MENI_CORE', '.env') : null
+  ].filter(Boolean);
+
+  for (const envPath of meniCoreEnvPaths) {
+    const parsed = readEnvFile(envPath);
+    const ownerChat = parsed.TELEGRAM_OWNER_CHAT_ID;
+    if (ownerChat) return ownerChat;
+
+    const allowedUser = pickFirstId(parsed.TELEGRAM_ALLOWED_USER_IDS || '');
+    if (allowedUser) return allowedUser;
+  }
+
+  return null;
+};
 
 class TelegramService {
   constructor() {
     this.token = process.env.TELEGRAM_BOT_TOKEN;
-    this.chatId = process.env.TELEGRAM_OWNER_CHAT_ID;
+    this.chatId = resolveChatId();
     this.baseUrl = `https://api.telegram.org/bot${this.token}`;
   }
 
