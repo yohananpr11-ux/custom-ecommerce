@@ -85,14 +85,23 @@ async function runBot(botIndex) {
 
   try {
     const visitStart = Date.now();
-    await client.post('/api/analytics/visit', {
-      sessionId: botSessionId,
-      path: '/',
-      locale: 'he',
-      currency: 'ILS',
-      source: 'load-test-bot'
-    });
-    trace.push({ step: 'visit', ok: true, ms: Date.now() - visitStart });
+    try {
+      await client.post('/api/analytics/visit', {
+        sessionId: botSessionId,
+        path: '/',
+        locale: 'he',
+        currency: 'ILS',
+        source: 'load-test-bot'
+      });
+      trace.push({ step: 'visit', ok: true, ms: Date.now() - visitStart });
+    } catch (visitErr) {
+      trace.push({
+        step: 'visit',
+        ok: false,
+        status: visitErr.response ? visitErr.response.status : null,
+        details: visitErr.response ? JSON.stringify(visitErr.response.data) : visitErr.message
+      });
+    }
 
     const productsStart = Date.now();
     const productsRes = await client.get('/api/products');
