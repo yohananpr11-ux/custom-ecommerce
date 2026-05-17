@@ -14,6 +14,30 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock'
 
 app.use(cors());
 
+const parsePrintifyPayload = (rawBody) => {
+  if (!rawBody) return {};
+  if (typeof rawBody === 'object') return rawBody;
+  if (Buffer.isBuffer(rawBody)) {
+    const text = rawBody.toString('utf8').trim();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {};
+    }
+  }
+  if (typeof rawBody === 'string') {
+    const text = rawBody.trim();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+};
+
 // Temporary Admin Endpoint: Register Printify webhooks from Render env vars.
 // Keep this route high in the file to avoid being shadowed by other routing logic.
 const registerWebhooksHandler = async (req, res) => {
@@ -45,6 +69,19 @@ const registerWebhooksHandler = async (req, res) => {
   const results = [];
 
   try {
+    let webhookProbe;
+    try {
+      const probe = await axios.get(WEBHOOK_URL, { timeout: 7000 });
+      webhookProbe = { reachable: true, status: probe.status };
+    } catch (probeErr) {
+      webhookProbe = {
+        reachable: false,
+        details: probeErr.response && probeErr.response.status
+          ? `HTTP ${probeErr.response.status}`
+          : probeErr.message
+      };
+    }
+
     const existingRes = await axios.get(apiUrl, { headers });
     const existingHooks = Array.isArray(existingRes.data) ? existingRes.data : [];
 
@@ -75,6 +112,7 @@ const registerWebhooksHandler = async (req, res) => {
     return res.status(failed ? 207 : 200).json({
       success: failed === 0,
       webhookUrl: WEBHOOK_URL,
+      webhookProbe,
       results
     });
   } catch (err) {
@@ -168,9 +206,23 @@ app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
 });
 
 // --- Printify Webhook: Auto-sync when shop products change ---
-app.post('/api/webhooks/printify', express.json(), async (req, res) => {
+// Accept GET/HEAD for provider validation pings and POST for event payloads.
+app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res) => {
   try {
-    const { type, data } = req.body;
+    if (req.method === 'HEAD') {
+      return res.status(200).end();
+    }
+
+    if (req.method === 'GET') {
+      return res.status(200).json({
+        received: true,
+        validation: true,
+        endpoint: '/api/webhooks/printify'
+      });
+    }
+
+    const payload = parsePrintifyPayload(req.body);
+    const type = payload.type || req.headers['x-printify-topic'] || 'validation';
     
     console.log(`[Printify Webhook] Event: ${type}`);
     
@@ -191,10 +243,11 @@ app.post('/api/webhooks/printify', express.json(), async (req, res) => {
       });
     }
     
-    res.json({ received: true, event: type });
+    res.status(200).json({ received: true, event: type });
   } catch (err) {
     console.error('Printify webhook error:', err.message);
-    res.status(400).json({ error: 'Webhook error' });
+    // Return 200 to avoid webhook validation retries due to transient parsing issues.
+    res.status(200).json({ received: false, error: 'Webhook parse error' });
   }
 });
 
