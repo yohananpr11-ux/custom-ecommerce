@@ -140,6 +140,45 @@ function isTeeProduct(product) {
   return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
 }
 
+const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
+
+function setImageFallback(event, fallbackSrc = GLOBAL_IMAGE_FALLBACK) {
+  const img = event.currentTarget;
+  if (img.dataset.fallbackApplied === '1') return;
+  img.dataset.fallbackApplied = '1';
+  img.src = fallbackSrc;
+}
+
+function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_FALLBACK }) {
+  const [currentSrc, setCurrentSrc] = useState(src || fallbackSrc);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setCurrentSrc(src || fallbackSrc);
+    setFailed(false);
+  }, [src, fallbackSrc]);
+
+  const handleError = () => {
+    if (currentSrc !== fallbackSrc) {
+      setCurrentSrc(fallbackSrc);
+      return;
+    }
+
+    setFailed(true);
+  };
+
+  if (failed) {
+    return (
+      <div className={`${className} image-fallback-card`} role="img" aria-label={alt}>
+        <div className="skeleton image-fallback-skeleton" />
+        <span className="image-fallback-label">DRIP STREET</span>
+      </div>
+    );
+  }
+
+  return <img loading="lazy" src={currentSrc} alt={alt} className={className} onError={handleError} />;
+}
+
 const BLACK_COLOR_OVERRIDES = {
   '1': {
     black: {
@@ -287,14 +326,14 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
         <div className="pdp-images">
           {product.imagesByColor && product.imagesByColor[selectedColor] && product.imagesByColor[selectedColor].length > 0 ? (
             product.imagesByColor[selectedColor].map((img, i) => (
-              <img key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
+              <GuardedProductImage key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
             ))
           ) : product.images && product.images.length > 0 ? (
             product.images.map((img, i) => (
-              <img key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
+              <GuardedProductImage key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
             ))
           ) : (
-            <img src={product.imageUrl} alt={product.title} className="pdp-image" />
+            <GuardedProductImage src={product.imageUrl} alt={product.title} className="pdp-image" />
           )}
         </div>
         
@@ -882,9 +921,9 @@ function MainApp() {
                       onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
                       style={{ cursor: 'pointer' }}
                     >
-                      <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image front-img" />
+                      <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image front-img" onError={(e) => setImageFallback(e)} />
                       {product.backImageUrl && (
-                        <img loading="lazy" src={product.backImageUrl} alt={`${product.title} back`} className="product-image back-img" />
+                        <img loading="lazy" src={product.backImageUrl} alt={`${product.title} back`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
                       {isTeeProduct(product) && (
                         <span className="deal-badge">{dealBadgeText}</span>
