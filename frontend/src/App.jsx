@@ -140,6 +140,25 @@ function isTeeProduct(product) {
   return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
 }
 
+const CUSTOM_BLACK_IMAGE = '/shirt-black-design.png';
+const BLACK_OVERRIDE_PRODUCT_IDS = new Set(['1']);
+
+function applyBlackColorOverride(productData, productId) {
+  if (!productData || !BLACK_OVERRIDE_PRODUCT_IDS.has(String(productId))) return productData;
+
+  const next = { ...productData };
+  const colors = Array.isArray(next.colors) ? [...next.colors] : [];
+  const hasBlack = colors.some((c) => String(c.name || '').toLowerCase() === 'black');
+  if (!hasBlack) colors.push({ name: 'black', hex: '#111111' });
+  next.colors = colors;
+
+  const imagesByColor = { ...(next.imagesByColor || {}) };
+  imagesByColor.black = [{ src: CUSTOM_BLACK_IMAGE, position: 'front' }];
+  next.imagesByColor = imagesByColor;
+
+  return next;
+}
+
 function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -152,8 +171,6 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
     fetch(`${API_BASE}/api/products/${productId}`)
       .then(res => res.json())
       .then(data => {
-        setProduct(data);
-        
         // Build imagesByColor mapping from variants and images
         if (data.variants && data.images) {
           const imagesByColor = {};
@@ -185,13 +202,16 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
           
           data.imagesByColor = imagesByColor;
         }
+
+        const productWithOverrides = applyBlackColorOverride(data, productId);
+        setProduct(productWithOverrides);
         
         // Select first non-black color
-        if (data.colors && data.colors.length > 0) {
-          const nonBlackColor = data.colors.find(c => c.name.toLowerCase() !== 'black');
-          setSelectedColor(nonBlackColor ? nonBlackColor.name : data.colors[0].name);
+        if (productWithOverrides.colors && productWithOverrides.colors.length > 0) {
+          const nonBlackColor = productWithOverrides.colors.find(c => c.name.toLowerCase() !== 'black');
+          setSelectedColor(nonBlackColor ? nonBlackColor.name : productWithOverrides.colors[0].name);
         }
-        if (data.sizes && data.sizes.length > 0) setSelectedSize(data.sizes[0]);
+        if (productWithOverrides.sizes && productWithOverrides.sizes.length > 0) setSelectedSize(productWithOverrides.sizes[0]);
         setLoading(false);
       })
       .catch(console.error);
@@ -255,7 +275,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
               <div className="pdp-section">
                 <h3>צבע</h3>
                 <div className="pdp-options">
-                  {product.colors.filter(c => c.name.toLowerCase() !== 'black').map(c => (
+                  {product.colors.map(c => (
                     <button 
                       key={c.name}
                       className={`color-btn ${selectedColor === c.name ? 'active' : ''}`}
