@@ -14,6 +14,25 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock'
 
 app.use(cors());
 
+const visitNotificationCache = new Map();
+const VISIT_CACHE_TTL_MS = 30 * 60 * 1000;
+
+const isSimulationOrder = (order) => {
+  if (!order) return false;
+  const email = (order.customerEmail || '').toLowerCase();
+  const name = (order.customerName || '').toLowerCase();
+  const addr = (order.address || '').toLowerCase();
+  return email.includes('loadtest+') || email.includes('+sim') || name.includes('[sim]') || addr.includes('[sim]');
+};
+
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded && typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+};
+
 const parsePrintifyPayload = (rawBody) => {
   if (!rawBody) return {};
   if (typeof rawBody === 'object') return rawBody;
@@ -126,6 +145,40 @@ const registerWebhooksHandler = async (req, res) => {
 
 app.all('/api/admin/register-webhooks', registerWebhooksHandler);
 
+app.post('/api/analytics/visit', express.json(), async (req, res) => {
+  try {
+    const { sessionId, path, locale, currency, source } = req.body || {};
+    const ip = getClientIp(req);
+    const ua = (req.headers['user-agent'] || 'unknown').slice(0, 120);
+    const country = req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || 'Unknown';
+    const cacheKey = `${sessionId || 'anon'}|${ip}|${path || '/'}`;
+    const now = Date.now();
+
+    for (const [key, timestamp] of visitNotificationCache.entries()) {
+      if (now - timestamp > VISIT_CACHE_TTL_MS) visitNotificationCache.delete(key);
+    }
+
+    const lastNotifiedAt = visitNotificationCache.get(cacheKey);
+    if (!lastNotifiedAt || now - lastNotifiedAt > VISIT_CACHE_TTL_MS) {
+      visitNotificationCache.set(cacheKey, now);
+
+      const msg = `👀 <b>כניסה חדשה לחנות</b>\n\n`
+        + `<b>Path:</b> ${path || '/'}\n`
+        + `<b>Locale/Currency:</b> ${locale || '-'} / ${currency || '-'}\n`
+        + `<b>Country:</b> ${country}\n`
+        + `<b>Source:</b> ${source || 'web'}\n`
+        + `<b>IP:</b> ${ip}\n`
+        + `<b>UA:</b> ${ua}`;
+
+      telegram.sendMessage(msg).catch(() => null);
+    }
+
+    return res.json({ success: true, deduped: !!lastNotifiedAt });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Visit analytics failed' });
+  }
+});
+
 // --- Webhooks must be before express.json() to parse raw body for Stripe ---
 app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async (req, res) => {
   const payload = req.body;
@@ -160,6 +213,11 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     // Trigger Printify fulfillment since payment is confirmed
     db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
       if (!err && order) {
+        if (isSimulationOrder(order)) {
+          telegram.sendMessage(`🧪 <b>סימולציה:</b> הזמנה #${orderId} סומנה כ-paid ב-Stripe ללא שליחה ל-Printify.`).catch(() => null);
+          return;
+        }
+
         db.all(`SELECT * FROM order_items WHERE orderId = ?`, [orderId], async (err, items) => {
           if (!err && items && items.length > 0) {
             try {
@@ -178,7 +236,11 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
 
 app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
   const { transaction_uid, status, custom_field } = req.body;
-  const orderId = custom_field; // We pass orderId in custom_field during PayPlus creation
+  const orderId = Number(custom_field); // We pass orderId in custom_field during PayPlus creation
+
+  if (!orderId || Number.isNaN(orderId)) {
+    return res.status(400).json({ received: false, error: 'Invalid or missing custom_field(orderId)' });
+  }
   
   if (status === 'success') {
     console.log(`[PayPlus Webhook] Payment successful for Order #${orderId}`);
@@ -188,6 +250,11 @@ app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
     // Trigger Printify fulfillment since payment is confirmed
     db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
       if (!err && order) {
+        if (isSimulationOrder(order)) {
+          telegram.sendMessage(`🧪 <b>סימולציה:</b> הזמנה #${orderId} סומנה כ-paid ב-PayPlus ללא שליחה ל-Printify.`).catch(() => null);
+          return;
+        }
+
         db.all(`SELECT * FROM order_items WHERE orderId = ?`, [orderId], async (err, items) => {
           if (!err && items && items.length > 0) {
             try {
@@ -446,6 +513,9 @@ const createPendingOrder = (customerName, customerEmail, address, items, totalAm
           db.run(`INSERT INTO order_items (orderId, productId, quantity, price) VALUES (?, ?, ?, ?)`,
             [orderId, item.id, item.quantity, item.price]);
         });
+
+        telegram.notifyNewOrder(orderId, customerName, totalAmount, items).catch(() => null);
+
         resolve(orderId);
       });
   });

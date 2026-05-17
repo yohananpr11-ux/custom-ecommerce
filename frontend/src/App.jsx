@@ -368,6 +368,22 @@ function MainApp() {
         if (data.currency === 'USD') {
           setPaymentMethod('stripe');
         }
+
+        const visitKey = 'drip_street_visit_notified';
+        if (!sessionStorage.getItem(visitKey)) {
+          fetch(`${API_BASE}/api/analytics/visit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: chatSessionId,
+              path: window.location.pathname,
+              locale: data.locale,
+              currency: data.currency,
+              source: 'storefront'
+            })
+          }).catch(() => null);
+          sessionStorage.setItem(visitKey, '1');
+        }
       })
       .catch(err => console.warn("Geolocation fallback applied:", err));
 
