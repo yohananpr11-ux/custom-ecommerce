@@ -89,6 +89,16 @@ db.serialize(() => {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS processed_webhooks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider TEXT NOT NULL,
+      eventId TEXT NOT NULL,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(provider, eventId)
+    )
+  `);
+
   // Migrate: add new columns to existing products table if they don't exist
   db.run(`ALTER TABLE products ADD COLUMN backImageUrl TEXT`, () => {});
   db.run(`ALTER TABLE products ADD COLUMN images TEXT`, () => {});

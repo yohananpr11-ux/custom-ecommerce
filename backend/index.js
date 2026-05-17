@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const crypto = require('crypto');
 const db = require('./db');
 const telegram = require('./services/telegram');
 const pricingEngine = require('./services/pricing');
@@ -79,6 +80,53 @@ const getOrderTotalAmount = (orderId) => new Promise((resolve, reject) => {
   });
 });
 
+const dbGetAsync = (query, params = []) => new Promise((resolve, reject) => {
+  db.get(query, params, (err, row) => {
+    if (err) return reject(err);
+    resolve(row);
+  });
+});
+
+const dbAllAsync = (query, params = []) => new Promise((resolve, reject) => {
+  db.all(query, params, (err, rows) => {
+    if (err) return reject(err);
+    resolve(rows || []);
+  });
+});
+
+const dbRunAsync = (query, params = []) => new Promise((resolve, reject) => {
+  db.run(query, params, function(err) {
+    if (err) return reject(err);
+    resolve({ lastID: this.lastID, changes: this.changes });
+  });
+});
+
+const reserveWebhookEvent = async (provider, eventId) => {
+  if (!provider || !eventId) return true;
+  const result = await dbRunAsync(
+    `INSERT OR IGNORE INTO processed_webhooks (provider, eventId) VALUES (?, ?)`,
+    [provider, eventId]
+  );
+  return result.changes > 0;
+};
+
+const getOrderItemSummary = async (orderId) => {
+  const rows = await dbAllAsync(
+    `SELECT oi.quantity, oi.selectedColor, oi.selectedSize, p.title
+     FROM order_items oi
+     LEFT JOIN products p ON p.id = oi.productId
+     WHERE oi.orderId = ?
+     ORDER BY oi.id ASC`,
+    [orderId]
+  );
+
+  if (!rows.length) return { totalItems: 0, firstItemLabel: 'N/A' };
+  const totalItems = rows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  const first = rows[0];
+  const firstItemLabel = `${first.quantity || 1}x ${first.title || 'Item'}${first.selectedColor ? ` (${first.selectedColor}` : ''}${first.selectedSize ? ` / ${first.selectedSize}` : ''}${first.selectedColor ? ')' : ''}`;
+  return { totalItems, firstItemLabel };
+};
+
 const getPaidRevenueTotal = () => new Promise((resolve, reject) => {
   db.get(`SELECT COALESCE(SUM(totalAmount), 0) AS totalPaid FROM orders WHERE status = 'paid'`, [], (err, row) => {
     if (err) return reject(err);
@@ -90,14 +138,38 @@ const getPaidRevenueTotal = () => new Promise((resolve, reject) => {
 const sendPaymentNotification = async ({ provider, orderId, amountText }) => {
   try {
     const totalPaid = await getPaidRevenueTotal();
+    const itemSummary = await getOrderItemSummary(orderId);
     await telegram.sendMessage(
-      `💰 <b>תשלום התקבל! (${provider})</b>\n\n`
-      + `<b>הזמנה:</b> #${orderId}\n`
-      + `<b>סכום עסקה:</b> ${amountText}\n`
-      + `<b>סה"כ נכנס (שולם):</b> ₪${totalPaid.toFixed(2)}`
+      `🛍️ <b>NEW ORDER RECEIVED</b>\n\n`
+      + `<b>Order:</b> #${orderId}\n`
+      + `<b>Provider:</b> ${provider}\n`
+      + `<b>Total:</b> ${amountText}\n`
+      + `<b>Items:</b> ${itemSummary.totalItems}\n`
+      + `<b>Top Item:</b> ${itemSummary.firstItemLabel}\n`
+      + `<b>Total Revenue:</b> ₪${totalPaid.toFixed(2)}`
     );
   } catch (err) {
     await telegram.sendMessage(`⚠️ <b>תשלום נקלט אבל חישוב סכום מצטבר נכשל</b>\nהזמנה #${orderId}`).catch(() => null);
+  }
+};
+
+const processPaidOrderFulfillment = async (orderId, providerTag) => {
+  const order = await dbGetAsync(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+  if (!order) return;
+
+  if (isSimulationOrder(order)) {
+    await telegram.sendMessage(`🧪 <b>סימולציה:</b> הזמנה #${orderId} סומנה כ-paid ב-${providerTag} ללא שליחה ל-Printify.`).catch(() => null);
+    return;
+  }
+
+  const items = await dbAllAsync(`SELECT * FROM order_items WHERE orderId = ?`, [orderId]);
+  if (!items.length) return;
+
+  try {
+    await printify.sendOrderToProduction(orderId, order.customerName, order.customerEmail, order.address, items);
+    await telegram.sendMessage(`🏭 <b>הזמנה #${orderId} נשלחה לייצור!</b>\nההזמנה הועברה בהצלחה למפעל ב-Printify.`);
+  } catch (pErr) {
+    await telegram.sendMessage(`🚨 <b>שגיאה בשליחה לייצור</b>\nהזמנה #${orderId} שולמה אבל נכשלה בהעברה ל-Printify.`);
   }
 };
 
@@ -293,35 +365,33 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
   // Handle the checkout.session.completed event
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const orderId = session.client_reference_id;
-    const amount = session.amount_total / 100;
+    const orderId = Number(session.client_reference_id);
+    const amount = (session.amount_total || 0) / 100;
+    const stripeEventId = event.id || session.id;
+
+    if (!orderId || Number.isNaN(orderId)) {
+      return res.json({ received: true, ignored: true, reason: 'invalid_order_id' });
+    }
+
+    const canProcess = await reserveWebhookEvent('stripe', stripeEventId);
+    if (!canProcess) {
+      return res.json({ received: true, duplicate: true, provider: 'stripe', eventId: stripeEventId });
+    }
     
     console.log(`[Stripe Webhook] Payment successful for Order #${orderId}`);
-    
-    // Update DB status
-    db.run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
-    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText: `$${amount.toFixed(2)}` });
-    
-    // Trigger Printify fulfillment since payment is confirmed
-    db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
-      if (!err && order) {
-        if (isSimulationOrder(order)) {
-          telegram.sendMessage(`🧪 <b>סימולציה:</b> הזמנה #${orderId} סומנה כ-paid ב-Stripe ללא שליחה ל-Printify.`).catch(() => null);
-          return;
-        }
 
-        db.all(`SELECT * FROM order_items WHERE orderId = ?`, [orderId], async (err, items) => {
-          if (!err && items && items.length > 0) {
-            try {
-              await printify.sendOrderToProduction(orderId, order.customerName, order.customerEmail, order.address, items);
-              telegram.sendMessage(`🏭 <b>הזמנה #${orderId} נשלחה לייצור!</b>\nההזמנה הועברה בהצלחה למפעל ב-Printify.`);
-            } catch (pErr) {
-              telegram.sendMessage(`🚨 <b>שגיאה בשליחה לייצור</b>\nהזמנה #${orderId} שולמה אבל נכשלה בהעברה ל-Printify.`);
-            }
-          }
-        });
-      }
-    });
+    const existingOrder = await dbGetAsync(`SELECT id, status FROM orders WHERE id = ?`, [orderId]);
+    if (!existingOrder) {
+      return res.json({ received: true, ignored: true, reason: 'order_not_found' });
+    }
+
+    if (existingOrder.status === 'paid') {
+      return res.json({ received: true, duplicate: true, provider: 'stripe', reason: 'already_paid' });
+    }
+
+    await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
+    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText: `$${amount.toFixed(2)}` });
+    await processPaidOrderFulfillment(orderId, 'Stripe');
   }
   res.json({received: true});
 });
@@ -336,30 +406,26 @@ app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
   
   if (status === 'success') {
     console.log(`[PayPlus Webhook] Payment successful for Order #${orderId}`);
-    db.run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
+    const eventId = transaction_uid || `payplus:${orderId}:${status}`;
+    const canProcess = await reserveWebhookEvent('payplus', eventId);
+    if (!canProcess) {
+      return res.json({ received: true, duplicate: true, provider: 'payplus' });
+    }
+
+    const existingOrder = await dbGetAsync(`SELECT id, status FROM orders WHERE id = ?`, [orderId]);
+    if (!existingOrder) {
+      return res.json({ received: true, ignored: true, reason: 'order_not_found' });
+    }
+
+    if (existingOrder.status === 'paid') {
+      return res.json({ received: true, duplicate: true, provider: 'payplus', reason: 'already_paid' });
+    }
+
+    await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
     const orderTotalAmount = await getOrderTotalAmount(orderId);
     await sendPaymentNotification({ provider: 'PayPlus/Grow', orderId, amountText: `₪${orderTotalAmount.toFixed(2)}` });
-    
-    // Trigger Printify fulfillment since payment is confirmed
-    db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (err, order) => {
-      if (!err && order) {
-        if (isSimulationOrder(order)) {
-          telegram.sendMessage(`🧪 <b>סימולציה:</b> הזמנה #${orderId} סומנה כ-paid ב-PayPlus ללא שליחה ל-Printify.`).catch(() => null);
-          return;
-        }
 
-        db.all(`SELECT * FROM order_items WHERE orderId = ?`, [orderId], async (err, items) => {
-          if (!err && items && items.length > 0) {
-            try {
-              await printify.sendOrderToProduction(orderId, order.customerName, order.customerEmail, order.address, items);
-              telegram.sendMessage(`🏭 <b>הזמנה #${orderId} נשלחה לייצור!</b>\nההזמנה הועברה בהצלחה למפעל ב-Printify.`);
-            } catch (pErr) {
-              telegram.sendMessage(`🚨 <b>שגיאה בשליחה לייצור</b>\nהזמנה #${orderId} שולמה אבל נכשלה בהעברה ל-Printify.`);
-            }
-          }
-        });
-      }
-    });
+    await processPaidOrderFulfillment(orderId, 'PayPlus');
   }
   
   res.json({received: true});
@@ -383,6 +449,16 @@ app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res
 
     const payload = parsePrintifyPayload(req.body);
     const type = payload.type || req.headers['x-printify-topic'] || 'validation';
+    const sourceBody = typeof req.body === 'string' ? req.body : JSON.stringify(payload || {});
+    const derivedId = payload.id || payload.event_id || req.headers['x-printify-event-id'] || req.headers['x-request-id'];
+    const eventId = derivedId
+      ? String(derivedId)
+      : `hash:${crypto.createHash('sha256').update(`${type}:${sourceBody}`).digest('hex')}`;
+
+    const canProcess = await reserveWebhookEvent('printify', eventId);
+    if (!canProcess) {
+      return res.status(200).json({ received: true, duplicate: true, event: type });
+    }
     
     console.log(`[Printify Webhook] Event: ${type}`);
     
@@ -603,8 +679,8 @@ const createPendingOrder = (customerName, customerEmail, address, items, totalAm
         if (err) return reject(err);
         const orderId = this.lastID;
         items.forEach(item => {
-          db.run(`INSERT INTO order_items (orderId, productId, quantity, price) VALUES (?, ?, ?, ?)`,
-            [orderId, item.id, item.quantity, item.price]);
+          db.run(`INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null]);
         });
 
         telegram.notifyNewOrder(orderId, customerName, totalAmount, items).catch(() => null);

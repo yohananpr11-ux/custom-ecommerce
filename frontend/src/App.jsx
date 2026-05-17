@@ -167,7 +167,7 @@ function setImageFallback(event, fallbackSrc = GLOBAL_IMAGE_FALLBACK) {
   img.src = fallbackSrc;
 }
 
-function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_FALLBACK }) {
+function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_FALLBACK, loading = 'lazy', fetchPriority = 'auto' }) {
   const [currentSrc, setCurrentSrc] = useState(src || fallbackSrc);
   const [failed, setFailed] = useState(false);
 
@@ -194,7 +194,7 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
     );
   }
 
-  return <img loading="lazy" src={currentSrc} alt={alt} className={className} onError={handleError} />;
+  return <img loading={loading} fetchPriority={fetchPriority} src={currentSrc} alt={alt} className={className} onError={handleError} />;
 }
 
 const BLACK_COLOR_OVERRIDES = {
@@ -426,14 +426,28 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         <div className="pdp-images">
           {product.imagesByColor && product.imagesByColor[selectedColor] && product.imagesByColor[selectedColor].length > 0 ? (
             product.imagesByColor[selectedColor].map((img, i) => (
-              <GuardedProductImage key={`${selectedColor}-${i}-${img.src || img}`} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
+              <GuardedProductImage
+                key={`${selectedColor}-${i}-${img.src || img}`}
+                src={img.src || img}
+                alt={`${product.title} view ${i}`}
+                className="pdp-image"
+                loading={i === 0 ? 'eager' : 'lazy'}
+                fetchPriority={i === 0 ? 'high' : 'auto'}
+              />
             ))
           ) : product.images && product.images.length > 0 ? (
             product.images.map((img, i) => (
-              <GuardedProductImage key={`fallback-${selectedColor}-${i}-${img.src || img}`} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
+              <GuardedProductImage
+                key={`fallback-${selectedColor}-${i}-${img.src || img}`}
+                src={img.src || img}
+                alt={`${product.title} view ${i}`}
+                className="pdp-image"
+                loading={i === 0 ? 'eager' : 'lazy'}
+                fetchPriority={i === 0 ? 'high' : 'auto'}
+              />
             ))
           ) : (
-            <GuardedProductImage src={product.imageUrl} alt={product.title} className="pdp-image" />
+            <GuardedProductImage src={product.imageUrl} alt={product.title} className="pdp-image" loading="eager" fetchPriority="high" />
           )}
         </div>
         
