@@ -352,11 +352,11 @@ function ProductDetailPage({ productId, addToCart, showToast, t, currency, curSy
         <div className="pdp-images">
           {product.imagesByColor && product.imagesByColor[selectedColor] && product.imagesByColor[selectedColor].length > 0 ? (
             product.imagesByColor[selectedColor].map((img, i) => (
-              <GuardedProductImage key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
+              <GuardedProductImage key={`${selectedColor}-${i}-${img.src || img}`} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
             ))
           ) : product.images && product.images.length > 0 ? (
             product.images.map((img, i) => (
-              <GuardedProductImage key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
+              <GuardedProductImage key={`fallback-${selectedColor}-${i}-${img.src || img}`} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
             ))
           ) : (
             <GuardedProductImage src={product.imageUrl} alt={product.title} className="pdp-image" />
