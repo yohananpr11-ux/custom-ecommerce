@@ -82,10 +82,10 @@ body {
 }
 
 .hero h1 {
-  font-size: 64px;
+  font-size: 58px;
   margin: 0 0 16px;
-  font-weight: 800;
-  letter-spacing: -2px;
+  font-weight: 500;
+  letter-spacing: 3px;
 }
 
 .hero p {
@@ -97,12 +97,13 @@ body {
 
 /* Promo Banner */
 .promo-banner {
-  background-color: var(--primary-button);
-  color: var(--primary-button-text);
+  background-color: #111111;
+  color: #ffffff;
   text-align: center;
-  padding: 12px;
-  font-weight: 600;
-  font-size: 14px;
+  padding: 10px 12px;
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 1px;
 }
 
 /* Categories Nav */

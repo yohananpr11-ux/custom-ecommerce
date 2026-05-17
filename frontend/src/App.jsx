@@ -27,15 +27,15 @@ class ErrorBoundary extends React.Component {
 const translations = {
   he: {
     logo: "DRIP STREET",
-    announcement: "🔥 משלוח חינם על 5+ פריטים | 3 טי-שירטס ב-229₪",
-    search_placeholder: "חפש סטריטוור...",
+    announcement: "משלוח חינם בקניית 5 פריטים ומעלה | מארז 3 חולצות ב-229 ₪",
+    search_placeholder: "חפש פריטים...",
     cart: "סל קניות",
     hero_title: "ELEVATE YOUR STYLE",
-    hero_subtitle: "בגדי סטריטוור פרימיום בעיצוב מקומי שמתוכננים להחזיק מעמד ולהיראות מדהים.",
+    hero_subtitle: "השילוב המדויק בין נוחות חסרת פשרות לעיצוב נקי. פריטי חובה לכל ארון.",
     add_to_cart: "הוסף לסל",
     all: "הכל",
     new_arrivals: "חדש",
-    best_sellers: "כוכבים",
+    best_sellers: "הנמכרים ביותר",
     hoodies: "קפוצ'ונים",
     tshirts: "טי-שירטס",
     fabric_fit: "חומר וגזרה",
@@ -70,11 +70,11 @@ const translations = {
   },
   en: {
     logo: "DRIP STREET",
-    announcement: "🔥 FREE SHIPPING ON 5+ ITEMS! | 3 TEES FOR 229₪ ($61.90)",
-    search_placeholder: "Search premium apparel...",
+    announcement: "Complimentary shipping on 5+ items | 3-Tee Bundle for 229 ₪",
+    search_placeholder: "Search items...",
     cart: "Cart",
     hero_title: "ELEVATE YOUR STYLE",
-    hero_subtitle: "Premium streetwear crafted for the modern individual. Designed locally, made to last.",
+    hero_subtitle: "Uncompromising comfort meets clean design. Essential everyday wear.",
     add_to_cart: "Add to Cart",
     all: "All",
     new_arrivals: "New Arrivals",
@@ -687,35 +687,6 @@ function MainApp() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div className="loc-toggle" style={{ display: 'flex', gap: '8px', fontSize: '14px' }}>
-            <button 
-              onClick={() => { setLocale('he'); setCurrency('ILS'); }} 
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: locale === 'he' ? '#fff' : '#666',
-                fontWeight: locale === 'he' ? 'bold' : 'normal',
-                cursor: 'pointer',
-                fontFamily: 'inherit'
-              }}
-            >
-              HE/₪
-            </button>
-            <span style={{ color: '#333' }}>|</span>
-            <button 
-              onClick={() => { setLocale('en'); setCurrency('USD'); }} 
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: locale === 'en' ? '#fff' : '#666',
-                fontWeight: locale === 'en' ? 'bold' : 'normal',
-                cursor: 'pointer',
-                fontFamily: 'inherit'
-              }}
-            >
-              EN/$
-            </button>
-          </div>
           <button className="cart-btn" aria-label="Open cart" onClick={() => setIsCartOpen(true)}>
             🛒 {t('cart')} ({totalItems})
           </button>
