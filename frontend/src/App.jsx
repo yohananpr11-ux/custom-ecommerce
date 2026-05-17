@@ -197,57 +197,6 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
   return <img loading={loading} fetchPriority={fetchPriority} src={currentSrc} alt={alt} className={className} onError={handleError} />;
 }
 
-const BLACK_COLOR_OVERRIDES = {
-  '1': {
-    black: {
-      image: '/shirt-black-design.png',
-      hex: '#111111'
-    }
-  },
-  '2': {
-    black: {
-      image: '/shirt-black-white-logo.png',
-      hex: '#111111'
-    }
-  }
-};
-
-function applyProductColorOverrides(productData, productId) {
-  if (!productData) return productData;
-
-  const override = BLACK_COLOR_OVERRIDES[String(productId)];
-  if (!override) return productData;
-
-  const next = { ...productData };
-  const colors = Array.isArray(next.colors) ? [...next.colors] : [];
-  const imagesByColor = { ...(next.imagesByColor || {}) };
-
-  Object.entries(override).forEach(([colorName, colorOverride]) => {
-    const normalizedColorName = String(colorName).toLowerCase();
-    const existingColorIndex = colors.findIndex((c) => String(c.name || '').toLowerCase() === normalizedColorName);
-    const resolvedColorName = existingColorIndex === -1 ? colorName : colors[existingColorIndex].name;
-
-    if (existingColorIndex === -1) {
-      colors.push({
-        name: colorName,
-        hex: colorOverride.hex || '#111111'
-      });
-    } else {
-      colors[existingColorIndex] = {
-        ...colors[existingColorIndex],
-        hex: colors[existingColorIndex].hex || colorOverride.hex || '#111111'
-      };
-    }
-
-    imagesByColor[resolvedColorName] = [{ src: colorOverride.image, position: 'front' }];
-  });
-
-  next.colors = colors;
-  next.imagesByColor = imagesByColor;
-
-  return next;
-}
-
 function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -295,15 +244,14 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           data.imagesByColor = imagesByColor;
         }
 
-        const productWithOverrides = applyProductColorOverrides(data, productId);
-        setProduct(productWithOverrides);
+        setProduct(data);
         
         // Select first non-black color
-        if (productWithOverrides.colors && productWithOverrides.colors.length > 0) {
-          const nonBlackColor = productWithOverrides.colors.find(c => c.name.toLowerCase() !== 'black');
-          setSelectedColor(nonBlackColor ? nonBlackColor.name : productWithOverrides.colors[0].name);
+        if (data.colors && data.colors.length > 0) {
+          const nonBlackColor = data.colors.find(c => c.name.toLowerCase() !== 'black');
+          setSelectedColor(nonBlackColor ? nonBlackColor.name : data.colors[0].name);
         }
-        if (productWithOverrides.sizes && productWithOverrides.sizes.length > 0) setSelectedSize(productWithOverrides.sizes[0]);
+        if (data.sizes && data.sizes.length > 0) setSelectedSize(data.sizes[0]);
         setLoading(false);
       })
       .catch((err) => {
