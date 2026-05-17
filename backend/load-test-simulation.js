@@ -6,6 +6,7 @@ const API_BASE = process.env.API_BASE_URL || 'https://custom-ecommerce-qp30.onre
 const BOT_COUNT = Number(process.env.BOT_COUNT || 20);
 const CONCURRENCY = Number(process.env.BOT_CONCURRENCY || 5);
 const REQUEST_TIMEOUT_MS = Number(process.env.BOT_TIMEOUT_MS || 20000);
+const COMPLETE_PAYMENT = process.env.BOT_COMPLETE_PAYMENT !== '0';
 
 const client = axios.create({
   baseURL: API_BASE,
@@ -139,13 +140,17 @@ async function runBot(botIndex) {
       throw new Error('Could not parse orderId from paymentUrl');
     }
 
-    const paymentStart = Date.now();
-    await client.post('/api/webhooks/payplus', {
-      transaction_uid: `sim-tx-${botIndex}-${Date.now()}`,
-      status: 'success',
-      custom_field: String(orderId)
-    });
-    trace.push({ step: 'payment_webhook', ok: true, ms: Date.now() - paymentStart, orderId });
+    if (COMPLETE_PAYMENT) {
+      const paymentStart = Date.now();
+      await client.post('/api/webhooks/payplus', {
+        transaction_uid: `sim-tx-${botIndex}-${Date.now()}`,
+        status: 'success',
+        custom_field: String(orderId)
+      });
+      trace.push({ step: 'payment_webhook', ok: true, ms: Date.now() - paymentStart, orderId });
+    } else {
+      trace.push({ step: 'payment_webhook', ok: true, ms: 0, orderId, skipped: true });
+    }
 
     return {
       botIndex,
@@ -241,6 +246,7 @@ function writeReport(results, startedAtIso, endedAtIso) {
   reportLines.push(`- API Base: ${API_BASE}`);
   reportLines.push(`- Bots: ${summary.totalBots}`);
   reportLines.push(`- Concurrency: ${CONCURRENCY}`);
+  reportLines.push(`- Complete Payment Webhook: ${COMPLETE_PAYMENT ? 'Yes' : 'No (safe mode)'}`);
   reportLines.push('');
   reportLines.push('## Summary');
   reportLines.push(`- Passed: ${summary.passed}`);
