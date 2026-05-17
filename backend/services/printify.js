@@ -126,17 +126,8 @@ class PrintifyService {
           });
         }
 
-        // Filter out BLACK variants (can't see black design on black shirt)
-        const filteredVariants = enabledVariants.filter(v => {
-          const variantTitle = v.title || '';
-          const isBlack = variantTitle.toLowerCase().includes('black') || 
-                         (v.options && v.options.length > 0 && 
-                          v.options.some(optId => optionMap[optId]?.title?.toLowerCase() === 'black'));
-          return !isBlack;
-        });
-
-        // Insert each filtered variant
-        for (const variant of filteredVariants) {
+        // Insert every enabled variant, including black.
+        for (const variant of enabledVariants) {
           let size = '';
           let color = '';
           let colorHex = '#000000';
