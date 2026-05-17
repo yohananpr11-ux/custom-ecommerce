@@ -98,9 +98,9 @@ app.get('/', (req, res) => {
   res.send('Server is running and connected to Meni (Telegram).');
 });
 
-// Get all products
+// Get all products (list view - includes backImageUrl for hover effect)
 app.get('/api/products', (req, res) => {
-  db.all("SELECT * FROM products", [], (err, rows) => {
+  db.all("SELECT id, title, description, price, imageUrl, backImageUrl, stock, type FROM products", [], (err, rows) => {
     if (err) {
       res.status(500).json({ error: err.message });
       return;
@@ -109,7 +109,7 @@ app.get('/api/products', (req, res) => {
   });
 });
 
-// Get single product
+// Get single product with full details + variants (for PDP)
 app.get('/api/products/:id', (req, res) => {
   const { id } = req.params;
   db.get("SELECT * FROM products WHERE id = ?", [id], (err, row) => {
@@ -118,7 +118,30 @@ app.get('/api/products/:id', (req, res) => {
       return;
     }
     if (!row) return res.status(404).json({ error: 'Product not found' });
-    res.json(row);
+    
+    // Parse images JSON
+    try { row.images = JSON.parse(row.images || '[]'); } catch(e) { row.images = []; }
+    
+    // Fetch variants for this product
+    db.all("SELECT * FROM product_variants WHERE productId = ? AND isEnabled = 1", [id], (err2, variants) => {
+      if (err2) variants = [];
+      
+      // Group variants by color and size
+      const colors = {};
+      const sizes = new Set();
+      (variants || []).forEach(v => {
+        if (v.color && !colors[v.color]) {
+          colors[v.color] = { hex: v.colorHex || '#000', name: v.color };
+        }
+        if (v.size) sizes.add(v.size);
+      });
+      
+      row.variants = variants || [];
+      row.colors = Object.values(colors);
+      row.sizes = Array.from(sizes);
+      
+      res.json(row);
+    });
   });
 });
 

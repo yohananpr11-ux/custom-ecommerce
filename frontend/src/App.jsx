@@ -30,6 +30,142 @@ function isTeeProduct(product) {
   return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
 }
 
+function ProductDetailPage({ productId, addToCart }) {
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedColor, setSelectedColor] = useState('');
+  const [selectedSize, setSelectedSize] = useState('');
+  const [activeTab, setActiveTab] = useState('');
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    fetch(`${API_BASE}/api/products/${productId}`)
+      .then(res => res.json())
+      .then(data => {
+        setProduct(data);
+        if (data.colors && data.colors.length > 0) setSelectedColor(data.colors[0].name);
+        if (data.sizes && data.sizes.length > 0) setSelectedSize(data.sizes[0]);
+        setLoading(false);
+      })
+      .catch(console.error);
+  }, [productId]);
+
+  if (loading) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>Loading...</div>;
+  if (!product) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>Product not found</div>;
+
+  const handleAdd = () => {
+    let variantId = null;
+    if (product.variants && product.variants.length > 0) {
+      const v = product.variants.find(v => v.color === selectedColor && v.size === selectedSize);
+      if (v) variantId = v.id;
+    }
+    
+    // We modify the product title to include variant info in cart
+    const variantTitle = [product.title];
+    if (selectedColor) variantTitle.push(selectedColor);
+    if (selectedSize) variantTitle.push(selectedSize);
+    
+    addToCart({
+      ...product,
+      title: variantTitle.join(' - '),
+      cartId: `${product.id}-${selectedColor}-${selectedSize}`, // Unique ID for cart grouping
+      selectedColor,
+      selectedSize,
+      variantId
+    });
+  };
+
+  return (
+    <>
+      <header className="header container">
+        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">DRIP STREET</h1></a>
+        <button className="cart-btn" aria-label="Open cart" onClick={() => window.dispatchEvent(new CustomEvent('open-cart'))}>
+          🛒 CART
+        </button>
+      </header>
+      <div className="container pdp-container">
+        <div className="pdp-images">
+          {product.images && product.images.length > 0 ? (
+            product.images.map((img, i) => (
+              <img key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
+            ))
+          ) : (
+            <img src={product.imageUrl} alt={product.title} className="pdp-image" />
+          )}
+        </div>
+        
+        <div className="pdp-info-wrapper">
+          <div className="pdp-info">
+            <h1>{product.title}</h1>
+            <div className="pdp-price">₪{product.price.toFixed(2)}</div>
+            
+            {product.colors && product.colors.length > 0 && (
+              <div className="pdp-section">
+                <h3>Color: <span style={{fontWeight:'normal', color:'#aaa'}}>{selectedColor}</span></h3>
+                <div className="pdp-options">
+                  {product.colors.map(c => (
+                    <button 
+                      key={c.name}
+                      className={`color-btn ${selectedColor === c.name ? 'active' : ''}`}
+                      style={{ backgroundColor: c.hex }}
+                      onClick={() => setSelectedColor(c.name)}
+                      aria-label={`Select color ${c.name}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {product.sizes && product.sizes.length > 0 && (
+              <div className="pdp-section">
+                <h3>Size: <span style={{fontWeight:'normal', color:'#aaa'}}>{selectedSize}</span></h3>
+                <div className="pdp-options">
+                  {product.sizes.map(s => (
+                    <button 
+                      key={s}
+                      className={`size-btn ${selectedSize === s ? 'active' : ''}`}
+                      onClick={() => setSelectedSize(s)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button className="checkout-btn add-to-cart-large" onClick={handleAdd}>
+              ADD TO CART
+            </button>
+
+            <p className="pdp-desc">{product.description}</p>
+
+            <div className="pdp-accordion">
+              <div className="accordion-item">
+                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'fabric' ? '' : 'fabric')}>
+                  Fabric & Fit <span>{activeTab === 'fabric' ? '−' : '+'}</span>
+                </button>
+                {activeTab === 'fabric' && <div className="accordion-content">{product.fabric || 'Premium materials.'}</div>}
+              </div>
+              <div className="accordion-item">
+                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'care' ? '' : 'care')}>
+                  Care Instructions <span>{activeTab === 'care' ? '−' : '+'}</span>
+                </button>
+                {activeTab === 'care' && <div className="accordion-content">{product.careInstructions || 'Machine wash cold.'}</div>}
+              </div>
+              <div className="accordion-item">
+                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'delivery' ? '' : 'delivery')}>
+                  Delivery Info <span>{activeTab === 'delivery' ? '−' : '+'}</span>
+                </button>
+                {activeTab === 'delivery' && <div className="accordion-content">{product.deliveryInfo || 'Standard delivery.'}</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function MainApp() {
   const [products, setProducts] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -331,6 +467,12 @@ function MainApp() {
     return <div className="container legal-page" style={{textAlign: 'center'}}><h1>404 Not Found</h1><button className="checkout-btn" style={{ maxWidth: '200px' }} onClick={() => window.location.href = '/'}>Return Home</button></div>;
   }
 
+  // ============ ROUTE: PRODUCT DETAIL PAGE ============
+  if (currentPath.startsWith('/product/')) {
+    const productId = currentPath.split('/')[2];
+    return <ProductDetailPage productId={productId} addToCart={addToCart} />;
+  }
+
   // ============ MAIN STORE PAGE ============
   return (
     <>
@@ -409,14 +551,27 @@ function MainApp() {
                   transition={{ duration: 0.3 }}
                   className="product-card"
                 >
-                  <div style={{ position: 'relative' }}>
-                    <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image" />
+                  <div 
+                    className="product-image-wrapper" 
+                    onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image front-img" />
+                    {product.backImageUrl && (
+                      <img loading="lazy" src={product.backImageUrl} alt={`${product.title} back`} className="product-image back-img" />
+                    )}
                     {isTeeProduct(product) && (
                       <span className="deal-badge">3 ב-229₪</span>
                     )}
                   </div>
                   <div className="product-info">
-                    <h3 className="product-title">{product.title}</h3>
+                    <h3 
+                      className="product-title" 
+                      onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {product.title}
+                    </h3>
                     <span className="product-price">₪{product.price.toFixed(2)}</span>
                   </div>
                   <p className="product-desc">{product.description}</p>
