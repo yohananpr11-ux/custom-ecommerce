@@ -163,6 +163,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
           data.variants.forEach(v => {
             variantIdToColor[v.printifyVariantId] = v.color;
           });
+          console.log('variantIdToColor:', variantIdToColor);
           
           // Group images by variant ID (extracted from URL path)
           const imagesByVariantId = {};
@@ -174,6 +175,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
               imagesByVariantId[variantId].push(img);
             }
           });
+          console.log('imagesByVariantId keys:', Object.keys(imagesByVariantId));
           
           // Map images to colors
           Object.entries(imagesByVariantId).forEach(([variantId, images]) => {
@@ -182,7 +184,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
               imagesByColor[color] = images;
             }
           });
-          
+          console.log('imagesByColor:', imagesByColor);
           data.imagesByColor = imagesByColor;
         }
         
