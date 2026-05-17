@@ -10,18 +10,26 @@ class TelegramService {
   async sendMessage(text) {
     if (!this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN') {
       console.warn('⚠️ Telegram token not configured. Skipping message:', text);
-      return;
+      return { ok: false, skipped: true, reason: 'token_not_configured' };
+    }
+
+    if (!this.chatId) {
+      console.warn('⚠️ Telegram chat id not configured. Skipping message:', text);
+      return { ok: false, skipped: true, reason: 'chat_id_not_configured' };
     }
 
     try {
-      await axios.post(`${this.baseUrl}/sendMessage`, {
+      const response = await axios.post(`${this.baseUrl}/sendMessage`, {
         chat_id: this.chatId,
         text: text,
         parse_mode: 'HTML'
       });
       console.log('✅ Telegram alert sent.');
+      return { ok: true, status: response.status };
     } catch (error) {
-      console.error('❌ Failed to send Telegram alert:', error.message);
+      const details = error.response && error.response.data ? error.response.data : error.message;
+      console.error('❌ Failed to send Telegram alert:', details);
+      return { ok: false, skipped: false, reason: 'telegram_api_error', details };
     }
   }
 

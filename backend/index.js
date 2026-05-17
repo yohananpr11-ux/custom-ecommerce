@@ -145,6 +145,22 @@ const registerWebhooksHandler = async (req, res) => {
 
 app.all('/api/admin/register-webhooks', registerWebhooksHandler);
 
+app.get('/api/admin/test-telegram', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  const message = `🧪 <b>בדיקת טלגרם</b>\n\nהודעת בדיקה מהשרת בזמן: ${timestamp}`;
+  const result = await telegram.sendMessage(message);
+
+  if (!result || !result.ok) {
+    return res.status(500).json({
+      success: false,
+      error: 'Telegram test message failed',
+      telegram: result || { ok: false, reason: 'unknown_error' }
+    });
+  }
+
+  return res.json({ success: true, telegram: result });
+});
+
 app.post('/api/analytics/visit', express.json(), async (req, res) => {
   try {
     const { sessionId, path, locale, currency, source } = req.body || {};
@@ -170,10 +186,20 @@ app.post('/api/analytics/visit', express.json(), async (req, res) => {
         + `<b>IP:</b> ${ip}\n`
         + `<b>UA:</b> ${ua}`;
 
-      telegram.sendMessage(msg).catch(() => null);
+      const telegramResult = await telegram.sendMessage(msg);
+      if (!telegramResult || !telegramResult.ok) {
+        return res.status(500).json({
+          success: false,
+          deduped: false,
+          error: 'Visit event received but Telegram delivery failed',
+          telegram: telegramResult || { ok: false, reason: 'unknown_error' }
+        });
+      }
+
+      return res.json({ success: true, deduped: false, telegram: telegramResult });
     }
 
-    return res.json({ success: true, deduped: !!lastNotifiedAt });
+    return res.json({ success: true, deduped: true, telegram: { ok: true, skipped: true, reason: 'deduped' } });
   } catch (err) {
     return res.status(500).json({ success: false, error: 'Visit analytics failed' });
   }
