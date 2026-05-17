@@ -153,6 +153,39 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
       .then(res => res.json())
       .then(data => {
         setProduct(data);
+        
+        // Build imagesByColor mapping from variants and images
+        if (data.variants && data.images) {
+          const imagesByColor = {};
+          const variantIdToColor = {};
+          
+          // Map variant IDs to colors
+          data.variants.forEach(v => {
+            variantIdToColor[v.printifyVariantId] = v.color;
+          });
+          
+          // Group images by variant ID (extracted from URL path)
+          const imagesByVariantId = {};
+          data.images.forEach(img => {
+            const variantMatch = img.src.match(/\/mockup\/[^/]+\/(\d+)\//);
+            if (variantMatch) {
+              const variantId = variantMatch[1];
+              if (!imagesByVariantId[variantId]) imagesByVariantId[variantId] = [];
+              imagesByVariantId[variantId].push(img);
+            }
+          });
+          
+          // Map images to colors
+          Object.entries(imagesByVariantId).forEach(([variantId, images]) => {
+            const color = variantIdToColor[variantId];
+            if (color && !imagesByColor[color]) {
+              imagesByColor[color] = images;
+            }
+          });
+          
+          data.imagesByColor = imagesByColor;
+        }
+        
         // Select first non-black color
         if (data.colors && data.colors.length > 0) {
           const nonBlackColor = data.colors.find(c => c.name.toLowerCase() !== 'black');
