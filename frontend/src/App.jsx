@@ -153,7 +153,11 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
       .then(res => res.json())
       .then(data => {
         setProduct(data);
-        if (data.colors && data.colors.length > 0) setSelectedColor(data.colors[0].name);
+        // Select first non-black color
+        if (data.colors && data.colors.length > 0) {
+          const nonBlackColor = data.colors.find(c => c.name.toLowerCase() !== 'black');
+          setSelectedColor(nonBlackColor ? nonBlackColor.name : data.colors[0].name);
+        }
         if (data.sizes && data.sizes.length > 0) setSelectedSize(data.sizes[0]);
         setLoading(false);
       })
@@ -214,7 +218,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
               <div className="pdp-section">
                 <h3>צבע</h3>
                 <div className="pdp-options">
-                  {product.colors.map(c => (
+                  {product.colors.filter(c => c.name.toLowerCase() !== 'black').map(c => (
                     <button 
                       key={c.name}
                       className={`color-btn ${selectedColor === c.name ? 'active' : ''}`}
