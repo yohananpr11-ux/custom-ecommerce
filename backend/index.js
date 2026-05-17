@@ -92,6 +92,37 @@ app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
   res.json({received: true});
 });
 
+// --- Printify Webhook: Auto-sync when shop products change ---
+app.post('/api/webhooks/printify', express.json(), async (req, res) => {
+  try {
+    const { type, data } = req.body;
+    
+    console.log(`[Printify Webhook] Event: ${type}`);
+    
+    // Events that indicate inventory/product changes
+    if (type && (type.includes('product') || type.includes('variant') || type.includes('inventory'))) {
+      console.log(`🔄 [Printify Webhook] Triggering auto-sync for event: ${type}`);
+      
+      // Queue the sync async (don't block the response)
+      setImmediate(async () => {
+        try {
+          const count = await printify.syncProducts();
+          const eventInfo = `Printify event: ${type}`;
+          await telegram.sendMessage(`✅ <b>Sync אוטומטי מ-Printify!</b>\n\n${eventInfo}\n${count} מוצרים סונכרנו בהצלחה.`);
+        } catch (err) {
+          console.error('❌ Auto-sync failed:', err.message);
+          await telegram.sendMessage(`⚠️ <b>Sync אוטומטי נכשל</b>\nEvent: ${type}\nError: ${err.message}`);
+        }
+      });
+    }
+    
+    res.json({ received: true, event: type });
+  } catch (err) {
+    console.error('Printify webhook error:', err.message);
+    res.status(400).json({ error: 'Webhook error' });
+  }
+});
+
 app.use(express.json());
 
 // Pulse Check Route
@@ -191,6 +222,26 @@ app.get('/api/products/:id', (req, res) => {
       row.images = imageData.allImages; // Keep all images as fallback
       
       res.json(row);
+    });
+  });
+});
+
+// Get last sync status
+app.get('/api/admin/sync-status', (req, res) => {
+  const db = require('./db');
+  db.all("SELECT type, COUNT(*) as count, MAX(id) as latestId FROM products GROUP BY type", [], (err, rows) => {
+    const stats = {};
+    if (rows) {
+      rows.forEach(r => {
+        stats[r.type] = r.count;
+      });
+    }
+    
+    res.json({
+      lastSyncTime: global.lastSyncTime || 'Never',
+      nextSyncTime: 'Every hour (UTC)',
+      statistics: stats,
+      webhook: '/api/webhooks/printify (Printify can send events here)'
     });
   });
 });
@@ -389,19 +440,41 @@ pricingEngine.start();
 app.listen(PORT, () => {
   console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
   
-  // Auto-sync Printify products on startup (critical for Render where DB is ephemeral)
-  setTimeout(async () => {
+  // ---- AUTO-SYNC INITIALIZATION ----
+  const performSync = async () => {
     try {
       const hasPrintifyKey = process.env.PRINTIFY_API_TOKEN && process.env.PRINTIFY_API_TOKEN !== 'YOUR_PRINTIFY_TOKEN';
       if (hasPrintifyKey) {
-        console.log('🔄 Auto-syncing Printify products on startup...');
         const count = await printify.syncProducts();
-        console.log(`✅ Auto-sync complete: ${count} Printify products loaded.`);
+        const timestamp = new Date().toLocaleString('he-IL');
+        global.lastSyncTime = timestamp; // Track for status endpoint
+        console.log(`✅ Sync complete [${timestamp}]: ${count} Printify products synced.`);
+        return count;
       }
     } catch (err) {
-      console.error('⚠️ Auto-sync failed (non-fatal):', err.message);
+      console.error('⚠️ Sync failed:', err.message);
+      telegram.sendMessage(`⚠️ <b>Printify Sync Error</b>\n\nTime: ${new Date().toLocaleString('he-IL')}\nError: ${err.message}`).catch(console.error);
     }
-  }, 3000); // Wait 3s for DB to fully initialize
+  };
+  
+  // Auto-sync on startup (critical for Render where DB is ephemeral)
+  setTimeout(async () => {
+    console.log('🔄 Auto-syncing Printify products on startup...');
+    await performSync();
+  }, 3000);
+  
+  // ---- SCHEDULED SYNC: Every hour ----
+  const cron = require('node-cron');
+  try {
+    const syncJob = cron.schedule('0 * * * *', async () => {
+      console.log('⏰ [Scheduled Sync] Running hourly Printify sync...');
+      await performSync();
+    }, { scheduled: true });
+    
+    console.log('✅ Scheduled sync configured: Every hour (UTC)');
+  } catch (cronErr) {
+    console.warn('⚠️ Cron not available (dev environment):', cronErr.message);
+  }
 });
 
 // Global Error Handler
