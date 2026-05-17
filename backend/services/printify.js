@@ -97,40 +97,63 @@ class PrintifyService {
         // Clear old variants for this product
         await new Promise(r => db.run(`DELETE FROM product_variants WHERE productId = ?`, [productId], r));
 
-        // Extract unique colors from variant options
-        const colorMap = {};
+        // Extract unique colors and sizes from variant options
+        const optionMap = {};
+        const sizeMap = {};
         if (p.options) {
-          const colorOption = p.options.find(o => o.type === 'color' || o.name.toLowerCase().includes('color'));
-          if (colorOption && colorOption.values) {
-            colorOption.values.forEach(v => {
-              colorMap[v.id] = { title: v.title, colors: v.colors || [] };
-            });
-          }
+          p.options.forEach(opt => {
+            if (opt.values) {
+              opt.values.forEach(val => {
+                optionMap[val.id] = { title: val.title, type: opt.type, colors: val.colors || [] };
+                if (opt.type === 'size' || opt.name.toLowerCase().includes('size')) {
+                  sizeMap[val.id] = val.title;
+                }
+              });
+            }
+          });
         }
 
-        // Insert each enabled variant
-        for (const variant of enabledVariants) {
-          const variantTitle = variant.title || '';
-          // Parse "Size / Color" format from variant title
-          const parts = variantTitle.split('/').map(s => s.trim());
-          let size = parts[0] || '';
-          let color = parts.length > 1 ? parts[1] : parts[0] || '';
+        // Filter out BLACK variants (can't see black design on black shirt)
+        const filteredVariants = enabledVariants.filter(v => {
+          if (!v.options) return true;
+          for (const optId of v.options) {
+            const opt = optionMap[optId];
+            if (opt && opt.title && opt.title.toLowerCase() === 'black') {
+              return false; // Skip black variants
+            }
+          }
+          return true;
+        });
+
+        // Insert each filtered variant
+        for (const variant of filteredVariants) {
+          let size = '';
+          let color = '';
           let colorHex = '#000000';
 
-          // Try to match color from option values
+          // Extract size and color from variant options
           if (variant.options && variant.options.length > 0) {
             for (const optId of variant.options) {
-              if (colorMap[optId]) {
-                color = colorMap[optId].title;
-                if (colorMap[optId].colors && colorMap[optId].colors.length > 0) {
-                  colorHex = colorMap[optId].colors[0];
+              const opt = optionMap[optId];
+              if (opt) {
+                if (opt.type === 'size' || opt.title.match(/^[XSL]+(XL|L|M|S)?$/)) {
+                  size = opt.title;
+                } else if (opt.type === 'color' || opt.title.match(/^(Black|White|Natural|Tan|Blue|Red|Grey|Gray)/i)) {
+                  color = opt.title;
+                  if (opt.colors && opt.colors.length > 0) {
+                    colorHex = opt.colors[0];
+                  }
                 }
               }
             }
           }
 
+          // Fallback: if size is still empty, use variant title
+          if (!size) size = (variant.title || '').split('/')[0].trim() || 'M';
+          if (!color) color = (variant.title || '').split('/')[1]?.trim() || 'Unspecified';
+
           const variantCost = (variant.cost || 0) / 100;
-          const variantPrice = retailPrice; // Same price for all variants (size-based)
+          const variantPrice = retailPrice;
           const isAvailable = variant.is_available !== false ? 1 : 0;
 
           db.run(`INSERT INTO product_variants (productId, printifyVariantId, color, colorHex, size, price, cost, isEnabled, isAvailable) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
