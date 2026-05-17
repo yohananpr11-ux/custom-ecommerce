@@ -13,13 +13,14 @@ class ErrorBoundary extends React.Component {
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(error) {
     console.error("React Error:", error);
+    window.dispatchEvent(new CustomEvent('app:error-toast', { detail: { message: GLOBAL_ERROR_TOAST_HE } }));
     fetch(`${API_BASE}/api/contact`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'System', email: 'error@system', message: `Frontend Crash: ${error.message}` })
     }).catch(() => {});
   }
   render() {
-    if (this.state.hasError) return <div className="container" style={{padding: '100px 20px', textAlign: 'center'}}><h1>Oops! Something broke.</h1><p>Our team has been notified.</p></div>;
+    if (this.state.hasError) return <div className="container" style={{padding: '100px 20px', textAlign: 'center'}}><h1>אירעה שגיאה זמנית</h1><p>אנא רענן את העמוד ונסה שוב.</p></div>;
     return this.props.children;
   }
 }
@@ -141,6 +142,23 @@ function isTeeProduct(product) {
 }
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
+const GLOBAL_ERROR_TOAST_HE = 'אירעה שגיאה זמנית, אנא נסה שוב';
+
+const normalizeValue = (value) => String(value || '').trim().toLowerCase();
+
+const findMatchingVariant = (variants, selectedColor, selectedSize) => {
+  if (!Array.isArray(variants) || variants.length === 0) return null;
+
+  const normalizedColor = normalizeValue(selectedColor);
+  const normalizedSize = normalizeValue(selectedSize);
+
+  return variants.find((variant) => (
+    normalizeValue(variant.color) === normalizedColor
+    && normalizeValue(variant.size) === normalizedSize
+    && Number(variant.isEnabled) !== 0
+    && Number(variant.isAvailable) !== 0
+  )) || null;
+};
 
 function setImageFallback(event, fallbackSrc = GLOBAL_IMAGE_FALLBACK) {
   const img = event.currentTarget;
@@ -230,7 +248,7 @@ function applyProductColorOverrides(productData, productId) {
   return next;
 }
 
-function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }) {
+function ProductDetailPage({ productId, addToCart, showToast, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
@@ -285,7 +303,11 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
         if (productWithOverrides.sizes && productWithOverrides.sizes.length > 0) setSelectedSize(productWithOverrides.sizes[0]);
         setLoading(false);
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error('Product fetch failed:', err);
+        showToast(GLOBAL_ERROR_TOAST_HE);
+        setLoading(false);
+      });
   }, [productId]);
 
   if (loading) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>Loading...</div>;
@@ -294,8 +316,12 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
   const handleAdd = () => {
     let variantId = null;
     if (product.variants && product.variants.length > 0) {
-      const v = product.variants.find(v => v.color === selectedColor && v.size === selectedSize);
-      if (v) variantId = v.id;
+      const matchedVariant = findMatchingVariant(product.variants, selectedColor, selectedSize);
+      if (!matchedVariant || !matchedVariant.id) {
+        showToast('בחר צבע ומידה זמינים כדי להוסיף לסל');
+        return;
+      }
+      variantId = matchedVariant.id;
     }
     
     const variantTitle = [product.title];
@@ -447,6 +473,44 @@ function MainApp() {
   });
   const [chatInput, setChatInput] = useState('');
   const [chatStatus, setChatStatus] = useState('bot'); // bot or escalated
+  const [toast, setToast] = useState({ visible: false, message: '' });
+
+  const showToast = (message) => {
+    if (!message) return;
+    setToast({ visible: true, message });
+  };
+
+  useEffect(() => {
+    if (!toast.visible) return;
+    const timer = setTimeout(() => setToast({ visible: false, message: '' }), 3200);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    const handleUnhandledRejection = (event) => {
+      console.error('Unhandled promise rejection:', event.reason);
+      showToast(GLOBAL_ERROR_TOAST_HE);
+    };
+
+    const handleWindowError = (event) => {
+      console.error('Unhandled runtime error:', event.error || event.message);
+      showToast(GLOBAL_ERROR_TOAST_HE);
+    };
+
+    const handleBoundaryToast = (event) => {
+      showToast(event.detail && event.detail.message ? event.detail.message : GLOBAL_ERROR_TOAST_HE);
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    window.addEventListener('error', handleWindowError);
+    window.addEventListener('app:error-toast', handleBoundaryToast);
+
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      window.removeEventListener('error', handleWindowError);
+      window.removeEventListener('app:error-toast', handleBoundaryToast);
+    };
+  }, []);
 
   useEffect(() => {
     // Geolocation detection
@@ -481,12 +545,18 @@ function MainApp() {
     fetch(`${API_BASE}/api/products`)
       .then(res => res.json())
       .then(data => { setProducts(data); setIsLoading(false); })
-      .catch(err => { console.error(err); setIsLoading(false); })
+      .catch(err => {
+        console.error(err);
+        showToast(GLOBAL_ERROR_TOAST_HE);
+        setIsLoading(false);
+      })
       
     fetch(`${API_BASE}/api/coupons/active`)
       .then(res => res.json())
       .then(data => { if(data.coupon) setActiveCoupon(data.coupon) })
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err);
+      })
 
     // Load Chat History
     fetch(`${API_BASE}/api/chat/history/${chatSessionId}`)
@@ -495,7 +565,9 @@ function MainApp() {
         setChatHistory(data.history || []);
         setChatStatus(data.status || 'bot');
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error(err);
+      });
 
     // Listen for global open cart events (e.g. from PDP)
     const handleOpenCart = () => setIsCartOpen(true);
@@ -562,6 +634,7 @@ function MainApp() {
       })
       .catch(err => {
         console.error("Failed to send chat message:", err);
+        showToast(GLOBAL_ERROR_TOAST_HE);
       });
   };
 
@@ -631,6 +704,10 @@ function MainApp() {
   // ============ NAVIGATION ============
 
   const proceedToCheckout = () => {
+    if (cart.length === 0) {
+      showToast('הסל ריק, הוסף פריטים כדי להמשיך');
+      return;
+    }
     setIsCartOpen(false);
     window.history.pushState({}, '', '/checkout');
     window.dispatchEvent(new Event('popstate'));
@@ -638,6 +715,18 @@ function MainApp() {
 
   const submitCheckout = async (e) => {
     e.preventDefault();
+
+    const hasInvalidVariant = cart.some((item) => (
+      item.selectedColor
+      && item.selectedSize
+      && (!item.variantId || Number.isNaN(Number(item.variantId)))
+    ));
+
+    if (hasInvalidVariant) {
+      showToast('נמצאה שגיאה בוריאנט המוצר. רענן את העמוד ובחר וריאנט מחדש');
+      return;
+    }
+
     try {
       const endpoint = paymentMethod === 'stripe' ? '/api/checkout/stripe' : '/api/checkout/payplus';
       const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -659,10 +748,11 @@ function MainApp() {
         localStorage.removeItem('drip_street_cart');
         window.location.assign(data.paymentUrl);
       } else {
-        alert('Checkout initialization failed.');
+        showToast(GLOBAL_ERROR_TOAST_HE);
       }
-    } catch {
-      alert('Checkout failed due to a network error.');
+    } catch (err) {
+      console.error('Checkout failed:', err);
+      showToast(GLOBAL_ERROR_TOAST_HE);
     }
   }
 
@@ -780,7 +870,13 @@ function MainApp() {
           fetch(`${API_BASE}/api/contact`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: e.target.name.value, email: e.target.email.value, message: e.target.message.value })
-          }).then(() => { alert('Message sent to support.'); window.location.href='/'; })
+          }).then(() => {
+            showToast('ההודעה נשלחה בהצלחה');
+            window.location.href='/';
+          }).catch((err) => {
+            console.error('Contact submit failed:', err);
+            showToast(GLOBAL_ERROR_TOAST_HE);
+          })
         }}>
           <input name="name" type="text" placeholder="Your Name" required />
           <input name="email" type="email" placeholder="Your Email" required />
@@ -817,7 +913,7 @@ function MainApp() {
   // ============ ROUTE: PRODUCT DETAIL PAGE ============
   if (currentPath.startsWith('/product/')) {
     const productId = currentPath.split('/')[2];
-    return <ProductDetailPage productId={productId} addToCart={addToCart} t={t} currency={currency} curSym={curSym} locale={locale} />;
+    return <ProductDetailPage productId={productId} addToCart={addToCart} showToast={showToast} t={t} currency={currency} curSym={curSym} locale={locale} />;
   }
 
   // ============ ROUTE: 404 ============
@@ -1105,6 +1201,22 @@ function MainApp() {
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {toast.visible && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ duration: 0.2 }}
+            className="global-toast"
+            role="status"
+            aria-live="polite"
+          >
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   )
 }
