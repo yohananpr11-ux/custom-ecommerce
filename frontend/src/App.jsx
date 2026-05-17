@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import './index.css'
 
-const API_BASE = 'https://custom-ecommerce-qp30.onrender.com';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
 const SHIPPING_COST = 29.90;
 const FREE_SHIPPING_THRESHOLD = 5;
 const BUNDLE_TEE_PRICE = 229; // 3 tees for 229₪

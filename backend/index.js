@@ -12,7 +12,46 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock');
 
-app.use(cors());
+const normalizeUrl = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  return value.trim().replace(/\/$/, '');
+};
+
+const DEFAULT_FRONTEND_URL = 'https://custom-ecommerce-seven.vercel.app';
+const FRONTEND_BASE_URL = normalizeUrl(
+  process.env.FRONTEND_BASE_URL
+  || process.env.PUBLIC_APP_URL
+  || process.env.APP_BASE_URL
+  || DEFAULT_FRONTEND_URL
+);
+
+const API_BASE_URL = normalizeUrl(
+  process.env.API_BASE_URL
+  || process.env.RENDER_EXTERNAL_URL
+  || `http://localhost:${PORT}`
+);
+
+const CORS_ALLOWED_ORIGINS = Array.from(new Set([
+  FRONTEND_BASE_URL,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+  ...String(process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => normalizeUrl(origin))
+    .filter(Boolean)
+]));
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || CORS_ALLOWED_ORIGINS.includes(normalizeUrl(origin))) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  }
+}));
 
 const visitNotificationCache = new Map();
 const VISIT_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -92,7 +131,7 @@ const registerWebhooksHandler = async (req, res) => {
   const PRINTIFY_API_TOKEN = process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_TOKEN;
   const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
   const WEBHOOK_URL = process.env.PRINTIFY_WEBHOOK_URL
-    || (process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/api/webhooks/printify` : null);
+    || (API_BASE_URL ? `${API_BASE_URL}/api/webhooks/printify` : null);
 
   if (!PRINTIFY_API_TOKEN || !PRINTIFY_SHOP_ID || !WEBHOOK_URL) {
     return res.status(400).json({
@@ -594,8 +633,8 @@ app.post('/api/checkout/stripe', async (req, res) => {
         quantity: item.quantity,
       })),
       mode: 'payment',
-      success_url: 'https://custom-ecommerce-seven.vercel.app/success?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: 'https://custom-ecommerce-seven.vercel.app/cart',
+      success_url: `${FRONTEND_BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${FRONTEND_BASE_URL}/cart`,
       client_reference_id: orderId.toString(),
       customer_email: customerEmail,
     });
