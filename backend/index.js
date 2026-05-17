@@ -145,7 +145,12 @@ app.get('/api/products/:id', (req, res) => {
     if (!row) return res.status(404).json({ error: 'Product not found' });
     
     // Parse images JSON
-    try { row.images = JSON.parse(row.images || '[]'); } catch(e) { row.images = []; }
+    let imageData = { allImages: [], variantImageMap: {} };
+    try { 
+      imageData = JSON.parse(row.images || '{}');
+      if (!imageData.allImages) imageData.allImages = [];
+      if (!imageData.variantImageMap) imageData.variantImageMap = {};
+    } catch(e) { }
     
     // Add priceUSD dynamically
     const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
@@ -155,12 +160,23 @@ app.get('/api/products/:id', (req, res) => {
     db.all("SELECT * FROM product_variants WHERE productId = ? AND isEnabled = 1", [id], (err2, variants) => {
       if (err2) variants = [];
       
-      // Group variants by color and size
+      // Group variants by color and size, and map images to colors
       const colors = {};
       const sizes = new Set();
+      const imagesByColor = {}; // Maps color to its images
+      
       (variants || []).forEach(v => {
         if (v.color && !colors[v.color]) {
           colors[v.color] = { hex: v.colorHex || '#000', name: v.color };
+          
+          // Get images for this color from the variant's imageUrl or variantImageMap
+          if (v.imageUrl) {
+            imagesByColor[v.color] = [{ src: v.imageUrl, position: 'front' }];
+          } else if (imageData.variantImageMap[v.printifyVariantId]) {
+            imagesByColor[v.color] = imageData.variantImageMap[v.printifyVariantId];
+          } else {
+            imagesByColor[v.color] = imageData.allImages;
+          }
         }
         if (v.size) sizes.add(v.size);
       });
@@ -171,6 +187,8 @@ app.get('/api/products/:id', (req, res) => {
       }));
       row.colors = Object.values(colors);
       row.sizes = Array.from(sizes);
+      row.imagesByColor = imagesByColor; // Send color-mapped images to frontend
+      row.images = imageData.allImages; // Keep all images as fallback
       
       res.json(row);
     });

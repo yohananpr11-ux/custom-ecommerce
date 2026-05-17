@@ -96,6 +96,9 @@ db.serialize(() => {
   db.run(`ALTER TABLE products ADD COLUMN careInstructions TEXT`, () => {});
   db.run(`ALTER TABLE products ADD COLUMN deliveryInfo TEXT`, () => {});
   
+  // Migrate: add imageUrl to product_variants table
+  db.run(`ALTER TABLE product_variants ADD COLUMN imageUrl TEXT`, () => {});
+  
   // Purge any local placeholder products to prevent non-fulfillment checkout errors
   db.run("DELETE FROM products WHERE type = 'local'", (err) => {
     if (err) console.error("Error purging local products:", err.message);

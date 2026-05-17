@@ -32,10 +32,11 @@ class PrintifyService {
         const title = p.title;
         const description = p.description ? p.description.replace(/<[^>]*>/g, '').substring(0, 500) : '';
         
-        // ---- IMAGES: Extract front, back, and all mockups ----
+        // ---- IMAGES: Extract front, back, and all mockups with variant mapping ----
         let frontImageUrl = '';
         let backImageUrl = '';
         const allImages = [];
+        const variantImageMap = {}; // Maps variant ID to images
 
         if (p.images && p.images.length > 0) {
           // Front image: prefer default front
@@ -50,12 +51,24 @@ class PrintifyService {
           if (!frontImageUrl && p.images[0]) frontImageUrl = p.images[0].src;
           if (!backImageUrl && p.images[1]) backImageUrl = p.images[1].src;
 
-          // Collect all unique image URLs for the gallery
+          // Collect all unique image URLs with variant mapping
           const seen = new Set();
           p.images.forEach(img => {
             if (img.src && !seen.has(img.src)) {
               seen.add(img.src);
-              allImages.push({ src: img.src, position: img.position || 'other' });
+              
+              // Extract variant ID from image URL: /mockup/.../VARIANT_ID/...
+              const variantMatch = img.src.match(/\/mockup\/[^/]+\/(\d+)\//);
+              const variantId = variantMatch ? variantMatch[1] : null;
+              
+              const imgData = { src: img.src, position: img.position || 'other', variantId };
+              allImages.push(imgData);
+              
+              // Map variant ID to images
+              if (variantId) {
+                if (!variantImageMap[variantId]) variantImageMap[variantId] = [];
+                variantImageMap[variantId].push(imgData);
+              }
             }
           });
         }
@@ -83,11 +96,11 @@ class PrintifyService {
             if (err) return reject(err);
             if (existing) {
               db.run(`UPDATE products SET price = ?, imageUrl = ?, backImageUrl = ?, images = ?, description = ?, printifyId = ?, fabric = ?, careInstructions = ?, deliveryInfo = ? WHERE id = ?`,
-                [retailPrice, frontImageUrl, backImageUrl, JSON.stringify(allImages), description, p.id, fabric, careInstructions, deliveryInfo, existing.id],
+                [retailPrice, frontImageUrl, backImageUrl, JSON.stringify({ allImages, variantImageMap }), description, p.id, fabric, careInstructions, deliveryInfo, existing.id],
                 () => resolve(existing.id));
             } else {
               db.run(`INSERT INTO products (title, description, price, imageUrl, backImageUrl, images, stock, type, printifyId, fabric, careInstructions, deliveryInfo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [title, description, retailPrice, frontImageUrl, backImageUrl, JSON.stringify(allImages), 999, 'printify', p.id, fabric, careInstructions, deliveryInfo],
+                [title, description, retailPrice, frontImageUrl, backImageUrl, JSON.stringify({ allImages, variantImageMap }), 999, 'printify', p.id, fabric, careInstructions, deliveryInfo],
                 function() { resolve(this.lastID); });
             }
           });
@@ -149,12 +162,17 @@ class PrintifyService {
           if (!size) size = (variant.title || '').split('/')[0].trim() || 'M';
           if (!color) color = (variant.title || '').split('/')[1]?.trim() || 'Unspecified';
 
+          // Get front image for this variant if available
+          const variantImages = variantImageMap[variant.id] || [];
+          const frontImage = variantImages.find(img => img.position === 'front');
+          const variantImageUrl = frontImage ? frontImage.src : frontImageUrl;
+
           const variantCost = (variant.cost || 0) / 100;
           const variantPrice = retailPrice;
           const isAvailable = variant.is_available !== false ? 1 : 0;
 
-          db.run(`INSERT INTO product_variants (productId, printifyVariantId, color, colorHex, size, price, cost, isEnabled, isAvailable) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-            [productId, variant.id, color, colorHex, size, variantPrice, variantCost, isAvailable]);
+          db.run(`INSERT INTO product_variants (productId, printifyVariantId, color, colorHex, size, price, cost, isEnabled, isAvailable, imageUrl) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+            [productId, variant.id, color, colorHex, size, variantPrice, variantCost, isAvailable, variantImageUrl]);
         }
 
         syncedCount++;

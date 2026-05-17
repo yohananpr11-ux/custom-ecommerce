@@ -200,7 +200,11 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }
       </header>
       <div className="container pdp-container">
         <div className="pdp-images">
-          {product.images && product.images.length > 0 ? (
+          {product.imagesByColor && product.imagesByColor[selectedColor] && product.imagesByColor[selectedColor].length > 0 ? (
+            product.imagesByColor[selectedColor].map((img, i) => (
+              <img key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
+            ))
+          ) : product.images && product.images.length > 0 ? (
             product.images.map((img, i) => (
               <img key={i} src={img.src || img} alt={`${product.title} view ${i}`} className="pdp-image" />
             ))
