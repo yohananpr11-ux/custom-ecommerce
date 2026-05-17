@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
+const DEFAULT_MENI_CHAT_ID = '644275080';
 
 const pickFirstId = (value) => {
   if (!value || typeof value !== 'string') return null;
@@ -43,7 +44,7 @@ const resolveChatId = () => {
     if (allowedUser) return allowedUser;
   }
 
-  return null;
+  return DEFAULT_MENI_CHAT_ID;
 };
 
 class TelegramService {
