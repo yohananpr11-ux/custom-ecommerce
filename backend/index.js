@@ -14,6 +14,80 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock'
 
 app.use(cors());
 
+// Temporary Admin Endpoint: Register Printify webhooks from Render env vars.
+// Keep this route high in the file to avoid being shadowed by other routing logic.
+const registerWebhooksHandler = async (req, res) => {
+  const PRINTIFY_API_TOKEN = process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_TOKEN;
+  const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
+  const WEBHOOK_URL = process.env.PRINTIFY_WEBHOOK_URL
+    || (process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/api/webhooks/printify` : null);
+
+  if (!PRINTIFY_API_TOKEN || !PRINTIFY_SHOP_ID || !WEBHOOK_URL) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing required environment variables',
+      required: ['PRINTIFY_API_TOKEN', 'PRINTIFY_SHOP_ID', 'PRINTIFY_WEBHOOK_URL or RENDER_EXTERNAL_URL']
+    });
+  }
+
+  const events = [
+    'shop:product:updated',
+    'shop:product:deleted',
+    'shop:product:published'
+  ];
+
+  const apiUrl = `https://api.printify.com/v1/shops/${PRINTIFY_SHOP_ID}/webhooks.json`;
+  const headers = {
+    Authorization: `Bearer ${PRINTIFY_API_TOKEN}`,
+    'Content-Type': 'application/json'
+  };
+
+  const results = [];
+
+  try {
+    const existingRes = await axios.get(apiUrl, { headers });
+    const existingHooks = Array.isArray(existingRes.data) ? existingRes.data : [];
+
+    for (const event of events) {
+      const alreadyExists = existingHooks.some((hook) => hook.topic === event && hook.address === WEBHOOK_URL);
+      if (alreadyExists) {
+        results.push({ topic: event, status: 'skipped', reason: 'already_registered' });
+        continue;
+      }
+
+      try {
+        const createRes = await axios.post(apiUrl, { topic: event, address: WEBHOOK_URL }, { headers });
+        results.push({
+          topic: event,
+          status: 'created',
+          webhookId: createRes.data && createRes.data.id ? createRes.data.id : null
+        });
+      } catch (err) {
+        results.push({
+          topic: event,
+          status: 'failed',
+          error: err.response && err.response.data ? err.response.data : err.message
+        });
+      }
+    }
+
+    const failed = results.filter((r) => r.status === 'failed').length;
+    return res.status(failed ? 207 : 200).json({
+      success: failed === 0,
+      webhookUrl: WEBHOOK_URL,
+      results
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to query existing Printify webhooks',
+      details: err.response && err.response.data ? err.response.data : err.message
+    });
+  }
+};
+
+app.all('/api/admin/register-webhooks', registerWebhooksHandler);
+
 // --- Webhooks must be before express.json() to parse raw body for Stripe ---
 app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async (req, res) => {
   const payload = req.body;
@@ -297,80 +371,6 @@ app.post('/api/admin/update-prices', async (req, res) => {
     res.status(500).json({ error: 'Price update failed' });
   }
 });
-
-// Temporary Admin Endpoint: Register Printify webhooks from Render env vars
-const registerWebhooksHandler = async (req, res) => {
-  const PRINTIFY_API_TOKEN = process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_TOKEN;
-  const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
-  const WEBHOOK_URL = process.env.PRINTIFY_WEBHOOK_URL
-    || (process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/api/webhooks/printify` : null);
-
-  if (!PRINTIFY_API_TOKEN || !PRINTIFY_SHOP_ID || !WEBHOOK_URL) {
-    return res.status(400).json({
-      success: false,
-      error: 'Missing required environment variables',
-      required: ['PRINTIFY_API_TOKEN', 'PRINTIFY_SHOP_ID', 'PRINTIFY_WEBHOOK_URL or RENDER_EXTERNAL_URL']
-    });
-  }
-
-  const events = [
-    'shop:product:updated',
-    'shop:product:deleted',
-    'shop:product:published'
-  ];
-
-  const apiUrl = `https://api.printify.com/v1/shops/${PRINTIFY_SHOP_ID}/webhooks.json`;
-  const headers = {
-    Authorization: `Bearer ${PRINTIFY_API_TOKEN}`,
-    'Content-Type': 'application/json'
-  };
-
-  const results = [];
-
-  try {
-    const existingRes = await axios.get(apiUrl, { headers });
-    const existingHooks = Array.isArray(existingRes.data) ? existingRes.data : [];
-
-    for (const event of events) {
-      const alreadyExists = existingHooks.some((hook) => hook.topic === event && hook.address === WEBHOOK_URL);
-      if (alreadyExists) {
-        results.push({ topic: event, status: 'skipped', reason: 'already_registered' });
-        continue;
-      }
-
-      try {
-        const createRes = await axios.post(apiUrl, { topic: event, address: WEBHOOK_URL }, { headers });
-        results.push({
-          topic: event,
-          status: 'created',
-          webhookId: createRes.data && createRes.data.id ? createRes.data.id : null
-        });
-      } catch (err) {
-        results.push({
-          topic: event,
-          status: 'failed',
-          error: err.response && err.response.data ? err.response.data : err.message
-        });
-      }
-    }
-
-    const failed = results.filter((r) => r.status === 'failed').length;
-    return res.status(failed ? 207 : 200).json({
-      success: failed === 0,
-      webhookUrl: WEBHOOK_URL,
-      results
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to query existing Printify webhooks',
-      details: err.response && err.response.data ? err.response.data : err.message
-    });
-  }
-};
-
-app.post('/api/admin/register-webhooks', registerWebhooksHandler);
-app.get('/api/admin/register-webhooks', registerWebhooksHandler);
 
 // Contact Form Endpoint
 app.post('/api/contact', async (req, res) => {
