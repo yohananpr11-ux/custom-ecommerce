@@ -8,11 +8,11 @@ class PricingEngine {
     this.paymentFeeRate = parseFloat(process.env.PAYMENT_FEE_RATE || 0.03); // ~3% payment processing
     this.exchangeRateUSDILS = 3.75; // Fallback
 
-    // Fixed base target retail prices (USD) - set by business strategy to secure USD margins
-    this.targetPricesUSD = {
-      'softstyle':   23.97,   // Gildan 64000 basic tee (~$24)
-      'jersey':      31.97,   // Bella+Canvas 3001 premium tee (~$32)
-      'hoodie':      42.64,   // Gildan 18500 hooded sweatshirt (~$42.6)
+    // Exact target retail prices in ILS (business-critical)
+    this.targetPricesILS = {
+      'softstyle':   89.90,   // Gildan 64000 basic tee
+      'jersey':      119.90,  // Bella+Canvas 3001 premium tee
+      'hoodie':      159.90,  // Gildan 18500 hooded sweatshirt
     };
 
     // Shipping cost displayed separately at checkout
@@ -33,16 +33,11 @@ class PricingEngine {
   }
 
   /**
-   * Get the fixed target price for a product in ILS (scaled by exchange rate)
+   * Get the fixed target price for a product in ILS (enforces exact business-critical prices)
    */
   getTargetPrice(title, type) {
     const category = this.getProductCategory(title);
-    const usdPrice = this.targetPricesUSD[category] || 23.97;
-    const rawILS = usdPrice * this.exchangeRateUSDILS;
-    
-    // Round to nearest 10 and subtract 0.10 for nice commercial finish (e.g. 89.90, 119.90, 159.90)
-    const base = Math.round(rawILS / 10) * 10;
-    return base - 0.10;
+    return this.targetPricesILS[category] || 89.90;
   }
 
   /**

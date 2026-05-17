@@ -26,47 +26,47 @@ class ErrorBoundary extends React.Component {
 
 const translations = {
   he: {
-    logo: "דריפ סטריט",
-    announcement: "🔥 משלוח חינם בקניית 5 פריטים ומעלה! | 3 טי-שירטס ב-229₪ בלבד",
-    search_placeholder: "חפש בגדי פרימיום...",
+    logo: "DRIP STREET",
+    announcement: "🔥 משלוח חינם על 5+ פריטים | 3 טי-שירטס ב-229₪",
+    search_placeholder: "חפש סטריטוור...",
     cart: "סל קניות",
     hero_title: "ELEVATE YOUR STYLE",
-    hero_subtitle: "אופנת רחוב פרימיום בעיצוב מקומי, מיוצרת להחזיק מעמד.",
+    hero_subtitle: "בגדי סטריטוור פרימיום בעיצוב מקומי שמתוכננים להחזיק מעמד ולהיראות מדהים.",
     add_to_cart: "הוסף לסל",
     all: "הכל",
-    new_arrivals: "חדש באוויר",
-    best_sellers: "הנמכרים ביותר",
+    new_arrivals: "חדש",
+    best_sellers: "כוכבים",
     hoodies: "קפוצ'ונים",
     tshirts: "טי-שירטס",
-    fabric_fit: "הרכב הבד וגזרה",
-    care_instructions: "הוראות כביסה",
-    delivery_info: "משלוח ואספקה",
-    checkout: "מעבר לקופה",
+    fabric_fit: "חומר וגזרה",
+    care_instructions: "טיפול",
+    delivery_info: "משלוח",
+    checkout: "קופה",
     checkout_secure: "קופה מאובטחת",
     shipping_details: "פרטי משלוח",
     full_name: "שם מלא",
-    email: "כתובת אימייל",
-    address: "כתובת מלאה (רחוב, עיר, מיקוד)",
-    payment_method: "אמצעי תשלום",
-    payment_card_bit: "כרטיס אשראי / Bit (₪)",
-    payment_stripe: "Stripe ($)",
+    email: "דוא'ל",
+    address: "כתובת (רחוב, עיר, מיקוד)",
+    payment_method: "בחר תשלום",
+    payment_card_bit: "כרטיס אשראי / Bit",
+    payment_stripe: "PayPal / Stripe",
     order_summary: "סיכום הזמנה",
-    subtotal: "סכום ביניים",
-    bundle_deal: "🎁 מבצע שלשות (3 טי-שירטס)",
+    subtotal: "סכום",
+    bundle_deal: "🎁 3 טי-שירטס",
     shipping: "משלוח",
     free: "חינם",
-    vat: "מע\"מ (עוסק פטור)",
-    total: "סה\"כ לתשלום",
-    complete_order: "השלם הזמנה",
-    success_title: "התשלום בוצע בהצלחה! 🎉",
-    success_desc: "תודה על ההזמנה שלך. אנחנו כבר מעבדים אותה במפעל.",
+    vat: "סה'כ",
+    total: "לתשלום",
+    complete_order: "בצע הזמנה",
+    success_title: "🎉 התשלום בוצע!",
+    success_desc: "תודה! ההזמנה שלך מעובדת ועל הדרך אליך.",
     return_home: "חזרה לחנות",
-    shipping_unlocked: "🎉 משלוח חינם! פתחת הטבת משלוח חינם",
-    shipping_hint: "הוסף עוד {count} פריטים למשלוח חינם!",
-    cart_empty: "סל הקניות ריק",
-    support_chat: "צ'אט עם מני 🤖",
-    support_placeholder: "שאל את מני לגבי מידות, הוראות כביסה או משלוח...",
-    escalated_msg: "הועבר לנציג. שאלתך תיענה בהקדם בטלגרם."
+    shipping_unlocked: "🎉 משלוח חינם!",
+    shipping_hint: "עוד {count} פריטים למשלוח חינם",
+    cart_empty: "הסל ריק",
+    support_chat: "מני 🤖",
+    support_placeholder: "שאלה? מני כאן בשבילך!",
+    escalated_msg: "מחובר לנציג - תשובה בדקות"
   },
   en: {
     logo: "DRIP STREET",
@@ -113,13 +113,27 @@ const translations = {
   }
 };
 
+/** Product title translations from Printify defaults to Hebrew */
+const productTitleMap = {
+  'Unisex Softstyle T-Shirt': 'טי-שירט יוניסקס בייסיק',
+  'Unisex Jersey Short Sleeve Tee': 'טי-שירט פרימיום',
+  'Unisex Heavy Blend™ Hooded Sweatshirt': 'קפוצ\'ון אוברסייז קלאסי',
+};
+
+function getProductTitle(title, locale) {
+  if (locale === 'he' && productTitleMap[title]) {
+    return productTitleMap[title];
+  }
+  return title;
+}
+
 /** Check if a product is a tee (not hoodie) */
 function isTeeProduct(product) {
   const t = product.title.toLowerCase();
   return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
 }
 
-function ProductDetailPage({ productId, addToCart, t, currency, curSym }) {
+function ProductDetailPage({ productId, addToCart, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
@@ -186,7 +200,7 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym }) {
         
         <div className="pdp-info-wrapper">
           <div className="pdp-info">
-            <h1>{product.title}</h1>
+            <h1>{getProductTitle(product.title, locale)}</h1>
             <div className="pdp-price">{curSym}{displayPrice.toFixed(2)}</div>
             
             {product.colors && product.colors.length > 0 && (
@@ -227,9 +241,13 @@ function ProductDetailPage({ productId, addToCart, t, currency, curSym }) {
               {t('add_to_cart')}
             </button>
 
-            <p className="pdp-desc">{product.description}</p>
-
             <div className="pdp-accordion">
+              <div className="accordion-item">
+                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'description' ? '' : 'description')}>
+                  תיאור המוצר <span>{activeTab === 'description' ? '−' : '+'}</span>
+                </button>
+                {activeTab === 'description' && <div className="accordion-content">{product.description}</div>}
+              </div>
               <div className="accordion-item">
                 <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'fabric' ? '' : 'fabric')}>
                   {t('fabric_fit')} <span>{activeTab === 'fabric' ? '−' : '+'}</span>
@@ -643,7 +661,7 @@ function MainApp() {
   // ============ ROUTE: PRODUCT DETAIL PAGE ============
   if (currentPath.startsWith('/product/')) {
     const productId = currentPath.split('/')[2];
-    return <ProductDetailPage productId={productId} addToCart={addToCart} t={t} currency={currency} curSym={curSym} />;
+    return <ProductDetailPage productId={productId} addToCart={addToCart} t={t} currency={currency} curSym={curSym} locale={locale} />;
   }
 
   // ============ ROUTE: 404 ============
@@ -790,11 +808,10 @@ function MainApp() {
                         onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
                         style={{ cursor: 'pointer' }}
                       >
-                        {product.title}
+                        {getProductTitle(product.title, locale)}
                       </h3>
                       <span className="product-price">{curSym}{displayPrice.toFixed(2)}</span>
                     </div>
-                    <p className="product-desc">{product.description}</p>
                     <button className="add-to-cart" aria-label={`Add ${product.title} to cart`} onClick={() => addToCart(product)}>
                       {t('add_to_cart')}
                     </button>
