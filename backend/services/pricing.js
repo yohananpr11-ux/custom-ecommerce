@@ -39,6 +39,8 @@ class PricingEngine {
    */
   getTargetPrice(title, type) {
     const category = this.getProductCategory(title);
+    // Tank tops have no fixed price - return null to indicate dynamic pricing
+    if (category === 'tank') return null;
     return this.targetPricesILS[category] || 89.90;
   }
 
