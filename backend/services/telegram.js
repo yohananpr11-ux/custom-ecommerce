@@ -53,20 +53,56 @@ class TelegramService {
     this.baseUrl = `https://api.telegram.org/bot${this.token}`;
   }
 
+  async ensureChatId() {
+    if (this.chatId) return this.chatId;
+
+    const fromAllowed = pickFirstId(process.env.TELEGRAM_ALLOWED_USER_IDS || '');
+    if (fromAllowed) {
+      this.chatId = fromAllowed;
+      return this.chatId;
+    }
+
+    if (!this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN') return null;
+
+    try {
+      const response = await axios.get(`${this.baseUrl}/getUpdates`, { timeout: 7000 });
+      const updates = Array.isArray(response.data && response.data.result) ? response.data.result : [];
+
+      for (let index = updates.length - 1; index >= 0; index -= 1) {
+        const update = updates[index];
+        const messageChatId = update && update.message && update.message.chat ? update.message.chat.id : null;
+        const callbackChatId = update && update.callback_query && update.callback_query.message && update.callback_query.message.chat
+          ? update.callback_query.message.chat.id
+          : null;
+        const chatId = messageChatId || callbackChatId;
+        if (chatId) {
+          this.chatId = String(chatId);
+          return this.chatId;
+        }
+      }
+    } catch (error) {
+      // Keep graceful behavior; sendMessage will return structured diagnostic below.
+    }
+
+    return null;
+  }
+
   async sendMessage(text) {
     if (!this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN') {
       console.warn('⚠️ Telegram token not configured. Skipping message:', text);
       return { ok: false, skipped: true, reason: 'token_not_configured' };
     }
 
-    if (!this.chatId) {
+    const resolvedChatId = await this.ensureChatId();
+
+    if (!resolvedChatId) {
       console.warn('⚠️ Telegram chat id not configured. Skipping message:', text);
       return { ok: false, skipped: true, reason: 'chat_id_not_configured' };
     }
 
     try {
       const response = await axios.post(`${this.baseUrl}/sendMessage`, {
-        chat_id: this.chatId,
+        chat_id: resolvedChatId,
         text: text,
         parse_mode: 'HTML'
       });
