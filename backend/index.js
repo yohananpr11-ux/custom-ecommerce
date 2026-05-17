@@ -103,9 +103,9 @@ const registerWebhooksHandler = async (req, res) => {
   }
 
   const events = [
-    'shop:product:updated',
-    'shop:product:deleted',
-    'shop:product:published'
+    'product:created',
+    'product:updated',
+    'product:deleted'
   ];
 
   const apiUrl = `https://api.printify.com/v1/shops/${PRINTIFY_SHOP_ID}/webhooks.json`;
@@ -134,14 +134,14 @@ const registerWebhooksHandler = async (req, res) => {
     const existingHooks = Array.isArray(existingRes.data) ? existingRes.data : [];
 
     for (const event of events) {
-      const alreadyExists = existingHooks.some((hook) => hook.topic === event && hook.address === WEBHOOK_URL);
+      const alreadyExists = existingHooks.some((hook) => hook.topic === event && hook.url === WEBHOOK_URL);
       if (alreadyExists) {
         results.push({ topic: event, status: 'skipped', reason: 'already_registered' });
         continue;
       }
 
       try {
-        const createRes = await axios.post(apiUrl, { topic: event, address: WEBHOOK_URL }, { headers });
+        const createRes = await axios.post(apiUrl, { topic: event, url: WEBHOOK_URL }, { headers });
         results.push({
           topic: event,
           status: 'created',
