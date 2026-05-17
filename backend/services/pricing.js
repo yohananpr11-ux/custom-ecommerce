@@ -1,20 +1,18 @@
 const cron = require('node-cron');
 const db = require('../db');
 const telegram = require('./telegram');
+const axios = require('axios');
 
 class PricingEngine {
   constructor() {
-    // Osek Patur - 0% VAT, payment fee already baked into target prices
     this.paymentFeeRate = parseFloat(process.env.PAYMENT_FEE_RATE || 0.03); // ~3% payment processing
     this.exchangeRateUSDILS = 3.75; // Fallback
 
-    // Fixed target retail prices (ILS) - set by business strategy
-    this.targetPrices = {
-      'softstyle':   89.90,   // Gildan 64000 basic tee
-      'jersey':      119.90,  // Bella+Canvas 3001 premium tee
-      'hoodie':      159.90,  // Gildan 18500 hooded sweatshirt
-      'local_tee':   89.90,   // Local Drop Shoulder tees
-      'local_hoodie': 159.90, // Local hoodies
+    // Fixed base target retail prices (USD) - set by business strategy to secure USD margins
+    this.targetPricesUSD = {
+      'softstyle':   23.97,   // Gildan 64000 basic tee (~$24)
+      'jersey':      31.97,   // Bella+Canvas 3001 premium tee (~$32)
+      'hoodie':      42.64,   // Gildan 18500 hooded sweatshirt (~$42.6)
     };
 
     // Shipping cost displayed separately at checkout
@@ -35,23 +33,22 @@ class PricingEngine {
   }
 
   /**
-   * Get the fixed target price for a product
+   * Get the fixed target price for a product in ILS (scaled by exchange rate)
    */
   getTargetPrice(title, type) {
-    if (type === 'local') {
-      const lower = title.toLowerCase();
-      if (lower.includes('hoodie')) return this.targetPrices.local_hoodie;
-      return this.targetPrices.local_tee;
-    }
     const category = this.getProductCategory(title);
-    return this.targetPrices[category];
+    const usdPrice = this.targetPricesUSD[category] || 23.97;
+    const rawILS = usdPrice * this.exchangeRateUSDILS;
+    
+    // Round to nearest 10 and subtract 0.10 for nice commercial finish (e.g. 89.90, 119.90, 159.90)
+    const base = Math.round(rawILS / 10) * 10;
+    return base - 0.10;
   }
 
   /**
-   * Calculate optimal price - now uses fixed target prices instead of cost-based formula
+   * Calculate optimal price - uses fixed target prices instead of cost-based formula
    */
   calculateOptimalPriceNIS(baseCostUSD, shippingCostUSD = 0, title = '', type = 'printify') {
-    // If we have a title, use fixed target pricing
     if (title) {
       return this.getTargetPrice(title, type);
     }
@@ -66,20 +63,27 @@ class PricingEngine {
 
   async fetchExchangeRate() {
     try {
-      this.exchangeRateUSDILS = 3.76;
-      console.log(`💱 Updated USD/ILS Exchange Rate: ${this.exchangeRateUSDILS}`);
+      const res = await axios.get('https://open.er-api.com/v6/latest/USD');
+      if (res.data && res.data.rates && res.data.rates.ILS) {
+        this.exchangeRateUSDILS = parseFloat(res.data.rates.ILS);
+        console.log(`💱 Live USD/ILS Exchange Rate fetched: ${this.exchangeRateUSDILS}`);
+      }
     } catch (e) {
-      console.warn("Failed to fetch exchange rate, using fallback.");
+      console.warn("Failed to fetch live exchange rate, using fallback 3.75:", e.message);
+      this.exchangeRateUSDILS = 3.75;
     }
   }
 
   start() {
+    // Run exchange rate fetch immediately on start
+    this.fetchExchangeRate().then(() => this.runPricingUpdate());
+
     // Run every day at midnight
     cron.schedule('0 0 * * *', async () => {
-      console.log('💰 Starting Pricing Sync...');
+      console.log('💰 Starting Daily Pricing & Exchange Rate Sync...');
       await this.runPricingUpdate();
     });
-    console.log('📈 Pricing Engine initialized (Fixed target prices: Tee ₪89.90 / Premium ₪119.90 / Hoodie ₪159.90)');
+    console.log('📈 Pricing Engine initialized (USD base targets scaled dynamically to ILS)');
   }
 
   async runPricingUpdate() {
@@ -104,7 +108,7 @@ class PricingEngine {
       });
 
       if (updatedCount > 0) {
-        telegram.sendMessage(`📈 <b>עדכון מחירים</b>\n\n${updatedCount} מוצרים עודכנו למחירי היעד החדשים.`);
+        telegram.sendMessage(`📈 <b>עדכון מחירים אוטומטי</b>\n\nשער הדולר הנוכחי: ₪${this.exchangeRateUSDILS.toFixed(4)}\nעודכנו ${updatedCount} מוצרים למחירי היעד המעודכנים לפי שער הדולר.`);
       }
     });
   }

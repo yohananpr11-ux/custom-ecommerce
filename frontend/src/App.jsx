@@ -24,13 +24,102 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+const translations = {
+  he: {
+    logo: "דריפ סטריט",
+    announcement: "🔥 משלוח חינם בקניית 5 פריטים ומעלה! | 3 טי-שירטס ב-229₪ בלבד",
+    search_placeholder: "חפש בגדי פרימיום...",
+    cart: "סל קניות",
+    hero_title: "ELEVATE YOUR STYLE",
+    hero_subtitle: "אופנת רחוב פרימיום בעיצוב מקומי, מיוצרת להחזיק מעמד.",
+    add_to_cart: "הוסף לסל",
+    all: "הכל",
+    new_arrivals: "חדש באוויר",
+    best_sellers: "הנמכרים ביותר",
+    hoodies: "קפוצ'ונים",
+    tshirts: "טי-שירטס",
+    fabric_fit: "הרכב הבד וגזרה",
+    care_instructions: "הוראות כביסה",
+    delivery_info: "משלוח ואספקה",
+    checkout: "מעבר לקופה",
+    checkout_secure: "קופה מאובטחת",
+    shipping_details: "פרטי משלוח",
+    full_name: "שם מלא",
+    email: "כתובת אימייל",
+    address: "כתובת מלאה (רחוב, עיר, מיקוד)",
+    payment_method: "אמצעי תשלום",
+    payment_card_bit: "כרטיס אשראי / Bit (₪)",
+    payment_stripe: "Stripe ($)",
+    order_summary: "סיכום הזמנה",
+    subtotal: "סכום ביניים",
+    bundle_deal: "🎁 מבצע שלשות (3 טי-שירטס)",
+    shipping: "משלוח",
+    free: "חינם",
+    vat: "מע\"מ (עוסק פטור)",
+    total: "סה\"כ לתשלום",
+    complete_order: "השלם הזמנה",
+    success_title: "התשלום בוצע בהצלחה! 🎉",
+    success_desc: "תודה על ההזמנה שלך. אנחנו כבר מעבדים אותה במפעל.",
+    return_home: "חזרה לחנות",
+    shipping_unlocked: "🎉 משלוח חינם! פתחת הטבת משלוח חינם",
+    shipping_hint: "הוסף עוד {count} פריטים למשלוח חינם!",
+    cart_empty: "סל הקניות ריק",
+    support_chat: "צ'אט עם מני 🤖",
+    support_placeholder: "שאל את מני לגבי מידות, הוראות כביסה או משלוח...",
+    escalated_msg: "הועבר לנציג. שאלתך תיענה בהקדם בטלגרם."
+  },
+  en: {
+    logo: "DRIP STREET",
+    announcement: "🔥 FREE SHIPPING ON 5+ ITEMS! | 3 TEES FOR 229₪ ($61.90)",
+    search_placeholder: "Search premium apparel...",
+    cart: "Cart",
+    hero_title: "ELEVATE YOUR STYLE",
+    hero_subtitle: "Premium streetwear crafted for the modern individual. Designed locally, made to last.",
+    add_to_cart: "Add to Cart",
+    all: "All",
+    new_arrivals: "New Arrivals",
+    best_sellers: "Best Sellers",
+    hoodies: "Hoodies",
+    tshirts: "T-Shirts",
+    fabric_fit: "Fabric & Fit",
+    care_instructions: "Care Instructions",
+    delivery_info: "Delivery Info",
+    checkout: "Checkout",
+    checkout_secure: "Secure Checkout",
+    shipping_details: "Shipping Details",
+    full_name: "Full Name",
+    email: "Email Address",
+    address: "Full Address (Street, City, Zip)",
+    payment_method: "Payment Method",
+    payment_card_bit: "Credit Card / Bit (₪)",
+    payment_stripe: "Stripe ($)",
+    order_summary: "Order Summary",
+    subtotal: "Subtotal",
+    bundle_deal: "🎁 Bundle Deal (3 Tees)",
+    shipping: "Shipping",
+    free: "FREE",
+    vat: "VAT (0% - Osek Patur)",
+    total: "Total",
+    complete_order: "Complete Order",
+    success_title: "Payment Successful! 🎉",
+    success_desc: "Thank you for your order. We are processing it now.",
+    return_home: "Return to Store",
+    shipping_unlocked: "🎉 You've unlocked free shipping",
+    shipping_hint: "Add {count} more item{plural} for free shipping!",
+    cart_empty: "Your cart is empty",
+    support_chat: "Chat with Meni 🤖",
+    support_placeholder: "Ask Meni about sizes, care, or delivery...",
+    escalated_msg: "Escalated to human support. We will reply to your chat shortly."
+  }
+};
+
 /** Check if a product is a tee (not hoodie) */
 function isTeeProduct(product) {
   const t = product.title.toLowerCase();
   return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
 }
 
-function ProductDetailPage({ productId, addToCart }) {
+function ProductDetailPage({ productId, addToCart, t, currency, curSym }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
@@ -60,7 +149,6 @@ function ProductDetailPage({ productId, addToCart }) {
       if (v) variantId = v.id;
     }
     
-    // We modify the product title to include variant info in cart
     const variantTitle = [product.title];
     if (selectedColor) variantTitle.push(selectedColor);
     if (selectedSize) variantTitle.push(selectedSize);
@@ -68,19 +156,21 @@ function ProductDetailPage({ productId, addToCart }) {
     addToCart({
       ...product,
       title: variantTitle.join(' - '),
-      cartId: `${product.id}-${selectedColor}-${selectedSize}`, // Unique ID for cart grouping
+      cartId: `${product.id}-${selectedColor}-${selectedSize}`,
       selectedColor,
       selectedSize,
       variantId
     });
   };
 
+  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / 3.75)) : product.price;
+
   return (
     <>
       <header className="header container">
-        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">DRIP STREET</h1></a>
+        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
         <button className="cart-btn" aria-label="Open cart" onClick={() => window.dispatchEvent(new CustomEvent('open-cart'))}>
-          🛒 CART
+          🛒 {t('cart')}
         </button>
       </header>
       <div className="container pdp-container">
@@ -97,7 +187,7 @@ function ProductDetailPage({ productId, addToCart }) {
         <div className="pdp-info-wrapper">
           <div className="pdp-info">
             <h1>{product.title}</h1>
-            <div className="pdp-price">₪{product.price.toFixed(2)}</div>
+            <div className="pdp-price">{curSym}{displayPrice.toFixed(2)}</div>
             
             {product.colors && product.colors.length > 0 && (
               <div className="pdp-section">
@@ -134,7 +224,7 @@ function ProductDetailPage({ productId, addToCart }) {
             )}
 
             <button className="checkout-btn add-to-cart-large" onClick={handleAdd}>
-              ADD TO CART
+              {t('add_to_cart')}
             </button>
 
             <p className="pdp-desc">{product.description}</p>
@@ -142,19 +232,19 @@ function ProductDetailPage({ productId, addToCart }) {
             <div className="pdp-accordion">
               <div className="accordion-item">
                 <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'fabric' ? '' : 'fabric')}>
-                  Fabric & Fit <span>{activeTab === 'fabric' ? '−' : '+'}</span>
+                  {t('fabric_fit')} <span>{activeTab === 'fabric' ? '−' : '+'}</span>
                 </button>
                 {activeTab === 'fabric' && <div className="accordion-content">{product.fabric || 'Premium materials.'}</div>}
               </div>
               <div className="accordion-item">
                 <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'care' ? '' : 'care')}>
-                  Care Instructions <span>{activeTab === 'care' ? '−' : '+'}</span>
+                  {t('care_instructions')} <span>{activeTab === 'care' ? '−' : '+'}</span>
                 </button>
                 {activeTab === 'care' && <div className="accordion-content">{product.careInstructions || 'Machine wash cold.'}</div>}
               </div>
               <div className="accordion-item">
                 <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'delivery' ? '' : 'delivery')}>
-                  Delivery Info <span>{activeTab === 'delivery' ? '−' : '+'}</span>
+                  {t('delivery_info')} <span>{activeTab === 'delivery' ? '−' : '+'}</span>
                 </button>
                 {activeTab === 'delivery' && <div className="accordion-content">{product.deliveryInfo || 'Standard delivery.'}</div>}
               </div>
@@ -183,7 +273,37 @@ function MainApp() {
   const [activeCategory, setActiveCategory] = useState('All')
   const [activeCoupon, setActiveCoupon] = useState(null)
 
+  const [locale, setLocale] = useState('he')
+  const [currency, setCurrency] = useState('ILS')
+  const [exchangeRate, setExchangeRate] = useState(3.75)
+
+  const [isWidgetChatOpen, setIsWidgetChatOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [chatSessionId] = useState(() => {
+    let sid = localStorage.getItem('drip_street_chat_session');
+    if (!sid) {
+      sid = 'session_' + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('drip_street_chat_session', sid);
+    }
+    return sid;
+  });
+  const [chatInput, setChatInput] = useState('');
+  const [chatStatus, setChatStatus] = useState('bot'); // bot or escalated
+
   useEffect(() => {
+    // Geolocation detection
+    fetch(`${API_BASE}/api/geolocation`)
+      .then(res => res.json())
+      .then(data => {
+        setLocale(data.locale);
+        setCurrency(data.currency);
+        setExchangeRate(data.exchangeRate || 3.75);
+        if (data.currency === 'USD') {
+          setPaymentMethod('stripe');
+        }
+      })
+      .catch(err => console.warn("Geolocation fallback applied:", err));
+
     fetch(`${API_BASE}/api/products`)
       .then(res => res.json())
       .then(data => { setProducts(data); setIsLoading(false); })
@@ -193,7 +313,31 @@ function MainApp() {
       .then(res => res.json())
       .then(data => { if(data.coupon) setActiveCoupon(data.coupon) })
       .catch(console.error)
+
+    // Load Chat History
+    fetch(`${API_BASE}/api/chat/history/${chatSessionId}`)
+      .then(res => res.json())
+      .then(data => {
+        setChatHistory(data.history || []);
+        setChatStatus(data.status || 'bot');
+      })
+      .catch(console.error);
+
+    // Listen for global open cart events (e.g. from PDP)
+    const handleOpenCart = () => setIsCartOpen(true);
+    window.addEventListener('open-cart', handleOpenCart);
+    return () => window.removeEventListener('open-cart', handleOpenCart);
   }, [])
+
+  const t = (key, replaces = {}) => {
+    let text = translations[locale]?.[key] || translations['en']?.[key] || key;
+    Object.keys(replaces).forEach(k => {
+      text = text.replace(`{${k}}`, replaces[k]);
+    });
+    return text;
+  };
+
+  const curSym = currency === 'USD' ? '$' : '₪';
 
   useEffect(() => {
     try {
@@ -216,6 +360,35 @@ function MainApp() {
       return matchesSearch && matchesCategory
     })
   }, [products, searchQuery, activeCategory])
+
+  const sendChatMessage = (e) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    const userMsg = chatInput;
+    setChatInput('');
+
+    // Optimistically insert user message
+    setChatHistory(prev => [...prev, { sender: 'user', text: userMsg, timestamp: new Date().toISOString() }]);
+
+    fetch(`${API_BASE}/api/chat/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: chatSessionId,
+        message: userMsg,
+        customerName: 'Guest'
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setChatHistory(data.history || []);
+        setChatStatus(data.status || 'bot');
+      })
+      .catch(err => {
+        console.error("Failed to send chat message:", err);
+      });
+  };
 
   const addToCart = (product) => {
     const existing = cart.find(item => item.id === product.id)
@@ -331,12 +504,12 @@ function MainApp() {
         <motion.h1 
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          style={{ fontSize: '48px', marginBottom: '24px' }}>Payment Successful! 🎉</motion.h1>
+          style={{ fontSize: '48px', marginBottom: '24px' }}>{t('success_title')}</motion.h1>
         <p style={{ fontSize: '20px', color: '#888', marginBottom: '32px' }}>
-          Thank you for your order. We're processing it now.
+          {t('success_desc')}
         </p>
         <button className="checkout-btn" style={{ maxWidth: '250px' }} onClick={() => window.location.href = '/'}>
-          Return to Store
+          {t('return_home')}
         </button>
       </div>
     );
@@ -346,71 +519,74 @@ function MainApp() {
   if (currentPath === '/checkout') {
     return (
       <div className="container checkout-page">
-        <h1 style={{ marginTop: '40px' }}>Secure Checkout</h1>
+        <h1 style={{ marginTop: '40px' }}>{t('checkout_secure')}</h1>
         <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
           <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1', minWidth: '300px' }}>
-            <h3>Shipping Details</h3>
-            <input name="customerName" type="text" placeholder="Full Name" required />
-            <input name="customerEmail" type="email" placeholder="Email Address" required />
-            <input name="address" type="text" placeholder="Full Address (Street, City, Zip)" required />
+            <h3>{t('shipping_details')}</h3>
+            <input name="customerName" type="text" placeholder={t('full_name')} required />
+            <input name="customerEmail" type="email" placeholder={t('email')} required />
+            <input name="address" type="text" placeholder={t('address')} required />
             
-            <h3 style={{ marginTop: '24px' }}>Payment Method</h3>
+            <h3 style={{ marginTop: '24px' }}>{t('payment_method')}</h3>
             <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                 <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
-                Credit Card / Bit (₪)
+                {t('payment_card_bit')}
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                 <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
-                Stripe ($)
+                {t('payment_stripe')}
               </label>
             </div>
-            <button type="submit" className="checkout-btn">Complete Order – ₪{cartTotal.toFixed(2)}</button>
+            <button type="submit" className="checkout-btn">{t('complete_order')} – {curSym}{displayVal(cartTotal).toFixed(2)}</button>
           </form>
           
           <div style={{ flex: '1', minWidth: '300px', backgroundColor: '#111', padding: '24px', borderRadius: '12px', height: 'fit-content' }}>
-            <h3>Order Summary</h3>
-            {cart.map(item => (
-              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span>{item.quantity}x {item.title}</span>
-                <span>₪{(item.price * item.quantity).toFixed(2)}</span>
-              </div>
-            ))}
+            <h3>{t('order_summary')}</h3>
+            {cart.map(item => {
+              const itemPrice = currency === 'USD' ? (item.priceUSD || (item.price / exchangeRate)) : item.price;
+              return (
+                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <span>{item.quantity}x {item.title}</span>
+                  <span>{curSym}{(itemPrice * item.quantity).toFixed(2)}</span>
+                </div>
+              );
+            })}
             <hr style={{ borderColor: '#333', margin: '16px 0' }} />
             
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#aaa' }}>
-              <span>Subtotal</span>
-              <span>₪{baseSubtotal.toFixed(2)}</span>
+              <span>{t('subtotal')}</span>
+              <span>{curSym}{displayVal(baseSubtotal).toFixed(2)}</span>
             </div>
 
             {bundleDiscount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#4caf50' }}>
-                <span>🎁 Bundle Deal ({bundleSets}x3 Tees)</span>
-                <span>-₪{bundleDiscount.toFixed(2)}</span>
+                <span>{t('bundle_deal', { sets: bundleSets })}</span>
+                <span>-{curSym}{displayVal(bundleDiscount).toFixed(2)}</span>
               </div>
             )}
 
             {couponDiscount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#4caf50' }}>
                 <span>Coupon ({activeCoupon.code})</span>
-                <span>-₪{couponDiscount.toFixed(2)}</span>
+                <span>-{curSym}{displayVal(couponDiscount).toFixed(2)}</span>
               </div>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: isFreeShipping ? '#4caf50' : '#aaa' }}>
-              <span>Shipping {isFreeShipping && '🎉'}</span>
-              <span>{isFreeShipping ? 'FREE' : `₪${shippingCost.toFixed(2)}`}</span>
+              <span>{t('shipping')} {isFreeShipping && '🎉'}</span>
+              <span>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '10px', color: '#666' }}>
-              <span>VAT (Osek Patur)</span>
-              <span>₪0.00</span>
+              <span>{t('vat')}</span>
+              <span>{curSym}0.00</span>
             </div>
 
             <hr style={{ borderColor: '#333', margin: '16px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '20px' }}>
-              <span>Total</span>
-              <span>₪{cartTotal.toFixed(2)}</span>
+              <span>{t('total')}</span>
+              <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -462,39 +638,68 @@ function MainApp() {
     );
   }
 
+  // ============ ROUTE: PRODUCT DETAIL PAGE ============
+  if (currentPath.startsWith('/product/')) {
+    const productId = currentPath.split('/')[2];
+    return <ProductDetailPage productId={productId} addToCart={addToCart} t={t} currency={currency} curSym={curSym} />;
+  }
+
   // ============ ROUTE: 404 ============
   if (currentPath !== '/' && currentPath !== '/cart') {
     return <div className="container legal-page" style={{textAlign: 'center'}}><h1>404 Not Found</h1><button className="checkout-btn" style={{ maxWidth: '200px' }} onClick={() => window.location.href = '/'}>Return Home</button></div>;
   }
 
-  // ============ ROUTE: PRODUCT DETAIL PAGE ============
-  if (currentPath.startsWith('/product/')) {
-    const productId = currentPath.split('/')[2];
-    return <ProductDetailPage productId={productId} addToCart={addToCart} />;
-  }
-
-  // ============ MAIN STORE PAGE ============
   return (
     <>
-      {/* Announcement Bar */}
       <div className="announcement-bar">
-        🔥 משלוח חינם בקניית 5 פריטים ומעלה! &nbsp;|&nbsp; 3 טי-שירטס ב-229₪ בלבד
+        {t('announcement')}
       </div>
 
-      <header className="header container">
-        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }}><h1 className="logo">DRIP STREET</h1></a>
+      <header className="header container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
         <div className="search-bar">
           <input 
             type="text" 
-            placeholder="Search premium apparel..." 
+            placeholder={t('search_placeholder')} 
             value={searchQuery}
             aria-label="Search products"
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <button className="cart-btn" aria-label="Open cart" onClick={() => setIsCartOpen(true)}>
-          🛒 CART ({totalItems})
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div className="loc-toggle" style={{ display: 'flex', gap: '8px', fontSize: '14px' }}>
+            <button 
+              onClick={() => { setLocale('he'); setCurrency('ILS'); }} 
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: locale === 'he' ? '#fff' : '#666',
+                fontWeight: locale === 'he' ? 'bold' : 'normal',
+                cursor: 'pointer',
+                fontFamily: 'inherit'
+              }}
+            >
+              HE/₪
+            </button>
+            <span style={{ color: '#333' }}>|</span>
+            <button 
+              onClick={() => { setLocale('en'); setCurrency('USD'); }} 
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: locale === 'en' ? '#fff' : '#666',
+                fontWeight: locale === 'en' ? 'bold' : 'normal',
+                cursor: 'pointer',
+                fontFamily: 'inherit'
+              }}
+            >
+              EN/$
+            </button>
+          </div>
+          <button className="cart-btn" aria-label="Open cart" onClick={() => setIsCartOpen(true)}>
+            🛒 {t('cart')} ({totalItems})
+          </button>
+        </div>
       </header>
 
       {activeCoupon && (
@@ -508,24 +713,33 @@ function MainApp() {
 
       <section className="hero">
         <div className="container">
-          <motion.h1 initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>ELEVATE YOUR STYLE</motion.h1>
+          <motion.h1 initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>{t('hero_title')}</motion.h1>
           <motion.p initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-            Premium streetwear crafted for the modern individual. Designed locally, made to last.
+            {t('hero_subtitle')}
           </motion.p>
         </div>
       </section>
 
       <main className="container">
         <div className="categories-nav">
-          {categories.map(cat => (
-            <button 
-              key={cat} 
-              className={`cat-btn ${activeCategory === cat ? 'active' : ''}`}
-              onClick={() => setActiveCategory(cat)}
-            >
-              {cat}
-            </button>
-          ))}
+          {categories.map(cat => {
+            const catKeys = {
+              'All': 'all',
+              'New Arrivals': 'new_arrivals',
+              'Best Sellers': 'best_sellers',
+              'Hoodies': 'hoodies',
+              'T-Shirts': 'tshirts'
+            };
+            return (
+              <button 
+                key={cat} 
+                className={`cat-btn ${activeCategory === cat ? 'active' : ''}`}
+                onClick={() => setActiveCategory(cat)}
+              >
+                {t(catKeys[cat] || cat)}
+              </button>
+            );
+          })}
         </div>
 
         <motion.div layout className="products-grid">
@@ -541,45 +755,50 @@ function MainApp() {
                 </div>
               ))
             ) : (
-              filteredProducts.map(product => (
-                <motion.div 
-                  key={product.id} 
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.3 }}
-                  className="product-card"
-                >
-                  <div 
-                    className="product-image-wrapper" 
-                    onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
-                    style={{ cursor: 'pointer' }}
+              filteredProducts.map(product => {
+                const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+                const dealBadgeText = currency === 'USD' ? '3 for $61.90' : '3 ב-229₪';
+                
+                return (
+                  <motion.div 
+                    key={product.id} 
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.3 }}
+                    className="product-card"
                   >
-                    <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image front-img" />
-                    {product.backImageUrl && (
-                      <img loading="lazy" src={product.backImageUrl} alt={`${product.title} back`} className="product-image back-img" />
-                    )}
-                    {isTeeProduct(product) && (
-                      <span className="deal-badge">3 ב-229₪</span>
-                    )}
-                  </div>
-                  <div className="product-info">
-                    <h3 
-                      className="product-title" 
+                    <div 
+                      className="product-image-wrapper" 
                       onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
                       style={{ cursor: 'pointer' }}
                     >
-                      {product.title}
-                    </h3>
-                    <span className="product-price">₪{product.price.toFixed(2)}</span>
-                  </div>
-                  <p className="product-desc">{product.description}</p>
-                  <button className="add-to-cart" aria-label={`Add ${product.title} to cart`} onClick={() => addToCart(product)}>
-                    Add to Cart
-                  </button>
-                </motion.div>
-              ))
+                      <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image front-img" />
+                      {product.backImageUrl && (
+                        <img loading="lazy" src={product.backImageUrl} alt={`${product.title} back`} className="product-image back-img" />
+                      )}
+                      {isTeeProduct(product) && (
+                        <span className="deal-badge">{dealBadgeText}</span>
+                      )}
+                    </div>
+                    <div className="product-info">
+                      <h3 
+                        className="product-title" 
+                        onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {product.title}
+                      </h3>
+                      <span className="product-price">{curSym}{displayPrice.toFixed(2)}</span>
+                    </div>
+                    <p className="product-desc">{product.description}</p>
+                    <button className="add-to-cart" aria-label={`Add ${product.title} to cart`} onClick={() => addToCart(product)}>
+                      {t('add_to_cart')}
+                    </button>
+                  </motion.div>
+                );
+              })
             )}
           </AnimatePresence>
         </motion.div>
@@ -601,7 +820,7 @@ function MainApp() {
       {/* Cart Drawer */}
       <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`}>
         <div className="cart-header">
-          <h2>Your Cart ({totalItems})</h2>
+          <h2>{t('cart')} ({totalItems})</h2>
           <button className="close-cart" aria-label="Close cart" onClick={() => setIsCartOpen(false)}>×</button>
         </div>
 
@@ -609,10 +828,10 @@ function MainApp() {
         {totalItems > 0 && (
           <div className="shipping-progress">
             {isFreeShipping ? (
-              <p className="shipping-unlocked">🎉 משלוח חינם! You've unlocked free shipping</p>
+              <p className="shipping-unlocked">{t('shipping_unlocked')}</p>
             ) : (
               <>
-                <p className="shipping-hint">הוסף עוד {itemsToFreeShipping} פריט{itemsToFreeShipping > 1 ? 'ים' : ''} למשלוח חינם!</p>
+                <p className="shipping-hint">{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
                 <div className="progress-bar-bg">
                   <motion.div 
                     className="progress-bar-fill"
@@ -627,53 +846,118 @@ function MainApp() {
         )}
 
         <div className="cart-items">
-          {cart.map(item => (
-            <div key={item.id} className="cart-item">
-              <div style={{ flex: 1 }}>
-                <strong>{item.title}</strong>
-                {isTeeProduct(item) && <span className="cart-deal-hint">3 ב-229₪</span>}
-                <div className="cart-qty-controls">
-                  <button onClick={() => updateQuantity(item.id, item.quantity - 1)}>−</button>
-                  <span>{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.id, item.quantity + 1)}>+</button>
-                  <button className="remove-btn" onClick={() => removeFromCart(item.id)}>🗑</button>
+          {cart.map(item => {
+            const itemPrice = currency === 'USD' ? (item.priceUSD || (item.price / exchangeRate)) : item.price;
+            const itemDealBadgeText = currency === 'USD' ? '3 for $61.90' : '3 ב-229₪';
+            
+            return (
+              <div key={item.id} className="cart-item">
+                <div style={{ flex: 1 }}>
+                  <strong>{item.title}</strong>
+                  {isTeeProduct(item) && <span className="cart-deal-hint">{itemDealBadgeText}</span>}
+                  <div className="cart-qty-controls">
+                    <button onClick={() => updateQuantity(item.id, item.quantity - 1)}>−</button>
+                    <span>{item.quantity}</span>
+                    <button onClick={() => updateQuantity(item.id, item.quantity + 1)}>+</button>
+                    <button className="remove-btn" onClick={() => removeFromCart(item.id)}>🗑</button>
+                  </div>
                 </div>
+                <div style={{ fontWeight: 600 }}>{curSym}{(itemPrice * item.quantity).toFixed(2)}</div>
               </div>
-              <div style={{ fontWeight: 600 }}>₪{(item.price * item.quantity).toFixed(2)}</div>
-            </div>
-          ))}
-          {cart.length === 0 && <p style={{color: '#666', textAlign: 'center', marginTop: '40px'}}>Your cart is empty.</p>}
+            );
+          })}
+          {cart.length === 0 && <p style={{color: '#666', textAlign: 'center', marginTop: '40px'}}>{t('cart_empty')}.</p>}
         </div>
 
         <div className="cart-footer">
           {bundleDiscount > 0 && (
             <div className="cart-savings-line">
-              <span>🎁 Bundle Deal ({bundleSets}x3 Tees)</span>
-              <span style={{ color: '#4caf50' }}>-₪{bundleDiscount.toFixed(2)}</span>
+              <span>{t('bundle_deal', { sets: bundleSets })}</span>
+              <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(bundleDiscount).toFixed(2)}</span>
             </div>
           )}
 
           {couponDiscount > 0 && (
             <div className="cart-savings-line">
               <span>Coupon ({activeCoupon.code})</span>
-              <span style={{ color: '#4caf50' }}>-₪{couponDiscount.toFixed(2)}</span>
+              <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(couponDiscount).toFixed(2)}</span>
             </div>
           )}
 
           <div className="cart-savings-line">
-            <span>Shipping</span>
-            <span style={{ color: isFreeShipping ? '#4caf50' : '#aaa' }}>{isFreeShipping ? 'FREE' : `₪${shippingCost.toFixed(2)}`}</span>
+            <span>{t('shipping')}</span>
+            <span style={{ color: isFreeShipping ? '#4caf50' : '#aaa' }}>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
           </div>
 
           <div className="cart-total">
-            <span>Total</span>
-            <span>₪{cartTotal.toFixed(2)}</span>
+            <span>{t('total')}</span>
+            <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
           </div>
 
           <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
-            Proceed to Checkout
+            {t('checkout')}
           </button>
         </div>
+      </div>
+
+      {/* Floating Chat Widget */}
+      <div className="chat-widget">
+        <button 
+          className="chat-bubble"
+          onClick={() => setIsWidgetChatOpen(!isWidgetChatOpen)}
+          aria-label="Toggle chat support"
+        >
+          💬
+        </button>
+
+        <AnimatePresence>
+          {isWidgetChatOpen && (
+            <motion.div 
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 50, scale: 0.9 }}
+              className="chat-window"
+            >
+              <div className="chat-window-header">
+                <h3>{t('support_chat')}</h3>
+                <button onClick={() => setIsWidgetChatOpen(false)}>×</button>
+              </div>
+
+              {chatStatus === 'escalated' && (
+                <div className="chat-escalated-banner">
+                  {t('escalated_msg')}
+                </div>
+              )}
+
+              <div className="chat-messages-container">
+                {chatHistory.length === 0 && (
+                  <div className="chat-message bot">
+                    <div className="chat-message-bubble">
+                      {t('support_placeholder')}
+                    </div>
+                  </div>
+                )}
+                {chatHistory.map((msg, i) => (
+                  <div key={i} className={`chat-message ${msg.sender}`}>
+                    <div className="chat-message-bubble">
+                      {msg.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <form className="chat-input-form" onSubmit={sendChatMessage}>
+                <input 
+                  type="text" 
+                  placeholder={t('support_placeholder')} 
+                  value={chatInput} 
+                  onChange={(e) => setChatInput(e.target.value)} 
+                />
+                <button type="submit">➔</button>
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </>
   )

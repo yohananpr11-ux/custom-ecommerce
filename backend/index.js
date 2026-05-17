@@ -4,6 +4,7 @@ const db = require('./db');
 const telegram = require('./services/telegram');
 const pricingEngine = require('./services/pricing');
 const printify = require('./services/printify');
+const meniChat = require('./services/meni');
 require('dotenv').config();
 
 const app = express();
@@ -98,14 +99,34 @@ app.get('/', (req, res) => {
   res.send('Server is running and connected to Meni (Telegram).');
 });
 
-// Get all products (list view - includes backImageUrl for hover effect)
+// Geolocation and config helper
+app.get('/api/geolocation', (req, res) => {
+  const country = req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || 'IL';
+  const isIsrael = country === 'IL';
+  res.json({
+    country,
+    currency: isIsrael ? 'ILS' : 'USD',
+    locale: isIsrael ? 'he' : 'en',
+    exchangeRate: pricingEngine.exchangeRateUSDILS
+  });
+});
+
+// Get all products (list view - includes backImageUrl for hover effect and dynamic USD prices)
 app.get('/api/products', (req, res) => {
   db.all("SELECT id, title, description, price, imageUrl, backImageUrl, stock, type FROM products", [], (err, rows) => {
     if (err) {
       res.status(500).json({ error: err.message });
       return;
     }
-    res.json(rows);
+    
+    // Add priceUSD dynamically using the live rate
+    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
+    const productsWithUSD = rows.map(r => ({
+      ...r,
+      priceUSD: parseFloat((r.price / exchangeRate).toFixed(2))
+    }));
+    
+    res.json(productsWithUSD);
   });
 });
 
@@ -122,6 +143,10 @@ app.get('/api/products/:id', (req, res) => {
     // Parse images JSON
     try { row.images = JSON.parse(row.images || '[]'); } catch(e) { row.images = []; }
     
+    // Add priceUSD dynamically
+    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
+    row.priceUSD = parseFloat((row.price / exchangeRate).toFixed(2));
+    
     // Fetch variants for this product
     db.all("SELECT * FROM product_variants WHERE productId = ? AND isEnabled = 1", [id], (err2, variants) => {
       if (err2) variants = [];
@@ -136,7 +161,10 @@ app.get('/api/products/:id', (req, res) => {
         if (v.size) sizes.add(v.size);
       });
       
-      row.variants = variants || [];
+      row.variants = (variants || []).map(v => ({
+        ...v,
+        priceUSD: parseFloat((v.price / exchangeRate).toFixed(2))
+      }));
       row.colors = Object.values(colors);
       row.sizes = Array.from(sizes);
       
@@ -276,6 +304,61 @@ app.post('/api/checkout/payplus', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Failed to initialize PayPlus checkout' });
   }
+});
+
+// Chat bot APIs
+app.post('/api/chat/message', (req, res) => {
+  const { sessionId, message, customerName } = req.body;
+  if (!sessionId || !message) return res.status(400).json({ error: 'Missing parameters' });
+
+  // Get or Create session in DB
+  db.get("SELECT * FROM chat_sessions WHERE id = ?", [sessionId], async (err, session) => {
+    let history = [];
+    if (session) {
+      try { history = JSON.parse(session.history || '[]'); } catch(e) { history = []; }
+    }
+    
+    // Add user message to history
+    history.push({ sender: 'user', text: message, timestamp: new Date().toISOString() });
+
+    let botResponse = { text: "נציג אנושי עודכן והוא יחזור אליך בהקדם.", status: "escalated" };
+    if (!session || session.status !== 'escalated') {
+      botResponse = await meniChat.processMessage(sessionId, message, customerName);
+    }
+    
+    history.push({ sender: 'bot', text: botResponse.text, timestamp: new Date().toISOString() });
+
+    // Save session back to DB
+    const status = botResponse.status || 'bot';
+    const historyJSON = JSON.stringify(history);
+    
+    if (session) {
+      db.run("UPDATE chat_sessions SET history = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [historyJSON, status, sessionId]);
+    } else {
+      db.run("INSERT INTO chat_sessions (id, customerName, status, history) VALUES (?, ?, ?, ?)", [sessionId, customerName || 'Guest', status, historyJSON]);
+    }
+
+    res.json({
+      text: botResponse.text,
+      status: status,
+      history: history
+    });
+  });
+});
+
+app.get('/api/chat/history/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  db.get("SELECT * FROM chat_sessions WHERE id = ?", [sessionId], (err, session) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!session) return res.json({ history: [], status: 'bot' });
+    
+    try {
+      const history = JSON.parse(session.history || '[]');
+      res.json({ history, status: session.status });
+    } catch(e) {
+      res.json({ history: [], status: 'bot' });
+    }
+  });
 });
 
 // Start background cron jobs
