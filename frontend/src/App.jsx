@@ -2,12 +2,18 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import './index.css'
 
+const API_BASE = 'https://custom-ecommerce-qp30.onrender.com';
+const SHIPPING_COST = 29.90;
+const FREE_SHIPPING_THRESHOLD = 5;
+const BUNDLE_TEE_PRICE = 229; // 3 tees for 229₪
+const BUNDLE_TEE_COUNT = 3;
+
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError(error) { return { hasError: true }; }
   componentDidCatch(error, errorInfo) {
     console.error("React Error:", error);
-    fetch('https://custom-ecommerce-qp30.onrender.com/api/contact', {
+    fetch(`${API_BASE}/api/contact`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'System', email: 'error@system', message: `Frontend Crash: ${error.message}` })
     }).catch(() => {});
@@ -16,6 +22,12 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) return <div className="container" style={{padding: '100px 20px', textAlign: 'center'}}><h1>Oops! Something broke.</h1><p>Our team has been notified.</p></div>;
     return this.props.children;
   }
+}
+
+/** Check if a product is a tee (not hoodie) */
+function isTeeProduct(product) {
+  const t = product.title.toLowerCase();
+  return (t.includes('tee') || t.includes('t-shirt') || t.includes('shirt')) && !t.includes('hoodie') && !t.includes('sweatshirt');
 }
 
 function MainApp() {
@@ -36,19 +48,17 @@ function MainApp() {
   const [activeCoupon, setActiveCoupon] = useState(null)
 
   useEffect(() => {
-    fetch('https://custom-ecommerce-qp30.onrender.com/api/products')
+    fetch(`${API_BASE}/api/products`)
       .then(res => res.json())
       .then(data => { setProducts(data); setIsLoading(false); })
       .catch(err => { console.error(err); setIsLoading(false); })
       
-    // Listen for coupon updates
-    fetch('https://custom-ecommerce-qp30.onrender.com/api/coupons/active')
+    fetch(`${API_BASE}/api/coupons/active`)
       .then(res => res.json())
       .then(data => { if(data.coupon) setActiveCoupon(data.coupon) })
       .catch(console.error)
   }, [])
 
-  // Sync cart to local storage
   useEffect(() => {
     try {
       localStorage.setItem('drip_street_cart', JSON.stringify(cart))
@@ -63,9 +73,10 @@ function MainApp() {
     return products.filter(p => {
       const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesCategory = activeCategory === 'All' 
-        || (activeCategory === 'Hoodies' && p.title.toLowerCase().includes('hoodie'))
-        || (activeCategory === 'T-Shirts' && p.title.toLowerCase().includes('tee'))
+        || (activeCategory === 'Hoodies' && (p.title.toLowerCase().includes('hoodie') || p.title.toLowerCase().includes('sweatshirt')))
+        || (activeCategory === 'T-Shirts' && isTeeProduct(p))
         || (activeCategory === 'Best Sellers' && p.type === 'local')
+        || (activeCategory === 'New Arrivals' && p.type === 'printify')
       return matchesSearch && matchesCategory
     })
   }, [products, searchQuery, activeCategory])
@@ -80,14 +91,63 @@ function MainApp() {
     setIsCartOpen(true)
   }
 
-  const baseCartTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
-  const discount = activeCoupon ? baseCartTotal * (activeCoupon.discount_pct / 100) : 0
-  const cartTotal = baseCartTotal - discount
+  const removeFromCart = (productId) => {
+    setCart(cart.filter(item => item.id !== productId))
+  }
+
+  const updateQuantity = (productId, newQty) => {
+    if (newQty <= 0) return removeFromCart(productId);
+    setCart(cart.map(item => item.id === productId ? { ...item, quantity: newQty } : item))
+  }
+
+  // ============ PRICING LOGIC ============
+  
+  // Count total items in cart
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  
+  // Count tee items for bundle deal
+  const teeItemsCount = cart
+    .filter(item => isTeeProduct(item))
+    .reduce((sum, item) => sum + item.quantity, 0);
+  
+  // Calculate base subtotal (before promotions)
+  const baseSubtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+  
+  // Calculate bundle discount: "3 tees for 229₪"
+  const bundleSets = Math.floor(teeItemsCount / BUNDLE_TEE_COUNT);
+  let bundleDiscount = 0;
+  if (bundleSets > 0) {
+    // Get tee items sorted by price descending (discount the most expensive ones first)
+    const teeItems = cart.filter(item => isTeeProduct(item));
+    const teePrices = [];
+    teeItems.forEach(item => {
+      for (let i = 0; i < item.quantity; i++) teePrices.push(item.price);
+    });
+    teePrices.sort((a, b) => b - a);
+    
+    const teesInBundle = bundleSets * BUNDLE_TEE_COUNT;
+    const originalBundleTotal = teePrices.slice(0, teesInBundle).reduce((s, p) => s + p, 0);
+    bundleDiscount = originalBundleTotal - (bundleSets * BUNDLE_TEE_PRICE);
+    if (bundleDiscount < 0) bundleDiscount = 0;
+  }
+  
+  // Coupon discount
+  const couponDiscount = activeCoupon ? (baseSubtotal - bundleDiscount) * (activeCoupon.discount_pct / 100) : 0;
+  
+  // Shipping
+  const isFreeShipping = totalItems >= FREE_SHIPPING_THRESHOLD;
+  const shippingCost = isFreeShipping ? 0 : (totalItems > 0 ? SHIPPING_COST : 0);
+  const itemsToFreeShipping = FREE_SHIPPING_THRESHOLD - totalItems;
+  
+  // Final total
+  const subtotalAfterDiscounts = baseSubtotal - bundleDiscount - couponDiscount;
+  const cartTotal = subtotalAfterDiscounts + shippingCost;
+
+  // ============ NAVIGATION ============
 
   const proceedToCheckout = () => {
     setIsCartOpen(false);
     window.history.pushState({}, '', '/checkout');
-    // We use a custom event or just a state if we had a router, but since we rely on window.location.pathname:
     window.dispatchEvent(new Event('popstate'));
   }
 
@@ -95,7 +155,7 @@ function MainApp() {
     e.preventDefault();
     try {
       const endpoint = paymentMethod === 'stripe' ? '/api/checkout/stripe' : '/api/checkout/payplus';
-      const response = await fetch(`https://custom-ecommerce-qp30.onrender.com${endpoint}`, {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -104,12 +164,14 @@ function MainApp() {
           address: e.target.address.value,
           items: cart,
           totalAmount: cartTotal,
+          shippingCost: shippingCost,
+          bundleDiscount: bundleDiscount,
           couponCode: activeCoupon ? activeCoupon.code : null
         })
       });
       const data = await response.json();
       if (data.success && data.paymentUrl) {
-        localStorage.removeItem('drip_street_cart'); // clear cart on success
+        localStorage.removeItem('drip_street_cart');
         window.location.href = data.paymentUrl;
       } else {
         alert('Checkout initialization failed.');
@@ -126,6 +188,7 @@ function MainApp() {
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
+  // ============ ROUTE: SUCCESS ============
   if (currentPath === '/success') {
     return (
       <div className="container" style={{ textAlign: 'center', padding: '100px 20px' }}>
@@ -143,6 +206,7 @@ function MainApp() {
     );
   }
 
+  // ============ ROUTE: CHECKOUT ============
   if (currentPath === '/checkout') {
     return (
       <div className="container checkout-page">
@@ -165,7 +229,7 @@ function MainApp() {
                 Stripe ($)
               </label>
             </div>
-            <button type="submit" className="checkout-btn">Complete Order</button>
+            <button type="submit" className="checkout-btn">Complete Order – ₪{cartTotal.toFixed(2)}</button>
           </form>
           
           <div style={{ flex: '1', minWidth: '300px', backgroundColor: '#111', padding: '24px', borderRadius: '12px', height: 'fit-content' }}>
@@ -177,7 +241,38 @@ function MainApp() {
               </div>
             ))}
             <hr style={{ borderColor: '#333', margin: '16px 0' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '18px' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#aaa' }}>
+              <span>Subtotal</span>
+              <span>₪{baseSubtotal.toFixed(2)}</span>
+            </div>
+
+            {bundleDiscount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#4caf50' }}>
+                <span>🎁 Bundle Deal ({bundleSets}x3 Tees)</span>
+                <span>-₪{bundleDiscount.toFixed(2)}</span>
+              </div>
+            )}
+
+            {couponDiscount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#4caf50' }}>
+                <span>Coupon ({activeCoupon.code})</span>
+                <span>-₪{couponDiscount.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: isFreeShipping ? '#4caf50' : '#aaa' }}>
+              <span>Shipping {isFreeShipping && '🎉'}</span>
+              <span>{isFreeShipping ? 'FREE' : `₪${shippingCost.toFixed(2)}`}</span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '10px', color: '#666' }}>
+              <span>VAT (Osek Patur)</span>
+              <span>₪0.00</span>
+            </div>
+
+            <hr style={{ borderColor: '#333', margin: '16px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '20px' }}>
               <span>Total</span>
               <span>₪{cartTotal.toFixed(2)}</span>
             </div>
@@ -187,13 +282,14 @@ function MainApp() {
     );
   }
 
+  // ============ ROUTE: CONTACT ============
   if (currentPath === '/contact') {
     return (
       <div className="container legal-page">
         <h1>Contact Us</h1>
         <form className="contact-form" onSubmit={(e) => {
           e.preventDefault();
-          fetch('https://custom-ecommerce-qp30.onrender.com/api/contact', {
+          fetch(`${API_BASE}/api/contact`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: e.target.name.value, email: e.target.email.value, message: e.target.message.value })
           }).then(() => { alert('Message sent to support.'); window.location.href='/'; })
@@ -207,6 +303,7 @@ function MainApp() {
     );
   }
 
+  // ============ ROUTE: LEGAL PAGES ============
   if (currentPath === '/privacy' || currentPath === '/terms' || currentPath === '/refund') {
     const title = currentPath.substring(1).replace(/^\w/, c => c.toUpperCase()) + " Policy";
     return (
@@ -229,12 +326,19 @@ function MainApp() {
     );
   }
 
+  // ============ ROUTE: 404 ============
   if (currentPath !== '/' && currentPath !== '/cart') {
     return <div className="container legal-page" style={{textAlign: 'center'}}><h1>404 Not Found</h1><button className="checkout-btn" style={{ maxWidth: '200px' }} onClick={() => window.location.href = '/'}>Return Home</button></div>;
   }
 
+  // ============ MAIN STORE PAGE ============
   return (
     <>
+      {/* Announcement Bar */}
+      <div className="announcement-bar">
+        🔥 משלוח חינם בקניית 5 פריטים ומעלה! &nbsp;|&nbsp; 3 טי-שירטס ב-229₪ בלבד
+      </div>
+
       <header className="header container">
         <a href="/" style={{ textDecoration: 'none', color: 'inherit' }}><h1 className="logo">DRIP STREET</h1></a>
         <div className="search-bar">
@@ -247,7 +351,7 @@ function MainApp() {
           />
         </div>
         <button className="cart-btn" aria-label="Open cart" onClick={() => setIsCartOpen(true)}>
-          CART ({cart.length})
+          🛒 CART ({totalItems})
         </button>
       </header>
 
@@ -305,7 +409,12 @@ function MainApp() {
                   transition={{ duration: 0.3 }}
                   className="product-card"
                 >
-                  <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image" />
+                  <div style={{ position: 'relative' }}>
+                    <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image" />
+                    {isTeeProduct(product) && (
+                      <span className="deal-badge">3 ב-229₪</span>
+                    )}
+                  </div>
                   <div className="product-info">
                     <h3 className="product-title">{product.title}</h3>
                     <span className="product-price">₪{product.price.toFixed(2)}</span>
@@ -337,45 +446,73 @@ function MainApp() {
       {/* Cart Drawer */}
       <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`}>
         <div className="cart-header">
-          <h2>Your Cart</h2>
+          <h2>Your Cart ({totalItems})</h2>
           <button className="close-cart" aria-label="Close cart" onClick={() => setIsCartOpen(false)}>×</button>
         </div>
+
+        {/* Free Shipping Progress Bar */}
+        {totalItems > 0 && (
+          <div className="shipping-progress">
+            {isFreeShipping ? (
+              <p className="shipping-unlocked">🎉 משלוח חינם! You've unlocked free shipping</p>
+            ) : (
+              <>
+                <p className="shipping-hint">הוסף עוד {itemsToFreeShipping} פריט{itemsToFreeShipping > 1 ? 'ים' : ''} למשלוח חינם!</p>
+                <div className="progress-bar-bg">
+                  <motion.div 
+                    className="progress-bar-fill"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(totalItems / FREE_SHIPPING_THRESHOLD) * 100}%` }}
+                    transition={{ duration: 0.4 }}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         <div className="cart-items">
           {cart.map(item => (
             <div key={item.id} className="cart-item">
-              <div>
+              <div style={{ flex: 1 }}>
                 <strong>{item.title}</strong>
-                <div>Qty: {item.quantity}</div>
+                {isTeeProduct(item) && <span className="cart-deal-hint">3 ב-229₪</span>}
+                <div className="cart-qty-controls">
+                  <button onClick={() => updateQuantity(item.id, item.quantity - 1)}>−</button>
+                  <span>{item.quantity}</span>
+                  <button onClick={() => updateQuantity(item.id, item.quantity + 1)}>+</button>
+                  <button className="remove-btn" onClick={() => removeFromCart(item.id)}>🗑</button>
+                </div>
               </div>
-              <div>₪{(item.price * item.quantity).toFixed(2)}</div>
+              <div style={{ fontWeight: 600 }}>₪{(item.price * item.quantity).toFixed(2)}</div>
             </div>
           ))}
-          {cart.length === 0 && <p style={{color: '#666'}}>Your cart is empty.</p>}
+          {cart.length === 0 && <p style={{color: '#666', textAlign: 'center', marginTop: '40px'}}>Your cart is empty.</p>}
         </div>
+
         <div className="cart-footer">
-          {activeCoupon && (
-            <div className="cart-discount">
-              <span>Discount ({activeCoupon.code})</span>
-              <span style={{ color: '#4caf50' }}>-₪{discount.toFixed(2)}</span>
+          {bundleDiscount > 0 && (
+            <div className="cart-savings-line">
+              <span>🎁 Bundle Deal ({bundleSets}x3 Tees)</span>
+              <span style={{ color: '#4caf50' }}>-₪{bundleDiscount.toFixed(2)}</span>
             </div>
           )}
+
+          {couponDiscount > 0 && (
+            <div className="cart-savings-line">
+              <span>Coupon ({activeCoupon.code})</span>
+              <span style={{ color: '#4caf50' }}>-₪{couponDiscount.toFixed(2)}</span>
+            </div>
+          )}
+
+          <div className="cart-savings-line">
+            <span>Shipping</span>
+            <span style={{ color: isFreeShipping ? '#4caf50' : '#aaa' }}>{isFreeShipping ? 'FREE' : `₪${shippingCost.toFixed(2)}`}</span>
+          </div>
+
           <div className="cart-total">
             <span>Total</span>
-            <span>₪{cartTotal.toFixed(2)} {paymentMethod === 'stripe' && `(~$${(cartTotal / 3.7).toFixed(2)})`}</span>
-          </div>
-          
-          <div style={{ marginTop: '16px', marginBottom: '16px' }}>
-            <p style={{ margin: '0 0 8px', fontSize: '14px', color: '#888' }}>Pay with:</p>
-            <div style={{ display: 'flex', gap: '16px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
-                Credit Card / Bit (₪)
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
-                Stripe ($)
-              </label>
-            </div>
+            <span>₪{cartTotal.toFixed(2)}</span>
           </div>
 
           <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>

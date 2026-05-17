@@ -46,10 +46,10 @@ class PrintifyService {
           baseCostCents = Math.min(...enabledVariants.map(v => v.cost || v.price || 0));
         }
         
-        // Use pricing engine to calculate optimal retail price in NIS
+        // Use pricing engine to calculate retail price using fixed target prices
         const pricingEngine = require('./pricing');
         const baseCostUSD = baseCostCents / 100;
-        const retailPrice = pricingEngine.calculateOptimalPriceNIS(baseCostUSD, 4.5);
+        const retailPrice = pricingEngine.calculateOptimalPriceNIS(baseCostUSD, 4.5, title, 'printify');
 
         // Store the first enabled variant ID for order fulfillment
         const printifyProductId = p.id;
