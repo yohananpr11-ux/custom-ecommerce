@@ -28,7 +28,7 @@ class PricingEngine {
   constructor() {
     this.paymentFeeRate = parseFloat(process.env.PAYMENT_FEE_RATE || 0.03); // ~3% payment processing
     this.exchangeRateUSDILS = 3.75; // Fallback
-    this.autoExtremeThresholdPct = parseFloat(process.env.AUTO_PRICE_UPDATE_THRESHOLD_PCT || 0.08); // 8%
+    this.autoExtremeThresholdPct = this.normalizeExtremeThreshold(process.env.AUTO_PRICE_UPDATE_THRESHOLD_PCT); // default 8%
 
     // Exact target retail prices in ILS (business-critical)
     this.targetPricesILS = {
@@ -41,6 +41,19 @@ class PricingEngine {
     // Shipping cost displayed separately at checkout
     this.shippingCostNIS = 29.90;
     this.freeShippingThreshold = 5; // 5+ items = free shipping
+  }
+
+  normalizeExtremeThreshold(rawValue) {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0.08;
+
+    // Support both formats:
+    // 8 / 10 => 0.08 / 0.10
+    // 0.08 / 0.10 => unchanged
+    if (parsed >= 1) {
+      return parsed / 100;
+    }
+    return parsed;
   }
 
   async ensurePricingStateTable() {
