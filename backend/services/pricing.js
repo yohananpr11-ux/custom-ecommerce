@@ -223,8 +223,10 @@ class PricingEngine {
       return;
     }
 
+    const changePct = Math.abs((this.exchangeRateUSDILS - previousAppliedRate) / previousAppliedRate) * 100;
+
     const products = await dbAllAsync('SELECT * FROM products', []);
-    let updatedCount = 0;
+    const plannedUpdates = [];
 
     for (const product of products) {
       const category = this.getProductCategory(product.title || '');
@@ -243,24 +245,49 @@ class PricingEngine {
         continue;
       }
 
-      if (Math.abs(Number(product.price || 0) - targetPrice) > 0.01) {
-        await dbRunAsync('UPDATE products SET price = ? WHERE id = ?', [targetPrice, product.id]);
-        updatedCount += 1;
-        console.log(`Updated price for ${product.title}: ₪${Number(product.price || 0).toFixed(2)} -> ₪${targetPrice.toFixed(2)}`);
+      const currentPrice = Number(product.price || 0);
+      if (Math.abs(currentPrice - targetPrice) > 0.01) {
+        plannedUpdates.push({
+          productId: product.id,
+          title: product.title,
+          fromPrice: currentPrice,
+          toPrice: targetPrice,
+        });
       }
+    }
+
+    if (plannedUpdates.length > 0) {
+      await telegram.sendMessage(
+        `⚠️ <b>התראת Pre-Alert: שינוי מחירים אוטומטי עומד להתבצע</b>\n\n` +
+        `סיבה: ${reason}\n` +
+        `שינוי בשער: ${changePct.toFixed(2)}%\n` +
+        `שער קודם: ₪${previousAppliedRate.toFixed(4)}\n` +
+        `שער חדש: ₪${this.exchangeRateUSDILS.toFixed(4)}\n` +
+        `סף מוגדר: ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%\n` +
+        `מוצרים שצפויים להתעדכן: ${plannedUpdates.length}`
+      );
+    }
+
+    let updatedCount = 0;
+
+    for (const planned of plannedUpdates) {
+      await dbRunAsync('UPDATE products SET price = ? WHERE id = ?', [planned.toPrice, planned.productId]);
+      updatedCount += 1;
+      console.log(`Updated price for ${planned.title}: ₪${planned.fromPrice.toFixed(2)} -> ₪${planned.toPrice.toFixed(2)}`);
     }
 
     await this.setState('lastAppliedExchangeRate', this.exchangeRateUSDILS);
 
-    if (updatedCount > 0) {
-      await telegram.sendMessage(
-        `📈 <b>עדכון מחירים אוטומטי (שינוי קיצון בשער)</b>\n\n` +
-        `שער קודם: ₪${previousAppliedRate.toFixed(4)}\n` +
-        `שער חדש: ₪${this.exchangeRateUSDILS.toFixed(4)}\n` +
-        `סף עדכון: ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%\n` +
-        `עודכנו ${updatedCount} מוצרים.`
-      );
-    }
+    await telegram.sendMessage(
+      `📈 <b>סיכום עדכון מחירים אוטומטי</b>\n\n` +
+      `סיבה: ${reason}\n` +
+      `שינוי בשער: ${changePct.toFixed(2)}%\n` +
+      `שער קודם: ₪${previousAppliedRate.toFixed(4)}\n` +
+      `שער חדש: ₪${this.exchangeRateUSDILS.toFixed(4)}\n` +
+      `סף עדכון: ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%\n` +
+      `מתוכנן לעדכון: ${plannedUpdates.length}\n` +
+      `עודכן בפועל: ${updatedCount}`
+    );
 
     if (updatedCount === 0) {
       console.log('ℹ️ Extreme threshold passed, but no product price needed an update.');
