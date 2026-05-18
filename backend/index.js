@@ -236,6 +236,69 @@ const dbRunAsync = (query, params = []) => new Promise((resolve, reject) => {
   });
 });
 
+const normalizeVariantValue = (value) => String(value || '').trim().toLowerCase();
+
+const resolveValidatedOrderItems = async (items = []) => {
+  const validatedItems = [];
+
+  for (const rawItem of items) {
+    const productId = Number(rawItem && rawItem.id);
+    const quantity = Math.max(1, Number(rawItem && rawItem.quantity) || 1);
+
+    if (!productId) {
+      throw new Error('Each order item must include a valid product id');
+    }
+
+    const product = await dbGetAsync(`SELECT id, title, price, printifyId FROM products WHERE id = ?`, [productId]);
+    if (!product) {
+      throw new Error(`Product ${productId} was not found`);
+    }
+
+    const selectedColor = rawItem && rawItem.selectedColor ? String(rawItem.selectedColor).trim() : null;
+    const selectedSize = rawItem && rawItem.selectedSize ? String(rawItem.selectedSize).trim() : null;
+    let resolvedVariant = null;
+
+    if (selectedColor || selectedSize || rawItem.variantId) {
+      const productVariants = await dbAllAsync(
+        `SELECT id, printifyVariantId, color, size, price, isEnabled, isAvailable
+         FROM product_variants
+         WHERE productId = ?`,
+        [productId]
+      );
+
+      resolvedVariant = productVariants.find((variant) => (
+        normalizeVariantValue(variant.color) === normalizeVariantValue(selectedColor)
+        && normalizeVariantValue(variant.size) === normalizeVariantValue(selectedSize)
+        && Number(variant.isEnabled) !== 0
+        && Number(variant.isAvailable) !== 0
+      )) || null;
+
+      if (!resolvedVariant) {
+        throw new Error(`Variant mismatch for product ${productId}: ${selectedColor || '-'} / ${selectedSize || '-'}`);
+      }
+    }
+
+    const resolvedPrice = Number.isFinite(Number(resolvedVariant && resolvedVariant.price))
+      ? Number(resolvedVariant.price)
+      : Number(rawItem && rawItem.price);
+
+    validatedItems.push({
+      ...rawItem,
+      id: product.id,
+      title: product.title,
+      quantity,
+      price: Number.isFinite(resolvedPrice) ? resolvedPrice : Number(product.price) || 0,
+      selectedColor,
+      selectedSize,
+      variantId: resolvedVariant ? resolvedVariant.id : null,
+      printifyProductId: product.printifyId || null,
+      printifyVariantId: resolvedVariant ? resolvedVariant.printifyVariantId : null,
+    });
+  }
+
+  return validatedItems;
+};
+
 const reserveWebhookEvent = async (provider, eventId) => {
   if (!provider || !eventId) return true;
   const result = await dbRunAsync(
@@ -297,7 +360,14 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
     return;
   }
 
-  const items = await dbAllAsync(`SELECT * FROM order_items WHERE orderId = ?`, [orderId]);
+  const items = await dbAllAsync(
+    `SELECT oi.*, p.printifyId AS printifyProductId, pv.printifyVariantId
+     FROM order_items oi
+     LEFT JOIN products p ON p.id = oi.productId
+     LEFT JOIN product_variants pv ON pv.id = oi.variantId
+     WHERE oi.orderId = ?`,
+    [orderId]
+  );
   if (!items.length) return;
 
   try {
@@ -856,24 +926,25 @@ app.post('/api/contact', async (req, res) => {
 });
 
 // General Order Creation Helper
-const createPendingOrder = (customerName, customerEmail, address, items, couponCode) => {
-  return new Promise((resolve, reject) => {
-    const pricing = calculateOrderPricing(items, couponCode);
-    db.run(`INSERT INTO orders (customerName, customerEmail, address, totalAmount, status) VALUES (?, ?, ?, ?, ?)`, 
-      [customerName, customerEmail, address, pricing.totalAmount, 'pending_payment'], 
-      function(err) {
-        if (err) return reject(err);
-        const orderId = this.lastID;
-        items.forEach(item => {
-          db.run(`INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null]);
-        });
+const createPendingOrder = async (customerName, customerEmail, address, items, couponCode) => {
+  const validatedItems = await resolveValidatedOrderItems(items);
+  const pricing = calculateOrderPricing(validatedItems, couponCode);
+  const orderInsert = await dbRunAsync(
+    `INSERT INTO orders (customerName, customerEmail, address, totalAmount, status) VALUES (?, ?, ?, ?, ?)`,
+    [customerName, customerEmail, address, pricing.totalAmount, 'pending_payment']
+  );
+  const orderId = orderInsert.lastID;
 
-        telegram.notifyNewOrder(orderId, customerName, pricing.totalAmount, items).catch(() => null);
+  for (const item of validatedItems) {
+    await dbRunAsync(
+      `INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null]
+    );
+  }
 
-        resolve({ orderId, pricing });
-      });
-  });
+  telegram.notifyNewOrder(orderId, customerName, pricing.totalAmount, validatedItems).catch(() => null);
+
+  return { orderId, pricing, items: validatedItems };
 };
 
 app.get('/api/paypal/config', (req, res) => {
@@ -939,7 +1010,10 @@ app.post('/api/paypal/create-order', async (req, res) => {
     });
   } catch (err) {
     console.error('PayPal create-order failed:', err.response?.data || err.message);
-    return res.status(500).json({ error: 'Failed to create PayPal order' });
+    const statusCode = String(err.message || '').includes('Variant mismatch') || String(err.message || '').includes('valid product id')
+      ? 400
+      : 500;
+    return res.status(statusCode).json({ error: err.message || 'Failed to create PayPal order' });
   }
 });
 

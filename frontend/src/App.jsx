@@ -41,6 +41,7 @@ const translations = {
     best_sellers: "הנמכרים ביותר",
     hoodies: "קפוצ'ונים",
     tshirts: "חולצות",
+    tank_tops: "גופיות",
     fabric_fit: "חומר וגזרה",
     care_instructions: "טיפול",
     delivery_info: "משלוח",
@@ -54,7 +55,7 @@ const translations = {
     choose_size: "בחר מידה",
     choose_quantity: "בחר כמות",
     add_selected_to_cart: "הוסף את הבחירה לסל",
-    continue_shopping: "חזרה לקטלוג",
+    continue_shopping: "המשך בקנייה",
     cart_customize: "התאם את הפריט שלך",
     review_title: "לפני תשלום — בדיקת בחירה",
     review_subtitle: "אלה הפריטים שבחרת בקפידה. אפשר לעדכן כל פרט לפני ביצוע ההזמנה.",
@@ -133,6 +134,7 @@ const translations = {
     best_sellers: "Best Sellers",
     hoodies: "Hoodies",
     tshirts: "T-Shirts",
+    tank_tops: "Tank Tops",
     fabric_fit: "Fabric & Fit",
     care_instructions: "Care Instructions",
     delivery_info: "Delivery Info",
@@ -146,7 +148,7 @@ const translations = {
     choose_size: "Choose size",
     choose_quantity: "Choose quantity",
     add_selected_to_cart: "Add Selection to Cart",
-    continue_shopping: "Back to Catalog",
+    continue_shopping: "Continue Shopping",
     cart_customize: "Customize Your Item",
     review_title: "Before Payment — Final Selection Review",
     review_subtitle: "These are the exact items you selected. You can refine every detail before completing payment.",
@@ -421,6 +423,41 @@ const findMatchingVariant = (variants, selectedColor, selectedSize) => {
     && Number(variant.isEnabled) !== 0
     && Number(variant.isAvailable) !== 0
   )) || null;
+};
+
+const findFirstAvailableVariantForColor = (variants, selectedColor) => {
+  if (!Array.isArray(variants) || variants.length === 0) return null;
+
+  const normalizedColor = normalizeValue(selectedColor);
+
+  return variants.find((variant) => (
+    normalizeValue(variant.color) === normalizedColor
+    && Number(variant.isEnabled) !== 0
+    && Number(variant.isAvailable) !== 0
+  )) || null;
+};
+
+const deriveProductCategory = (product = {}) => {
+  const title = String(product.title || '').toLowerCase();
+
+  if (title.includes('hoodie') || title.includes('sweatshirt')) return 'Hoodies';
+  if (title.includes('tank')) return 'Tank Tops';
+  if (isTeeProduct(product)) return 'Shirts';
+
+  return 'New Arrivals';
+};
+
+const buildDynamicCategories = (products = []) => {
+  const derived = Array.from(new Set((products || []).map((product) => deriveProductCategory(product)).filter(Boolean)));
+  return ['All', ...derived];
+};
+
+const getRecommendationProducts = (products = [], cart = [], activeProductId = null) => {
+  const cartIds = new Set((cart || []).map((item) => Number(item.id)).filter(Number.isFinite));
+
+  return (products || [])
+    .filter((product) => Number(product.id) !== Number(activeProductId) && !cartIds.has(Number(product.id)))
+    .slice(0, 3);
 };
 
 function setImageFallback(event, fallbackSrc = GLOBAL_IMAGE_FALLBACK) {
@@ -893,6 +930,7 @@ function MainApp() {
   const [quickAddSize, setQuickAddSize] = useState('')
   const [quickAddQuantity, setQuickAddQuantity] = useState(1)
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
   const [locale, setLocale] = useState('he')
   const [currency, setCurrency] = useState('ILS')
@@ -1038,6 +1076,10 @@ function MainApp() {
     }
   };
 
+  const closeCartDrawer = () => setIsCartOpen(false);
+  const openMobileNav = () => setIsMobileNavOpen(true);
+  const closeMobileNav = () => setIsMobileNavOpen(false);
+
   useEffect(() => {
     try {
       localStorage.setItem('drip_street_cart', JSON.stringify(cart))
@@ -1051,19 +1093,20 @@ function MainApp() {
     document.documentElement.lang = locale;
   }, [locale]);
 
-  const categories = ['All', 'New Arrivals', 'Best Sellers', 'Hoodies', 'T-Shirts']
+  const categories = useMemo(() => buildDynamicCategories(products), [products])
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchesCategory = activeCategory === 'All' 
-        || (activeCategory === 'Hoodies' && (p.title.toLowerCase().includes('hoodie') || p.title.toLowerCase().includes('sweatshirt')))
-        || (activeCategory === 'T-Shirts' && isTeeProduct(p))
-        || (activeCategory === 'Best Sellers' && p.type === 'local')
-        || (activeCategory === 'New Arrivals' && p.type === 'printify')
+      const matchesCategory = activeCategory === 'All' || deriveProductCategory(p) === activeCategory
       return matchesSearch && matchesCategory
     })
   }, [products, searchQuery, activeCategory])
+
+  const cartRecommendations = useMemo(
+    () => getRecommendationProducts(products, cart, quickAddProduct?.id || null),
+    [products, cart, quickAddProduct]
+  )
 
   const quickAddAvailableSizes = useMemo(() => {
     if (!quickAddProduct || !quickAddColor) return [];
@@ -1072,7 +1115,7 @@ function MainApp() {
       return getOrderedDisplaySizes(Array.isArray(quickAddProduct.sizes) ? quickAddProduct.sizes : []);
     }
     const sizes = variants
-      .filter((variant) => variant.color === quickAddColor && variant.size)
+      .filter((variant) => normalizeValue(variant.color) === normalizeValue(quickAddColor) && variant.size && Number(variant.isEnabled) !== 0 && Number(variant.isAvailable) !== 0)
       .map((variant) => variant.size);
     return getOrderedDisplaySizes(Array.from(new Set(sizes)));
   }, [quickAddProduct, quickAddColor]);
@@ -1111,12 +1154,15 @@ function MainApp() {
       }
     }
 
-    const defaultColor = resolvedProduct.colors?.[0]?.name || '';
+    const defaultVariant = Array.isArray(resolvedProduct.variants) && resolvedProduct.variants.length > 0
+      ? resolvedProduct.variants.find((variant) => Number(variant.isEnabled) !== 0 && Number(variant.isAvailable) !== 0)
+      : null;
+    const defaultColor = defaultVariant?.color || resolvedProduct.colors?.[0]?.name || '';
     const variants = Array.isArray(resolvedProduct.variants) ? resolvedProduct.variants : [];
     let defaultSize = getOrderedDisplaySizes(resolvedProduct.sizes || [])[0] || '';
 
     if (defaultColor && variants.length > 0) {
-      const preferred = variants.find((variant) => variant.color === defaultColor && variant.size);
+      const preferred = findFirstAvailableVariantForColor(variants, defaultColor);
       if (preferred?.size) defaultSize = preferred.size;
     }
 
@@ -1244,7 +1290,7 @@ function MainApp() {
   };
 
   const goToCheckoutNow = () => {
-    setIsCartOpen(false);
+    closeCartDrawer();
     window.history.pushState({}, '', '/checkout');
     window.dispatchEvent(new Event('popstate'));
   };
@@ -1269,7 +1315,7 @@ function MainApp() {
     setTimeout(() => setCartBadgePulse(false), 360);
     if (openCart) {
       openCartDrawer();
-      setTimeout(() => openCartDrawer(), 64);
+      setTimeout(openCartDrawer, 24);
     }
   }
 
@@ -1306,7 +1352,7 @@ function MainApp() {
       showToast(t('empty_cart_toast'));
       return;
     }
-    setIsCartOpen(false);
+    closeCartDrawer();
     window.history.pushState({}, '', '/checkout');
     window.dispatchEvent(new Event('popstate'));
   }
@@ -1662,8 +1708,15 @@ function MainApp() {
       </div>
       <script>{`document.documentElement.dir = '${locale === 'he' ? 'rtl' : 'ltr'}'; document.documentElement.lang = '${locale}';`}</script>
 
-      <header className="header container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
+      <header className="header container storefront-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="header-leading">
+          <button className="nav-toggle" type="button" aria-label="Open navigation" onClick={openMobileNav}>
+            <span />
+            <span />
+            <span />
+          </button>
+          <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
+        </div>
         <div className="search-bar">
           <input 
             type="text"
@@ -1681,6 +1734,30 @@ function MainApp() {
           </button>
         </div>
       </header>
+
+      <div className={`side-nav-overlay ${isMobileNavOpen ? 'open' : ''}`} onClick={closeMobileNav}>
+        <aside className="side-nav-drawer" onClick={(event) => event.stopPropagation()}>
+          <div className="side-nav-header">
+            <strong>{t('logo')}</strong>
+            <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
+          </div>
+          <div className="side-nav-links">
+            {categories.map((cat) => (
+              <button
+                key={`drawer-${cat}`}
+                type="button"
+                className={`side-nav-link ${activeCategory === cat ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveCategory(cat)
+                  closeMobileNav()
+                }}
+              >
+                {cat === 'All' ? t('all') : cat === 'New Arrivals' ? t('new_arrivals') : cat === 'Hoodies' ? t('hoodies') : cat === 'Shirts' ? t('tshirts') : cat === 'Tank Tops' ? t('tank_tops') : cat}
+              </button>
+            ))}
+          </div>
+        </aside>
+      </div>
 
       {activeCoupon && (
         <motion.div 
@@ -1706,9 +1783,9 @@ function MainApp() {
             const catKeys = {
               'All': 'all',
               'New Arrivals': 'new_arrivals',
-              'Best Sellers': 'best_sellers',
               'Hoodies': 'hoodies',
-              'T-Shirts': 'tshirts'
+              'Shirts': 'tshirts',
+              'Tank Tops': 'tank_tops'
             };
             return (
               <button 
@@ -1716,7 +1793,7 @@ function MainApp() {
                 className={`cat-btn ${activeCategory === cat ? 'active' : ''}`}
                 onClick={() => setActiveCategory(cat)}
               >
-                {t(catKeys[cat] || cat)}
+                {catKeys[cat] ? t(catKeys[cat]) : cat}
               </button>
             );
           })}
@@ -1826,11 +1903,18 @@ function MainApp() {
                           <button
                             key={colorOption.name}
                             type="button"
-                            className={`quick-swatch ${quickAddColor === colorOption.name ? 'active' : ''}`}
+                            className={`quick-swatch ${normalizeValue(quickAddColor) === normalizeValue(colorOption.name) ? 'active' : ''}`}
                             style={{ backgroundColor: colorOption.hex }}
-                            onClick={() => setQuickAddColor(colorOption.name)}
+                            onClick={() => {
+                              setQuickAddColor(colorOption.name)
+                              const fallbackVariant = findFirstAvailableVariantForColor(quickAddProduct.variants, colorOption.name)
+                              if (fallbackVariant?.size) {
+                                setQuickAddSize(normalizeSizeLabel(fallbackVariant.size))
+                              }
+                            }}
                             title={localizeColorName(colorOption.name, locale)}
                             aria-label={`${t('color')} ${localizeColorName(colorOption.name, locale)}`}
+                            aria-pressed={normalizeValue(quickAddColor) === normalizeValue(colorOption.name)}
                           />
                         ))}
                       </div>
@@ -1892,11 +1976,11 @@ function MainApp() {
       </footer>
 
       {/* Cart Drawer */}
-      <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) setIsCartOpen(false); }}>
+      <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) closeCartDrawer(); }}>
         <div className="cart-panel" onClick={(event) => event.stopPropagation()}>
         <div className="cart-header">
           <h2>{t('cart')} ({totalItems})</h2>
-          <button className="close-cart" aria-label={t('close_cart_aria')} onClick={() => setIsCartOpen(false)}>×</button>
+          <button className="close-cart" aria-label={t('close_cart_aria')} onClick={closeCartDrawer}>×</button>
         </div>
 
         {bundleActive ? (
@@ -1993,6 +2077,7 @@ function MainApp() {
         </div>
 
         <div className="cart-footer">
+          <button type="button" className="continue-shopping-btn" onClick={closeCartDrawer}>{t('continue_shopping')}</button>
           {bundleDiscount > 0 && (
             <div className="cart-savings-line">
               <span>{t('bundle_deal', { sets: bundleSets })}</span>
@@ -2016,6 +2101,30 @@ function MainApp() {
             <span>{t('total')}</span>
             <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
           </div>
+
+          {cartRecommendations.length > 0 && (
+            <div className="cart-recommendations">
+              <div className="cart-recommendations-title">You Might Also Like</div>
+              <div className="cart-recommendations-row">
+                {cartRecommendations.map((product) => {
+                  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+                  return (
+                    <button
+                      key={`rec-${product.id}`}
+                      type="button"
+                      className="cart-recommendation-card"
+                      onClick={() => openQuickAdd(product)}
+                    >
+                      <img src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
+                      <strong>{getProductTitle(product.title, locale)}</strong>
+                      <span>{curSym}{displayPrice.toFixed(2)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
             {t('checkout')}
