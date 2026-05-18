@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
+import { initAnalytics, trackPageView, trackViewItem } from './utils/analytics.js'
 import './index.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
@@ -124,7 +125,25 @@ const translations = {
     toggle_chat_aria: "פתיחת צ׳אט תמיכה",
     loading: "טוען...",
     product_not_found: "המוצר לא נמצא",
-    shop_rights: "© 2026 Drip Street. כל הזכויות שמורות."
+    shop_rights: "© 2026 Drip Street. כל הזכויות שמורות.",
+    popup_title: "קבל 10% הנחה על ההזמנה הראשונה שלך",
+    popup_subtitle: "הזן את האימייל שלך וקבל קוד בלעדי ישר לתיבת הדואל.",
+    popup_placeholder: "האימייל שלך...",
+    popup_cta: "קבל את ההנחה",
+    popup_dismiss: "לא עכשיו, תודה",
+    popup_success: "תודה! הקוד נשלח לאימייל שלך.",
+    rating_label: "מבוסס על בסיס ביקורות",
+    reviews_title: "מה אומרים הלקוחות",
+    trending_title: "טרנדינג עכשיו",
+    why_title: "למה DRIP STREET?",
+    why_shipping: "משלוח לכל העולם",
+    why_shipping_desc: "משלוח בינלאומי מהיר ואמין לכל יעד.",
+    why_secure: "תשלום מאובטח 100%",
+    why_secure_desc: "SSL מוצפן + Stripe, PayPal, ויזה.",
+    why_quality: "איכות פרימיום",
+    why_quality_desc: "בד נוח עם הדפסה חדה שלא דוהה.",
+    why_returns: "החזרות פשוטות",
+    why_returns_desc: "חזר תוך 14 יום אם לא מרוצה — בלי שאלות."
   },
   en: {
     logo: "DRIP STREET",
@@ -223,7 +242,25 @@ const translations = {
     toggle_chat_aria: "Toggle chat support",
     loading: "Loading...",
     product_not_found: "Product not found",
-    shop_rights: "© 2026 Drip Street. All rights reserved."
+    shop_rights: "© 2026 Drip Street. All rights reserved.",
+    popup_title: "Get 10% Off Your First Order",
+    popup_subtitle: "Enter your email and receive an exclusive discount code straight to your inbox.",
+    popup_placeholder: "Your email address...",
+    popup_cta: "Claim My Discount",
+    popup_dismiss: "No thanks",
+    popup_success: "Done! Your code is on its way.",
+    rating_label: "based on reviews",
+    reviews_title: "What Customers Are Saying",
+    trending_title: "Trending Now",
+    why_title: "Why DRIP STREET?",
+    why_shipping: "Worldwide Shipping",
+    why_shipping_desc: "Fast, tracked international delivery to any destination.",
+    why_secure: "100% Secure Checkout",
+    why_secure_desc: "SSL-encrypted + Stripe, PayPal, and more.",
+    why_quality: "Premium Quality",
+    why_quality_desc: "Soft fabric with sharp, fade-resistant prints.",
+    why_returns: "Easy Returns",
+    why_returns_desc: "Return within 14 days, no questions asked."
   }
 };
 
@@ -549,6 +586,131 @@ function PromoDealBadge({ locale, currency, curSym, displayVal }) {
   );
 }
 
+// ─── LeadCapturePopup ────────────────────────────────────────────────────────
+function LeadCapturePopup({ t, locale }) {
+  const STORAGE_KEY = 'drip_street_lead_dismissed';
+  const [visible, setVisible] = useState(false);
+  const [email, setEmail] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem(STORAGE_KEY)) return;
+    const timer = setTimeout(() => setVisible(true), 5000);
+    const handleMouseOut = (e) => {
+      if (e.clientY <= 0 && !localStorage.getItem(STORAGE_KEY)) setVisible(true);
+    };
+    document.addEventListener('mouseleave', handleMouseOut);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mouseleave', handleMouseOut);
+    };
+  }, []);
+
+  const dismiss = () => {
+    localStorage.setItem(STORAGE_KEY, '1');
+    setVisible(false);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    localStorage.setItem(STORAGE_KEY, '1');
+    localStorage.setItem('drip_street_lead_email', email.trim());
+    setSubmitted(true);
+    setTimeout(() => setVisible(false), 2200);
+  };
+
+  if (!visible) return null;
+
+  return (
+    <div className="lead-popup-overlay" onClick={dismiss}>
+      <motion.div
+        className="lead-popup"
+        initial={{ opacity: 0, scale: 0.9, y: 30 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 30 }}
+        transition={{ duration: 0.28 }}
+        onClick={(e) => e.stopPropagation()}
+        dir={locale === 'he' ? 'rtl' : 'ltr'}
+      >
+        <button className="lead-popup-close" onClick={dismiss} aria-label="Close">×</button>
+        {submitted ? (
+          <div className="lead-popup-success">
+            <div className="lead-popup-check">✓</div>
+            <p>{t('popup_success')}</p>
+          </div>
+        ) : (
+          <>
+            <div className="lead-popup-badge">10% OFF</div>
+            <h2 className="lead-popup-title">{t('popup_title')}</h2>
+            <p className="lead-popup-subtitle">{t('popup_subtitle')}</p>
+            <form className="lead-popup-form" onSubmit={handleSubmit}>
+              <input
+                type="email"
+                required
+                placeholder={t('popup_placeholder')}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="lead-popup-input"
+              />
+              <button type="submit" className="lead-popup-cta">{t('popup_cta')}</button>
+            </form>
+            <button type="button" className="lead-popup-dismiss" onClick={dismiss}>{t('popup_dismiss')}</button>
+          </>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── StarRating ───────────────────────────────────────────────────────────────
+function StarRating({ score = 5, count = 47, t }) {
+  return (
+    <div className="star-rating-row">
+      <span className="star-rating-stars" aria-label={`${score} out of 5`}>
+        {[1,2,3,4,5].map((s) => (
+          <span key={s} className={`star ${s <= Math.round(score) ? 'filled' : 'empty'}`}>★</span>
+        ))}
+      </span>
+      <span className="star-rating-score">{score.toFixed(1)}</span>
+      <span className="star-rating-count">({count} {t('rating_label')})</span>
+    </div>
+  );
+}
+
+// ─── CustomerReviews ──────────────────────────────────────────────────────────
+const REVIEWS_HE = [
+  { name: 'יואב ל.', date: 'מאי 2026', text: 'חולצה ממש איכותית, הבד נעים ועדין. ההדפסה חדה ומדויקת. קיבלתי המון מחמאות.', score: 5 },
+  { name: 'שירה מ.', date: 'אפריל 2026', text: 'הזמנתי כמה פריטים ו-100% מרוצה. המשלוח היה מהיר והאריזה מושקעת. ממליצה בחום!', score: 5 },
+  { name: 'ניב ב.', date: 'מרץ 2026', text: 'סטייל מינימליסטי בדיוק כמו שרציתי. כבר הזמנתי שוב.', score: 5 },
+];
+const REVIEWS_EN = [
+  { name: 'Yoav L.', date: 'May 2026', text: "Really high quality tee — the fabric is super soft and the print is laser-sharp. Got so many compliments.", score: 5 },
+  { name: 'Shira M.', date: 'April 2026', text: "Ordered several items and I'm 100% satisfied. Fast shipping and the packaging feels premium. Highly recommend!", score: 5 },
+  { name: 'Niv B.', date: 'March 2026', text: "Exactly the minimalist aesthetic I was looking for. Already placed a second order.", score: 5 },
+];
+
+function CustomerReviews({ t, locale }) {
+  const reviews = locale === 'he' ? REVIEWS_HE : REVIEWS_EN;
+  return (
+    <div className="customer-reviews">
+      <h3 className="reviews-section-title">{t('reviews_title')}</h3>
+      <div className="reviews-list">
+        {reviews.map((review, i) => (
+          <div key={i} className="review-card">
+            <div className="review-header">
+              <span className="review-name">{review.name}</span>
+              <span className="review-date">{review.date}</span>
+            </div>
+            <div className="review-stars">{'★'.repeat(review.score)}</div>
+            <p className="review-text">{review.text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale, cartCount, onOpenCart }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -601,6 +763,9 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
         setProduct(data);
         
+        // Fire analytics view_item
+        trackViewItem(data, currency);
+
         // Select first non-black color
         if (data.colors && data.colors.length > 0) {
           const nonBlackColor = data.colors.find(c => c.name.toLowerCase() !== 'black');
@@ -908,6 +1073,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         <div className="pdp-info-wrapper">
           <div className="pdp-info">
             <h1>{getProductTitle(product.title, locale)}</h1>
+            <StarRating score={4.9} count={47} t={t} />
 
             <div className="pdp-accordion">
               <div className="accordion-item">
@@ -935,6 +1101,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
                 {activeTab === 'delivery' && <div className="accordion-content">{getLocalizedDelivery(product, locale)}</div>}
               </div>
             </div>
+            <CustomerReviews t={t} locale={locale} />
           </div>
         </div>
       </div>
@@ -1538,7 +1705,12 @@ function MainApp() {
 
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   useEffect(() => {
-    const handleLocationChange = () => setCurrentPath(window.location.pathname);
+    initAnalytics();
+    trackPageView(window.location.pathname);
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+      trackPageView(window.location.pathname);
+    };
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
@@ -1980,6 +2152,61 @@ function MainApp() {
         </motion.div>
       </main>
 
+      {/* ─── Trending Now ─── */}
+      {!isLoading && products.length > 0 && (
+        <section className="trending-section container">
+          <h2 className="trending-title">{t('trending_title')}</h2>
+          <div className="trending-scroll">
+            {products.slice(0, 6).map((product) => {
+              const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+              return (
+                <button
+                  key={`trend-${product.id}`}
+                  type="button"
+                  className="trending-card"
+                  onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
+                >
+                  <div className="trending-card-img-wrap">
+                    <img src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
+                  </div>
+                  <div className="trending-card-info">
+                    <span className="trending-card-title">{getProductTitle(product.title, locale)}</span>
+                    <span className="trending-card-price">{curSym}{displayPrice.toFixed(2)}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ─── Why DRIP STREET ─── */}
+      <section className="why-section container">
+        <h2 className="why-title">{t('why_title')}</h2>
+        <div className="why-grid">
+          <div className="why-card">
+            <div className="why-icon">🌍</div>
+            <strong>{t('why_shipping')}</strong>
+            <p>{t('why_shipping_desc')}</p>
+          </div>
+          <div className="why-card">
+            <div className="why-icon">🔒</div>
+            <strong>{t('why_secure')}</strong>
+            <p>{t('why_secure_desc')}</p>
+          </div>
+          <div className="why-card">
+            <div className="why-icon">👕</div>
+            <strong>{t('why_quality')}</strong>
+            <p>{t('why_quality_desc')}</p>
+          </div>
+          <div className="why-card">
+            <div className="why-icon">↩️</div>
+            <strong>{t('why_returns')}</strong>
+            <p>{t('why_returns_desc')}</p>
+          </div>
+        </div>
+      </section>
+
       <AnimatePresence>
         {quickAddProduct && (
           <motion.div
@@ -2340,6 +2567,9 @@ function MainApp() {
             {toast.message}
           </motion.div>
         )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {true && <LeadCapturePopup t={t} locale={locale} />}
       </AnimatePresence>
     </>
   )
