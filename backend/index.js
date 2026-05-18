@@ -34,6 +34,8 @@ const API_BASE_URL = normalizeUrl(
 
 const CORS_ALLOWED_ORIGINS = Array.from(new Set([
   FRONTEND_BASE_URL,
+  'https://dripstreetshop.com',
+  'https://www.dripstreetshop.com',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:4173',
