@@ -3,10 +3,32 @@ const db = require('../db');
 const telegram = require('./telegram');
 const axios = require('axios');
 
+const dbGetAsync = (query, params = []) => new Promise((resolve, reject) => {
+  db.get(query, params, (err, row) => {
+    if (err) return reject(err);
+    resolve(row);
+  });
+});
+
+const dbAllAsync = (query, params = []) => new Promise((resolve, reject) => {
+  db.all(query, params, (err, rows) => {
+    if (err) return reject(err);
+    resolve(rows || []);
+  });
+});
+
+const dbRunAsync = (query, params = []) => new Promise((resolve, reject) => {
+  db.run(query, params, function onRun(err) {
+    if (err) return reject(err);
+    resolve(this);
+  });
+});
+
 class PricingEngine {
   constructor() {
     this.paymentFeeRate = parseFloat(process.env.PAYMENT_FEE_RATE || 0.03); // ~3% payment processing
     this.exchangeRateUSDILS = 3.75; // Fallback
+    this.autoExtremeThresholdPct = parseFloat(process.env.AUTO_PRICE_UPDATE_THRESHOLD_PCT || 0.08); // 8%
 
     // Exact target retail prices in ILS (business-critical)
     this.targetPricesILS = {
@@ -19,6 +41,29 @@ class PricingEngine {
     // Shipping cost displayed separately at checkout
     this.shippingCostNIS = 29.90;
     this.freeShippingThreshold = 5; // 5+ items = free shipping
+  }
+
+  async ensurePricingStateTable() {
+    await dbRunAsync(`
+      CREATE TABLE IF NOT EXISTS pricing_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+
+  async getState(key) {
+    const row = await dbGetAsync(`SELECT value FROM pricing_state WHERE key = ?`, [key]);
+    return row ? row.value : null;
+  }
+
+  async setState(key, value) {
+    await dbRunAsync(
+      `INSERT INTO pricing_state (key, value, updatedAt) VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = CURRENT_TIMESTAMP`,
+      [key, String(value)]
+    );
   }
 
   /**
@@ -64,7 +109,6 @@ class PricingEngine {
       // Fixed prices for tees and hoodies
       const fixedPrice = this.targetPricesILS[category] || 89.90;
       return fixedPrice;
-      return fixedPrice;
     }
     
     // Fallback: cost-based calculation for unknown products
@@ -89,43 +133,125 @@ class PricingEngine {
     }
   }
 
+  isExtremeRateChange(previousRate, nextRate) {
+    if (!previousRate || previousRate <= 0) return false;
+    const changePct = Math.abs((nextRate - previousRate) / previousRate);
+    return changePct >= this.autoExtremeThresholdPct;
+  }
+
+  async getTankTopBaseCostUSD(productId) {
+    const row = await dbGetAsync(
+      `SELECT MIN(cost) AS minCost FROM product_variants WHERE productId = ? AND isEnabled = 1`,
+      [productId]
+    );
+    const minCost = row && row.minCost != null ? Number(row.minCost) : 0;
+    return minCost > 0 ? minCost : 0;
+  }
+
+  async sendQuarterlyReviewReminder() {
+    const today = new Date().toISOString().slice(0, 10);
+    const lastReminderDate = await this.getState('lastQuarterlyReviewReminderDate');
+    if (lastReminderDate === today) return;
+
+    await telegram.sendMessage(
+      `📊 <b>תזכורת בדיקת מחירון רבעונית</b>\n\n` +
+      `מומלץ לבצע בדיקה ידנית למחירון האתר לפי מצב הדולר, עלויות ייצור ושולי רווח.\n` +
+      `שער נוכחי: ₪${this.exchangeRateUSDILS.toFixed(4)} לדולר.`
+    );
+    await this.setState('lastQuarterlyReviewReminderDate', today);
+  }
+
   start() {
-    // Run exchange rate fetch immediately on start
-    this.fetchExchangeRate().then(() => this.runPricingUpdate());
+    // Initialize state and run startup checks
+    this.ensurePricingStateTable()
+      .then(() => this.fetchExchangeRate())
+      .then(() => this.runPricingUpdate({ force: false, reason: 'startup' }))
+      .catch((err) => console.error('Pricing engine startup failed:', err));
 
     // Run every day at midnight
     cron.schedule('0 0 * * *', async () => {
       console.log('💰 Starting Daily Pricing & Exchange Rate Sync...');
-      await this.runPricingUpdate();
+      await this.runPricingUpdate({ force: false, reason: 'daily' });
     });
+
+    // Quarterly reminder for manual structured price review
+    cron.schedule('0 9 1 */3 *', async () => {
+      try {
+        await this.sendQuarterlyReviewReminder();
+      } catch (err) {
+        console.error('Failed sending quarterly pricing reminder:', err.message);
+      }
+    });
+
     console.log('📈 Pricing Engine initialized (USD base targets scaled dynamically to ILS)');
   }
 
-  async runPricingUpdate() {
+  async runPricingUpdate({ force = false, reason = 'manual' } = {}) {
+    await this.ensurePricingStateTable();
+
+    const previousAppliedRateRaw = await this.getState('lastAppliedExchangeRate');
+    const previousAppliedRate = previousAppliedRateRaw ? Number(previousAppliedRateRaw) : null;
+
     await this.fetchExchangeRate();
 
-    db.all("SELECT * FROM products", [], (err, products) => {
-      if (err) {
-        console.error('Pricing update failed reading DB:', err);
-        return;
-      }
+    // First run initializes baseline and waits for extreme movement before auto repricing.
+    if (!previousAppliedRate) {
+      await this.setState('lastAppliedExchangeRate', this.exchangeRateUSDILS);
+      console.log(`📌 Baseline exchange rate initialized at ${this.exchangeRateUSDILS.toFixed(4)} (${reason}).`);
+      return;
+    }
 
-      let updatedCount = 0;
+    const extremeChange = this.isExtremeRateChange(previousAppliedRate, this.exchangeRateUSDILS);
+    if (!force && !extremeChange) {
+      const changePct = Math.abs((this.exchangeRateUSDILS - previousAppliedRate) / previousAppliedRate) * 100;
+      console.log(
+        `⏸️ Exchange-rate change ${changePct.toFixed(2)}% is below threshold ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%. Skipping auto repricing.`
+      );
+      return;
+    }
 
-      products.forEach(product => {
-        const targetPrice = this.getTargetPrice(product.title, product.type);
+    const products = await dbAllAsync('SELECT * FROM products', []);
+    let updatedCount = 0;
 
-        if (Math.abs(product.price - targetPrice) > 0.01) {
-          db.run(`UPDATE products SET price = ? WHERE id = ?`, [targetPrice, product.id]);
-          updatedCount++;
-          console.log(`Updated price for ${product.title}: ₪${product.price} -> ₪${targetPrice.toFixed(2)}`);
+    for (const product of products) {
+      const category = this.getProductCategory(product.title || '');
+      let targetPrice = null;
+
+      if (category === 'tank') {
+        const tankCostUSD = await this.getTankTopBaseCostUSD(product.id);
+        if (tankCostUSD > 0) {
+          targetPrice = this.calculateOptimalPriceNIS(tankCostUSD, 0, product.title, product.type);
         }
-      });
-
-      if (updatedCount > 0) {
-        telegram.sendMessage(`📈 <b>עדכון מחירים אוטומטי</b>\n\nשער הדולר הנוכחי: ₪${this.exchangeRateUSDILS.toFixed(4)}\nעודכנו ${updatedCount} מוצרים למחירי היעד המעודכנים לפי שער הדולר.`);
+      } else {
+        targetPrice = this.getTargetPrice(product.title, product.type);
       }
-    });
+
+      if (typeof targetPrice !== 'number' || Number.isNaN(targetPrice)) {
+        continue;
+      }
+
+      if (Math.abs(Number(product.price || 0) - targetPrice) > 0.01) {
+        await dbRunAsync('UPDATE products SET price = ? WHERE id = ?', [targetPrice, product.id]);
+        updatedCount += 1;
+        console.log(`Updated price for ${product.title}: ₪${Number(product.price || 0).toFixed(2)} -> ₪${targetPrice.toFixed(2)}`);
+      }
+    }
+
+    await this.setState('lastAppliedExchangeRate', this.exchangeRateUSDILS);
+
+    if (updatedCount > 0) {
+      await telegram.sendMessage(
+        `📈 <b>עדכון מחירים אוטומטי (שינוי קיצון בשער)</b>\n\n` +
+        `שער קודם: ₪${previousAppliedRate.toFixed(4)}\n` +
+        `שער חדש: ₪${this.exchangeRateUSDILS.toFixed(4)}\n` +
+        `סף עדכון: ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%\n` +
+        `עודכנו ${updatedCount} מוצרים.`
+      );
+    }
+
+    if (updatedCount === 0) {
+      console.log('ℹ️ Extreme threshold passed, but no product price needed an update.');
+    }
   }
 }
 
