@@ -280,7 +280,7 @@ function getLocalizedCare(product, locale) {
 
 function getLocalizedDelivery(product, locale) {
   if (locale !== 'he') return product.deliveryInfo || 'Standard delivery.';
-  return 'זמן משלוח משוער: 7-14 ימי עסקים (כולל מספר מעקב לכל הזמנה).';
+  return 'זמן משלוח משוער: 12-32 ימי עסקים (כולל מספר מעקב לכל הזמנה).';
 }
 
 /** Check if a product is a tee (not hoodie or tank) */
