@@ -143,7 +143,11 @@ const translations = {
     why_quality: "איכות פרימיום",
     why_quality_desc: "בד נוח עם הדפסה חדה שלא דוהה.",
     why_returns: "החזרות פשוטות",
-    why_returns_desc: "חזר תוך 14 יום אם לא מרוצה — בלי שאלות."
+    why_returns_desc: "חזר תוך 14 יום אם לא מרוצה — בלי שאלות.",
+    seo_title: "DRIP STREET | סטריטוור מינימליסטי",
+    seo_description: "סטריטוור פרימיום מינימליסטי לחיי היומיום. חולצות אוברסייז, גופיות קיץ ובייסיקס איכותיים. משלוח לכל העולם.",
+    taxes_shipping_note: "מסים ומשלוח יחושבו בקופה",
+    payment_icons_label: "אנחנו מקבלים"
   },
   en: {
     logo: "DRIP STREET",
@@ -260,7 +264,11 @@ const translations = {
     why_quality: "Premium Quality",
     why_quality_desc: "Soft fabric with sharp, fade-resistant prints.",
     why_returns: "Easy Returns",
-    why_returns_desc: "Return within 14 days, no questions asked."
+    why_returns_desc: "Return within 14 days, no questions asked.",
+    seo_title: "DRIP STREET | Minimalist Streetwear",
+    seo_description: "Premium minimal streetwear built for confidence. Shop oversized tees, summer tanks, and high-quality basics. Worldwide shipping.",
+    taxes_shipping_note: "Taxes and shipping calculated at checkout",
+    payment_icons_label: "We accept"
   }
 };
 
@@ -1321,6 +1329,9 @@ function MainApp() {
   useEffect(() => {
     document.documentElement.dir = locale === 'he' ? 'rtl' : 'ltr';
     document.documentElement.lang = locale;
+    document.title = t('seo_title');
+    const metaDesc = document.querySelector('meta[name="description"]');
+    if (metaDesc) metaDesc.setAttribute('content', t('seo_description'));
   }, [locale]);
 
   const categories = useMemo(() => buildDynamicCategories(products), [products])
@@ -2103,7 +2114,7 @@ function MainApp() {
                 </div>
               ))
             ) : (
-              filteredProducts.map(product => {
+              filteredProducts.map((product, productIndex) => {
                 const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
                 
                 return (
@@ -2121,9 +2132,9 @@ function MainApp() {
                       onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
                       style={{ cursor: 'pointer' }}
                     >
-                      <img loading="lazy" src={product.imageUrl} alt={product.title} className="product-image front-img" onError={(e) => setImageFallback(e)} />
+                      <img loading={productIndex === 0 ? 'eager' : 'lazy'} src={product.imageUrl} alt={getProductTitle(product.title, locale)} className="product-image front-img" onError={(e) => setImageFallback(e)} />
                       {product.backImageUrl && (
-                        <img loading="lazy" src={product.backImageUrl} alt={`${product.title} back`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
+                        <img loading="lazy" src={product.backImageUrl} alt={`${getProductTitle(product.title, locale)} — back view`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
                       {isTeeProduct(product) && <PromoDealBadge locale={locale} currency={currency} curSym={curSym} displayVal={displayVal} />}
                     </div>
@@ -2167,7 +2178,7 @@ function MainApp() {
                   onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
                 >
                   <div className="trending-card-img-wrap">
-                    <img src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
+                    <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
                   </div>
                   <div className="trending-card-info">
                     <span className="trending-card-title">{getProductTitle(product.title, locale)}</span>
@@ -2486,9 +2497,15 @@ function MainApp() {
               <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
             </div>
 
+            <p className="cart-taxes-note">{t('taxes_shipping_note')}</p>
             <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
               {t('checkout')}
             </button>
+            <div className="cart-payment-icons" aria-label={t('payment_icons_label')}>
+              <svg viewBox="0 0 38 24" width="38" height="24" aria-label="Visa" role="img"><rect width="38" height="24" rx="4" fill="#1a1f71"/><text x="6" y="17" fontFamily="Arial" fontWeight="bold" fontSize="11" fill="#fff">VISA</text></svg>
+              <svg viewBox="0 0 38 24" width="38" height="24" aria-label="Mastercard" role="img"><rect width="38" height="24" rx="4" fill="#252525"/><circle cx="15" cy="12" r="7" fill="#eb001b"/><circle cx="23" cy="12" r="7" fill="#f79e1b"/><path d="M19 6.8a7 7 0 0 1 0 10.4A7 7 0 0 1 19 6.8z" fill="#ff5f00"/></svg>
+              <svg viewBox="0 0 38 24" width="38" height="24" aria-label="PayPal" role="img"><rect width="38" height="24" rx="4" fill="#003087"/><text x="5" y="16" fontFamily="Arial" fontWeight="bold" fontSize="9" fill="#009cde">Pay</text><text x="17" y="16" fontFamily="Arial" fontWeight="bold" fontSize="9" fill="#fff">Pal</text></svg>
+            </div>
           </div>
         </div>
       </div>
