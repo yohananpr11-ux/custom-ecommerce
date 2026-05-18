@@ -32,8 +32,14 @@ const translations = {
     announcement: "משלוח חינם בקנייה של 5 פריטים ומעלה | 3 חולצות ב-229 ₪",
     search_placeholder: "חפש פריטים...",
     cart: "סל קניות",
-    hero_title: "ELEVATE YOUR STYLE",
-    hero_subtitle: "Precision streetwear. High comfort, flattering fit, and clean design for every day.",
+    hero_title: "DRIP STREET",
+    hero_subtitle: "סטריטוור מינימליסטי ליום יום.",
+    shop_now: "קנה עכשיו",
+    best_sellers: "הנמכרים ביותר",
+    trust_secure: "תשלום מאובטח",
+    trust_shipping: "משלוח מהיר",
+    trust_returns: "החזרות קלות",
+    language_currency: "שפה וערה",
     add_to_cart: "הוסף לסל",
     buy_now: "קנה עכשיו",
     all: "הכל",
@@ -125,8 +131,14 @@ const translations = {
     announcement: "Complimentary shipping on 5+ items | 3-item bundle for 229 ₪",
     search_placeholder: "Search items...",
     cart: "Cart",
-    hero_title: "ELEVATE YOUR STYLE",
-    hero_subtitle: "Uncompromising comfort meets clean design. Essential everyday wear.",
+    hero_title: "DRIP STREET",
+    hero_subtitle: "Minimal streetwear built for confidence.",
+    shop_now: "Shop Now",
+    best_sellers: "Best Sellers",
+    trust_secure: "Secure Payment",
+    trust_shipping: "Fast Shipping",
+    trust_returns: "Easy Returns",
+    language_currency: "Language & Currency",
     add_to_cart: "Add to Cart",
     buy_now: "Buy Now",
     all: "All",
@@ -875,6 +887,21 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
             <button className="buy-now-inline" onClick={() => handleAdd('buy')}>
               {t('buy_now')}
             </button>
+
+            <div className="trust-badges">
+              <div className="trust-badge-item">
+                <div className="trust-badge-icon">🔒</div>
+                <div className="trust-badge-text">{t('trust_secure')}</div>
+              </div>
+              <div className="trust-badge-item">
+                <div className="trust-badge-icon">⚡</div>
+                <div className="trust-badge-text">{t('trust_shipping')}</div>
+              </div>
+              <div className="trust-badge-item">
+                <div className="trust-badge-icon">↩️</div>
+                <div className="trust-badge-text">{t('trust_returns')}</div>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -956,8 +983,20 @@ function MainApp() {
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
-  const [locale, setLocale] = useState('he')
-  const [currency, setCurrency] = useState('ILS')
+  const [locale, setLocale] = useState(() => {
+    try {
+      return localStorage.getItem('drip_street_locale') || 'he';
+    } catch {
+      return 'he';
+    }
+  })
+  const [currency, setCurrency] = useState(() => {
+    try {
+      return localStorage.getItem('drip_street_currency') || 'ILS';
+    } catch {
+      return 'ILS';
+    }
+  })
   const [exchangeRate, setExchangeRate] = useState(3.75)
 
   const [isWidgetChatOpen, setIsWidgetChatOpen] = useState(false);
@@ -1776,6 +1815,18 @@ function MainApp() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button className="locale-toggle-btn" title={t('language_currency')} onClick={() => {
+            const nextLocale = locale === 'he' ? 'en' : 'he';
+            const nextCurrency = locale === 'he' ? 'USD' : 'ILS';
+            const nextRate = locale === 'he' ? 3.75 : 3.75;
+            setLocale(nextLocale);
+            setCurrency(nextCurrency);
+            setExchangeRate(nextRate);
+            localStorage.setItem('drip_street_locale', nextLocale);
+            localStorage.setItem('drip_street_currency', nextCurrency);
+          }}>
+            {locale === 'he' ? '🇬🇧 EN / USD' : '🇮🇱 HE / ILS'}
+          </button>
           <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={openCartDrawer}>
             <span>🛒 {t('cart')}</span>
             {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
@@ -1789,6 +1840,18 @@ function MainApp() {
             <strong>{t('logo')}</strong>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
           </div>
+          <button className="locale-toggle-btn mobile-nav-locale" title={t('language_currency')} onClick={() => {
+            const nextLocale = locale === 'he' ? 'en' : 'he';
+            const nextCurrency = locale === 'he' ? 'USD' : 'ILS';
+            const nextRate = locale === 'he' ? 3.75 : 3.75;
+            setLocale(nextLocale);
+            setCurrency(nextCurrency);
+            setExchangeRate(nextRate);
+            localStorage.setItem('drip_street_locale', nextLocale);
+            localStorage.setItem('drip_street_currency', nextCurrency);
+          }}>
+            {locale === 'he' ? '🇬🇧 English / USD' : '🇮🇱 עברית / ILS'}
+          </button>
           <div className="side-nav-links">
             {categories.map((cat) => (
               <button
@@ -1822,6 +1885,14 @@ function MainApp() {
           <motion.p initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
             {t('hero_subtitle')}
           </motion.p>
+          <motion.div className="hero-cta-group" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
+            <button className="hero-cta-primary" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
+              {t('shop_now')}
+            </button>
+            <button className="hero-cta-secondary" onClick={() => { setActiveCategory('Shirts'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
+              {t('best_sellers')}
+            </button>
+          </motion.div>
         </div>
       </section>
 
