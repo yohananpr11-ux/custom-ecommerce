@@ -667,62 +667,112 @@ app.get('/api/products', (req, res) => {
 // Get single product with full details + variants (for PDP)
 app.get('/api/products/:id', (req, res) => {
   const { id } = req.params;
-  db.get("SELECT * FROM products WHERE id = ?", [id], (err, row) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
+
+  const enrichLiveVariantInventory = async (variants, printifyId) => {
+    const liveSnapshot = await printify.getLiveProductSnapshot(printifyId);
+    if (!liveSnapshot || !Array.isArray(liveSnapshot.variants)) {
+      return { variants, liveUpdatedAt: null };
     }
-    if (!row) return res.status(404).json({ error: 'Product not found' });
-    
-    // Parse images JSON
-    let imageData = { allImages: [], variantImageMap: {} };
-    try { 
-      imageData = JSON.parse(row.images || '{}');
-      if (!imageData.allImages) imageData.allImages = [];
-      if (!imageData.variantImageMap) imageData.variantImageMap = {};
-    } catch(e) { }
-    
-    // Add priceUSD dynamically
-    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
-    row.priceUSD = parseFloat((row.price / exchangeRate).toFixed(2));
-    
-    // Fetch variants for this product
-    db.all("SELECT * FROM product_variants WHERE productId = ? AND isEnabled = 1", [id], (err2, variants) => {
-      if (err2) variants = [];
-      
-      // Group variants by color and size, and map images to colors
+
+    const mapByPrintifyVariantId = new Map(
+      liveSnapshot.variants
+        .filter((variant) => variant && variant.printifyVariantId)
+        .map((variant) => [String(variant.printifyVariantId), variant])
+    );
+
+    const mergedVariants = variants.map((variant) => {
+      const liveVariant = mapByPrintifyVariantId.get(String(variant.printifyVariantId || ''));
+      if (!liveVariant) return variant;
+      return {
+        ...variant,
+        stockQty: liveVariant.stockQty,
+        isAvailable: liveVariant.isAvailable,
+        isEnabled: liveVariant.isEnabled,
+      };
+    });
+
+    return {
+      variants: mergedVariants,
+      liveUpdatedAt: liveSnapshot.updatedAt || null,
+    };
+  };
+
+  const buildOperationalNotice = (variants, liveUpdatedAt) => {
+    const stockValues = variants
+      .map((variant) => Number(variant.stockQty))
+      .filter((value) => Number.isFinite(value));
+
+    const inStockVariantCount = variants.filter((variant) => Number(variant.isAvailable) !== 0).length;
+    const lowStockVariantCount = stockValues.filter((value) => value > 0 && value < 5).length;
+    const allOutOfStock = inStockVariantCount === 0 || (stockValues.length > 0 && stockValues.every((value) => value === 0));
+
+    const productionRangeDays = allOutOfStock ? [4, 8] : [2, 5];
+    const shippingRangeDays = allOutOfStock ? [10, 16] : [7, 14];
+
+    return {
+      syncedAt: liveUpdatedAt || new Date().toISOString(),
+      allOutOfStock,
+      lowStockVariantCount,
+      inStockVariantCount,
+      productionRangeDays,
+      shippingRangeDays,
+    };
+  };
+
+  (async () => {
+    try {
+      const row = await dbGetAsync("SELECT * FROM products WHERE id = ?", [id]);
+      if (!row) return res.status(404).json({ error: 'Product not found' });
+
+      let imageData = { allImages: [], variantImageMap: {} };
+      try {
+        imageData = JSON.parse(row.images || '{}');
+        if (!imageData.allImages) imageData.allImages = [];
+        if (!imageData.variantImageMap) imageData.variantImageMap = {};
+      } catch {
+        imageData = { allImages: [], variantImageMap: {} };
+      }
+
+      const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
+      row.priceUSD = parseFloat((row.price / exchangeRate).toFixed(2));
+
+      const storedVariants = await dbAllAsync("SELECT * FROM product_variants WHERE productId = ? AND isEnabled = 1", [id]);
+      const { variants: mergedVariants, liveUpdatedAt } = await enrichLiveVariantInventory(storedVariants || [], row.printifyId);
+
       const colors = {};
       const sizes = new Set();
-      const imagesByColor = {}; // Maps color to its images
-      
-      (variants || []).forEach(v => {
-        if (v.color && !colors[v.color]) {
-          colors[v.color] = { hex: v.colorHex || '#000', name: v.color };
-          
-          // Get images for this color from the variant's imageUrl or variantImageMap
-          if (v.imageUrl) {
-            imagesByColor[v.color] = [{ src: v.imageUrl, position: 'front' }];
-          } else if (imageData.variantImageMap[v.printifyVariantId]) {
-            imagesByColor[v.color] = imageData.variantImageMap[v.printifyVariantId];
+      const imagesByColor = {};
+
+      mergedVariants.forEach((variant) => {
+        if (variant.color && !colors[variant.color]) {
+          colors[variant.color] = { hex: variant.colorHex || '#000', name: variant.color };
+          if (variant.imageUrl) {
+            imagesByColor[variant.color] = [{ src: variant.imageUrl, position: 'front' }];
+          } else if (imageData.variantImageMap[variant.printifyVariantId]) {
+            imagesByColor[variant.color] = imageData.variantImageMap[variant.printifyVariantId];
           } else {
-            imagesByColor[v.color] = imageData.allImages;
+            imagesByColor[variant.color] = imageData.allImages;
           }
         }
-        if (v.size) sizes.add(v.size);
+
+        if (variant.size) sizes.add(variant.size);
       });
-      
-      row.variants = (variants || []).map(v => ({
-        ...v,
-        priceUSD: parseFloat((v.price / exchangeRate).toFixed(2))
+
+      row.variants = mergedVariants.map((variant) => ({
+        ...variant,
+        priceUSD: parseFloat((variant.price / exchangeRate).toFixed(2))
       }));
       row.colors = Object.values(colors);
       row.sizes = Array.from(sizes);
-      row.imagesByColor = imagesByColor; // Send color-mapped images to frontend
-      row.images = imageData.allImages; // Keep all images as fallback
-      
-      res.json(row);
-    });
-  });
+      row.imagesByColor = imagesByColor;
+      row.images = imageData.allImages;
+      row.operationalNotice = buildOperationalNotice(row.variants, liveUpdatedAt);
+
+      return res.json(row);
+    } catch (error) {
+      return res.status(500).json({ error: error.message || 'Failed to load product' });
+    }
+  })();
 });
 
 // Get last sync status

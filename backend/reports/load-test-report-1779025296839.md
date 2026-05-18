@@ -1,0 +1,164 @@
+# Load Test Report - Storefront Purchase Simulation
+
+- Start: 2026-05-17T13:41:31.949Z
+- End: 2026-05-17T13:41:36.838Z
+- API Base: https://custom-ecommerce-qp30.onrender.com
+- Bots: 20
+- Concurrency: 5
+- Complete Payment Webhook: Yes
+
+## Summary
+- Passed: 20
+- Failed: 0
+- Success rate: 100.00%
+- Average duration: 1207 ms
+- P95 duration: 1497 ms
+- Max duration: 1506 ms
+
+## UX and Purchase Experience Notes
+- Checkout reliability looks launch-ready under this test profile.
+- Flow speed is acceptable for end users under moderate concurrency.
+- Visit and payment notifications are now emitted in real time to Telegram for operational visibility.
+- Simulation orders are marked and excluded from Printify fulfillment to avoid accidental production charges during load tests.
+
+## Detailed Bot Results
+- Bot #1: PASS (1419 ms)
+  - Order ID: 21
+  - visit: ok (348 ms)
+  - list_products: ok (205 ms)
+  - product_details: ok (310 ms)
+  - checkout_init: ok (319 ms)
+  - payment_webhook: ok (237 ms)
+- Bot #2: PASS (1497 ms)
+  - Order ID: 23
+  - visit: ok (317 ms)
+  - list_products: ok (201 ms)
+  - product_details: ok (312 ms)
+  - checkout_init: ok (410 ms)
+  - payment_webhook: ok (257 ms)
+- Bot #3: PASS (1506 ms)
+  - Order ID: 25
+  - visit: ok (318 ms)
+  - list_products: ok (199 ms)
+  - product_details: ok (309 ms)
+  - checkout_init: ok (467 ms)
+  - payment_webhook: ok (213 ms)
+- Bot #4: PASS (1494 ms)
+  - Order ID: 24
+  - visit: ok (311 ms)
+  - list_products: ok (204 ms)
+  - product_details: ok (310 ms)
+  - checkout_init: ok (456 ms)
+  - payment_webhook: ok (213 ms)
+- Bot #5: PASS (1379 ms)
+  - Order ID: 22
+  - visit: ok (312 ms)
+  - list_products: ok (201 ms)
+  - product_details: ok (340 ms)
+  - checkout_init: ok (330 ms)
+  - payment_webhook: ok (196 ms)
+- Bot #6: PASS (1412 ms)
+  - Order ID: 27
+  - visit: ok (242 ms)
+  - list_products: ok (250 ms)
+  - product_details: ok (173 ms)
+  - checkout_init: ok (544 ms)
+  - payment_webhook: ok (203 ms)
+- Bot #7: PASS (1410 ms)
+  - Order ID: 26
+  - visit: ok (240 ms)
+  - list_products: ok (250 ms)
+  - product_details: ok (171 ms)
+  - checkout_init: ok (546 ms)
+  - payment_webhook: ok (203 ms)
+- Bot #8: PASS (1345 ms)
+  - Order ID: 30
+  - visit: ok (216 ms)
+  - list_products: ok (185 ms)
+  - product_details: ok (193 ms)
+  - checkout_init: ok (543 ms)
+  - payment_webhook: ok (208 ms)
+- Bot #9: PASS (1325 ms)
+  - Order ID: 29
+  - visit: ok (216 ms)
+  - list_products: ok (184 ms)
+  - product_details: ok (192 ms)
+  - checkout_init: ok (545 ms)
+  - payment_webhook: ok (188 ms)
+- Bot #10: PASS (1288 ms)
+  - Order ID: 28
+  - visit: ok (206 ms)
+  - list_products: ok (185 ms)
+  - product_details: ok (211 ms)
+  - checkout_init: ok (482 ms)
+  - payment_webhook: ok (204 ms)
+- Bot #11: PASS (1010 ms)
+  - Order ID: 33
+  - visit: ok (159 ms)
+  - list_products: ok (190 ms)
+  - product_details: ok (190 ms)
+  - checkout_init: ok (290 ms)
+  - payment_webhook: ok (181 ms)
+- Bot #12: PASS (1008 ms)
+  - Order ID: 32
+  - visit: ok (168 ms)
+  - list_products: ok (198 ms)
+  - product_details: ok (177 ms)
+  - checkout_init: ok (235 ms)
+  - payment_webhook: ok (230 ms)
+- Bot #13: PASS (971 ms)
+  - Order ID: 31
+  - visit: ok (177 ms)
+  - list_products: ok (184 ms)
+  - product_details: ok (170 ms)
+  - checkout_init: ok (234 ms)
+  - payment_webhook: ok (206 ms)
+- Bot #14: PASS (1073 ms)
+  - Order ID: 34
+  - visit: ok (184 ms)
+  - list_products: ok (194 ms)
+  - product_details: ok (176 ms)
+  - checkout_init: ok (319 ms)
+  - payment_webhook: ok (200 ms)
+- Bot #15: PASS (1059 ms)
+  - Order ID: 35
+  - visit: ok (166 ms)
+  - list_products: ok (181 ms)
+  - product_details: ok (190 ms)
+  - checkout_init: ok (326 ms)
+  - payment_webhook: ok (196 ms)
+- Bot #16: PASS (1036 ms)
+  - Order ID: 36
+  - visit: ok (231 ms)
+  - list_products: ok (194 ms)
+  - product_details: ok (182 ms)
+  - checkout_init: ok (227 ms)
+  - payment_webhook: ok (202 ms)
+- Bot #17: PASS (977 ms)
+  - Order ID: 37
+  - visit: ok (204 ms)
+  - list_products: ok (186 ms)
+  - product_details: ok (172 ms)
+  - checkout_init: ok (237 ms)
+  - payment_webhook: ok (178 ms)
+- Bot #18: PASS (1047 ms)
+  - Order ID: 39
+  - visit: ok (197 ms)
+  - list_products: ok (192 ms)
+  - product_details: ok (182 ms)
+  - checkout_init: ok (286 ms)
+  - payment_webhook: ok (190 ms)
+- Bot #19: PASS (927 ms)
+  - Order ID: 38
+  - visit: ok (173 ms)
+  - list_products: ok (172 ms)
+  - product_details: ok (172 ms)
+  - checkout_init: ok (248 ms)
+  - payment_webhook: ok (162 ms)
+- Bot #20: PASS (949 ms)
+  - Order ID: 40
+  - visit: ok (166 ms)
+  - list_products: ok (179 ms)
+  - product_details: ok (182 ms)
+  - checkout_init: ok (233 ms)
+  - payment_webhook: ok (189 ms)

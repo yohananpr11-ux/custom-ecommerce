@@ -313,8 +313,18 @@ function getLocalizedCare(product, locale) {
 }
 
 function getLocalizedDelivery(product, locale) {
+  const operational = product && product.operationalNotice ? product.operationalNotice : null;
+  if (operational) {
+    const [prodMin, prodMax] = operational.productionRangeDays || [2, 5];
+    const [shipMin, shipMax] = operational.shippingRangeDays || [7, 14];
+    if (locale !== 'he') {
+      return `Live fulfillment window: ${prodMin}-${prodMax} business days production + ${shipMin}-${shipMax} business days shipping.`;
+    }
+    return `נתוני זמינות חיים: ייצור ${prodMin}-${prodMax} ימי עסקים ומשלוח ${shipMin}-${shipMax} ימי עסקים.`;
+  }
+
   if (locale !== 'he') return product.deliveryInfo || 'Standard delivery.';
-  return 'ההזמנה שלך תגיע בדרך כלל תוך 12-32 ימי עסקים, עם מספר מעקב לכל אורך הדרך.';
+  return product.deliveryInfo || 'זמני משלוח מתעדכנים לפי זמינות בזמן אמת.';
 }
 
 /** Check if a product is a tee (not hoodie or tank) */
@@ -379,8 +389,25 @@ const calculateBundlePricing = (cart) => {
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
 const GLOBAL_ERROR_TOAST_HE = 'אירעה שגיאה זמנית, אנא נסה שוב';
+const LOW_STOCK_THRESHOLD = 5;
+const MAX_ALLOWED_SIZE_RANK = 6;
+const SIZE_ORDER = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
+const SIZE_RANK = SIZE_ORDER.reduce((acc, size, index) => ({ ...acc, [size]: index + 1 }), {});
 
 const normalizeValue = (value) => String(value || '').trim().toLowerCase();
+const normalizeSizeLabel = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+
+const getOrderedDisplaySizes = (sizes = []) => {
+  const unique = Array.from(new Set((sizes || []).map((size) => normalizeSizeLabel(size)).filter(Boolean)));
+  return unique
+    .filter((size) => (SIZE_RANK[size] || Number.MAX_SAFE_INTEGER) <= MAX_ALLOWED_SIZE_RANK)
+    .sort((a, b) => {
+      const rankA = SIZE_RANK[a] || Number.MAX_SAFE_INTEGER;
+      const rankB = SIZE_RANK[b] || Number.MAX_SAFE_INTEGER;
+      if (rankA !== rankB) return rankA - rankB;
+      return a.localeCompare(b);
+    });
+};
 
 const findMatchingVariant = (variants, selectedColor, selectedSize) => {
   if (!Array.isArray(variants) || variants.length === 0) return null;
@@ -406,10 +433,12 @@ function setImageFallback(event, fallbackSrc = GLOBAL_IMAGE_FALLBACK) {
 function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_FALLBACK, loading = 'lazy', fetchPriority = 'auto' }) {
   const [currentSrc, setCurrentSrc] = useState(src || fallbackSrc);
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     setCurrentSrc(src || fallbackSrc);
     setFailed(false);
+    setLoaded(false);
   }, [src, fallbackSrc]);
 
   const handleError = () => {
@@ -430,18 +459,35 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
     );
   }
 
-  return <img loading={loading} fetchPriority={fetchPriority} src={currentSrc} alt={alt} className={className} onError={handleError} />;
+  return (
+    <div className="guarded-image-shell">
+      {!loaded && <div className="skeleton guarded-image-skeleton" />}
+      <img
+        loading={loading}
+        fetchPriority={fetchPriority}
+        src={currentSrc}
+        alt={alt}
+        className={className}
+        onLoad={() => setLoaded(true)}
+        onError={handleError}
+        style={{ opacity: loaded ? 1 : 0 }}
+      />
+    </div>
+  );
 }
 
-function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
+function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale, cartCount, onOpenCart }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
+  const [selectedQty, setSelectedQty] = useState(1);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [activeTab, setActiveTab] = useState('');
   const [showStickyCta, setShowStickyCta] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const mainCtaRef = useRef(null);
+  const mobileCarouselRef = useRef(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -487,7 +533,8 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           const nonBlackColor = data.colors.find(c => c.name.toLowerCase() !== 'black');
           setSelectedColor(nonBlackColor ? nonBlackColor.name : data.colors[0].name);
         }
-        if (data.sizes && data.sizes.length > 0) setSelectedSize(data.sizes[0]);
+        const orderedSizes = getOrderedDisplaySizes(data.sizes || []);
+        if (orderedSizes.length > 0) setSelectedSize(orderedSizes[0]);
         setLoading(false);
       })
       .catch((err) => {
@@ -499,6 +546,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
   const productVariants = product && Array.isArray(product.variants) ? product.variants : [];
   const productSizes = product && Array.isArray(product.sizes) ? product.sizes : [];
+  const orderedDisplaySizes = useMemo(() => getOrderedDisplaySizes(productSizes), [productSizes]);
 
   const selectedVariant = useMemo(() => (
     findMatchingVariant(productVariants, selectedColor, selectedSize)
@@ -512,22 +560,55 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         normalizeValue(variant.color) === normalizedColor
         && Number(variant.isEnabled) !== 0
         && Number(variant.isAvailable) !== 0
+        && (SIZE_RANK[normalizeSizeLabel(variant.size)] || Number.MAX_SAFE_INTEGER) <= MAX_ALLOWED_SIZE_RANK
       ) {
-        sizes.add(variant.size);
+        sizes.add(normalizeSizeLabel(variant.size));
       }
     });
     return sizes;
   }, [productVariants, selectedColor]);
 
   useEffect(() => {
-    if (!selectedColor || productSizes.length === 0) return;
+    if (!selectedColor || orderedDisplaySizes.length === 0) return;
     if (availableSizesForColor.size === 0) return;
 
     if (!availableSizesForColor.has(selectedSize)) {
-      const fallbackSize = productSizes.find((size) => availableSizesForColor.has(size));
+      const fallbackSize = orderedDisplaySizes.find((size) => availableSizesForColor.has(size));
       if (fallbackSize) setSelectedSize(fallbackSize);
     }
-  }, [selectedColor, selectedSize, availableSizesForColor, productSizes]);
+  }, [selectedColor, selectedSize, availableSizesForColor, orderedDisplaySizes]);
+
+  const activeImages = useMemo(() => {
+    if (!product) return [];
+    if (product.imagesByColor && product.imagesByColor[selectedColor] && product.imagesByColor[selectedColor].length > 0) {
+      return product.imagesByColor[selectedColor].map((entry) => entry.src || entry);
+    }
+    if (product.images && product.images.length > 0) {
+      return product.images.map((entry) => entry.src || entry);
+    }
+    return [product.imageUrl || GLOBAL_IMAGE_FALLBACK];
+  }, [product, selectedColor]);
+
+  useEffect(() => {
+    setActiveImageIndex(0);
+    if (mobileCarouselRef.current) mobileCarouselRef.current.scrollLeft = 0;
+  }, [selectedColor, productId]);
+
+  const goToImage = (index) => {
+    const boundedIndex = Math.max(0, Math.min(index, activeImages.length - 1));
+    setActiveImageIndex(boundedIndex);
+    if (isMobileViewport && mobileCarouselRef.current) {
+      const viewportWidth = mobileCarouselRef.current.clientWidth;
+      mobileCarouselRef.current.scrollTo({ left: viewportWidth * boundedIndex, behavior: 'smooth' });
+    }
+  };
+
+  const handleMobileScroll = () => {
+    if (!mobileCarouselRef.current) return;
+    const viewportWidth = mobileCarouselRef.current.clientWidth || 1;
+    const nextIndex = Math.round(mobileCarouselRef.current.scrollLeft / viewportWidth);
+    if (nextIndex !== activeImageIndex) setActiveImageIndex(nextIndex);
+  };
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 768px)');
@@ -564,9 +645,21 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   const selectedVariantStock = selectedVariant && Number.isFinite(Number(selectedVariant.stockQty))
     ? Number(selectedVariant.stockQty)
     : null;
-  const isLowStock = selectedVariantStock !== null && selectedVariantStock > 0 && selectedVariantStock < 5;
+  const isOutOfStock = selectedVariantStock === 0 || (selectedVariant && Number(selectedVariant.isAvailable) === 0);
+  const isLowStock = selectedVariantStock !== null && selectedVariantStock > 0 && selectedVariantStock < LOW_STOCK_THRESHOLD;
 
-  if (loading) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>{t('loading')}</div>;
+  if (loading) {
+    return (
+      <div className="container pdp-skeleton-layout">
+        <div className="skeleton pdp-skeleton-gallery" />
+        <div className="pdp-skeleton-meta">
+          <div className="skeleton pdp-skeleton-line" />
+          <div className="skeleton pdp-skeleton-line short" />
+          <div className="skeleton pdp-skeleton-line" />
+        </div>
+      </div>
+    );
+  }
   if (!product) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>{t('product_not_found')}</div>;
 
   const handleAdd = (mode = 'cart') => {
@@ -591,7 +684,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       selectedColor,
       selectedSize,
       variantId
-    }, { openCart: mode !== 'buy', onAdded: mode === 'buy' ? () => goToCheckout() : null });
+    }, { openCart: mode !== 'buy', quantity: selectedQty, onAdded: mode === 'buy' ? () => goToCheckout() : null });
 
     return true;
   };
@@ -602,50 +695,75 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     <>
       <header className="header container">
         <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
-        <button className="cart-btn" aria-label={t('open_cart_aria')} onClick={() => window.dispatchEvent(new CustomEvent('open-cart'))}>
-          🛒 {t('cart')}
+        <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={onOpenCart}>
+          <span>🛒 {t('cart')}</span>
+          {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
         </button>
       </header>
       <div className="container pdp-container">
         <div className="pdp-images">
-          {product.imagesByColor && product.imagesByColor[selectedColor] && product.imagesByColor[selectedColor].length > 0 ? (
-            product.imagesByColor[selectedColor].map((img, i) => (
-              <GuardedProductImage
-                key={`${selectedColor}-${i}-${img.src || img}`}
-                src={img.src || img}
-                alt={`${product.title} view ${i}`}
-                className="pdp-image"
-                loading={i === 0 ? 'eager' : 'lazy'}
-                fetchPriority={i === 0 ? 'high' : 'auto'}
-              />
-            ))
-          ) : product.images && product.images.length > 0 ? (
-            product.images.map((img, i) => (
-              <GuardedProductImage
-                key={`fallback-${selectedColor}-${i}-${img.src || img}`}
-                src={img.src || img}
-                alt={`${product.title} view ${i}`}
-                className="pdp-image"
-                loading={i === 0 ? 'eager' : 'lazy'}
-                fetchPriority={i === 0 ? 'high' : 'auto'}
-              />
-            ))
+          {isMobileViewport ? (
+            <div className="pdp-mobile-gallery">
+              <div className="pdp-mobile-carousel" ref={mobileCarouselRef} onScroll={handleMobileScroll}>
+                {activeImages.map((imgSrc, i) => (
+                  <div className="pdp-mobile-slide" key={`${selectedColor}-${i}-${imgSrc}`}>
+                    <GuardedProductImage
+                      src={imgSrc}
+                      alt={`${product.title} view ${i + 1}`}
+                      className="pdp-image"
+                      loading={i === 0 ? 'eager' : 'lazy'}
+                      fetchPriority={i === 0 ? 'high' : 'auto'}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="pdp-carousel-dots">
+                {activeImages.map((_, i) => (
+                  <button
+                    key={`dot-${i}`}
+                    type="button"
+                    className={`pdp-dot ${activeImageIndex === i ? 'active' : ''}`}
+                    onClick={() => goToImage(i)}
+                    aria-label={`Show image ${i + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
           ) : (
-            <GuardedProductImage src={product.imageUrl} alt={product.title} className="pdp-image" loading="eager" fetchPriority="high" />
+            <>
+              <div className="pdp-main-image-frame">
+                <GuardedProductImage
+                  src={activeImages[activeImageIndex] || product.imageUrl}
+                  alt={`${product.title} active view`}
+                  className="pdp-image"
+                  loading="eager"
+                  fetchPriority="high"
+                />
+              </div>
+              <div className="pdp-thumbnail-row">
+                {activeImages.map((imgSrc, i) => (
+                  <button
+                    key={`thumb-${i}-${imgSrc}`}
+                    type="button"
+                    className={`pdp-thumb-btn ${activeImageIndex === i ? 'active' : ''}`}
+                    onClick={() => goToImage(i)}
+                  >
+                    <GuardedProductImage src={imgSrc} alt={`${product.title} thumbnail ${i + 1}`} className="pdp-thumb-img" />
+                  </button>
+                ))}
+              </div>
+            </>
           )}
-        </div>
-        
-        <div className="pdp-info-wrapper">
-          <div className="pdp-info">
-            <h1>{getProductTitle(product.title, locale)}</h1>
+
+          <div className="pdp-purchase-panel">
             <div className="pdp-price">{curSym}{displayPrice.toFixed(2)}</div>
-            
+
             {product.colors && product.colors.length > 0 && (
               <div className="pdp-section">
                 <h3>{t('color')}</h3>
                 <div className="pdp-options">
                   {product.colors.map(c => (
-                    <button 
+                    <button
                       key={c.name}
                       className={`color-btn ${selectedColor === c.name ? 'active' : ''}`}
                       style={{ backgroundColor: c.hex }}
@@ -658,26 +776,37 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
               </div>
             )}
 
-            {product.sizes && product.sizes.length > 1 && (
+            {orderedDisplaySizes.length > 0 && (
               <div className="pdp-section">
                 <h3>{t('size')}</h3>
-                {isLowStock && (
-                  <div className="low-stock-badge">{t('low_stock')}</div>
-                )}
-                <div className="pdp-options">
-                  {product.sizes.map(s => (
-                    <button 
-                      key={s}
-                      className={`size-btn ${selectedSize === s ? 'active' : ''}`}
-                      disabled={availableSizesForColor.size > 0 && !availableSizesForColor.has(s)}
-                      onClick={() => setSelectedSize(s)}
-                    >
-                      {s}
-                    </button>
-                  ))}
+                {isOutOfStock && <div className="low-stock-badge out-of-stock">{locale === 'he' ? 'אזל מהמלאי' : 'Out of stock'}</div>}
+                {!isOutOfStock && isLowStock && <div className="low-stock-badge">{t('low_stock')}</div>}
+                <div className="pdp-options premium-size-grid">
+                  {orderedDisplaySizes.map((sizeOption) => {
+                    const unavailable = availableSizesForColor.size > 0 && !availableSizesForColor.has(sizeOption);
+                    return (
+                      <button
+                        key={sizeOption}
+                        className={`size-btn ${selectedSize === sizeOption ? 'active' : ''}`}
+                        disabled={unavailable}
+                        onClick={() => setSelectedSize(sizeOption)}
+                      >
+                        {sizeOption}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
+
+            <div className="pdp-section">
+              <h3>{t('quantity')}</h3>
+              <div className="pdp-qty-row">
+                <button type="button" onClick={() => setSelectedQty((prev) => Math.max(1, prev - 1))}>−</button>
+                <span>{selectedQty}</span>
+                <button type="button" onClick={() => setSelectedQty((prev) => Math.min(10, prev + 1))}>+</button>
+              </div>
+            </div>
 
             <button ref={mainCtaRef} className="checkout-btn add-to-cart-large" onClick={() => handleAdd('cart')}>
               {t('add_to_cart')}
@@ -685,6 +814,12 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
             <button className="buy-now-inline" onClick={() => handleAdd('buy')}>
               {t('buy_now')}
             </button>
+          </div>
+        </div>
+        
+        <div className="pdp-info-wrapper">
+          <div className="pdp-info">
+            <h1>{getProductTitle(product.title, locale)}</h1>
 
             <div className="pdp-accordion">
               <div className="accordion-item">
@@ -776,6 +911,7 @@ function MainApp() {
   const [chatInput, setChatInput] = useState('');
   const [chatStatus, setChatStatus] = useState('bot'); // bot or escalated
   const [toast, setToast] = useState({ visible: false, message: '' });
+  const [cartBadgePulse, setCartBadgePulse] = useState(false);
 
   const showToast = (message) => {
     if (!message) return;
@@ -879,7 +1015,7 @@ function MainApp() {
       });
 
     // Listen for global open cart events (e.g. from PDP)
-    const handleOpenCart = () => setIsCartOpen(true);
+    const handleOpenCart = () => openCartDrawer();
     window.addEventListener('open-cart', handleOpenCart);
     return () => window.removeEventListener('open-cart', handleOpenCart);
   }, [chatSessionId])
@@ -894,6 +1030,13 @@ function MainApp() {
 
   const curSym = currency === 'USD' ? '$' : '₪';
   const displayVal = (nisValue) => (currency === 'USD' ? (nisValue / exchangeRate) : nisValue);
+
+  const openCartDrawer = () => {
+    setIsCartOpen(true);
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => setIsCartOpen(true));
+    }
+  };
 
   useEffect(() => {
     try {
@@ -926,12 +1069,12 @@ function MainApp() {
     if (!quickAddProduct || !quickAddColor) return [];
     const variants = Array.isArray(quickAddProduct.variants) ? quickAddProduct.variants : [];
     if (variants.length === 0) {
-      return Array.isArray(quickAddProduct.sizes) ? quickAddProduct.sizes : [];
+      return getOrderedDisplaySizes(Array.isArray(quickAddProduct.sizes) ? quickAddProduct.sizes : []);
     }
     const sizes = variants
       .filter((variant) => variant.color === quickAddColor && variant.size)
       .map((variant) => variant.size);
-    return Array.from(new Set(sizes));
+    return getOrderedDisplaySizes(Array.from(new Set(sizes)));
   }, [quickAddProduct, quickAddColor]);
 
   useEffect(() => {
@@ -970,7 +1113,7 @@ function MainApp() {
 
     const defaultColor = resolvedProduct.colors?.[0]?.name || '';
     const variants = Array.isArray(resolvedProduct.variants) ? resolvedProduct.variants : [];
-    let defaultSize = resolvedProduct.sizes?.[0] || '';
+    let defaultSize = getOrderedDisplaySizes(resolvedProduct.sizes || [])[0] || '';
 
     if (defaultColor && variants.length > 0) {
       const preferred = variants.find((variant) => variant.color === defaultColor && variant.size);
@@ -1122,7 +1265,12 @@ function MainApp() {
 
       return nextCart;
     });
-    if (openCart) setIsCartOpen(true)
+    setCartBadgePulse(true);
+    setTimeout(() => setCartBadgePulse(false), 360);
+    if (openCart) {
+      openCartDrawer();
+      setTimeout(() => openCartDrawer(), 64);
+    }
   }
 
   const removeFromCart = (cartId) => {
@@ -1499,7 +1647,7 @@ function MainApp() {
   // ============ ROUTE: PRODUCT DETAIL PAGE ============
   if (currentPath.startsWith('/product/')) {
     const productId = currentPath.split('/')[2];
-    return <ProductDetailPage productId={productId} addToCart={addToCart} goToCheckout={goToCheckoutNow} showToast={showToast} t={t} currency={currency} curSym={curSym} locale={locale} />;
+    return <ProductDetailPage productId={productId} addToCart={addToCart} goToCheckout={goToCheckoutNow} showToast={showToast} t={t} currency={currency} curSym={curSym} locale={locale} cartCount={totalItems} onOpenCart={openCartDrawer} />;
   }
 
   // ============ ROUTE: 404 ============
@@ -1527,8 +1675,9 @@ function MainApp() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="cart-btn" aria-label={t('open_cart_aria')} onClick={() => setIsCartOpen(true)}>
-            🛒 {t('cart')} ({totalItems})
+          <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={openCartDrawer}>
+            <span>🛒 {t('cart')}</span>
+            {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
           </button>
         </div>
       </header>
@@ -1692,7 +1841,7 @@ function MainApp() {
                     <div className="quick-config-group">
                       <label>{t('choose_size')}</label>
                       <div className="quick-config-sizes">
-                        {quickAddAvailableSizes.map((sizeOption) => (
+                        {getOrderedDisplaySizes(quickAddAvailableSizes).map((sizeOption) => (
                           <button
                             key={sizeOption}
                             type="button"
@@ -1743,7 +1892,8 @@ function MainApp() {
       </footer>
 
       {/* Cart Drawer */}
-      <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`}>
+      <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) setIsCartOpen(false); }}>
+        <div className="cart-panel" onClick={(event) => event.stopPropagation()}>
         <div className="cart-header">
           <h2>{t('cart')} ({totalItems})</h2>
           <button className="close-cart" aria-label={t('close_cart_aria')} onClick={() => setIsCartOpen(false)}>×</button>
@@ -1784,10 +1934,12 @@ function MainApp() {
             const itemColors = Array.isArray(item.colors) ? item.colors : [];
             const selectedColor = item.selectedColor || parsed.color || itemColors[0]?.name || '';
             const sizesByColor = itemVariants.length > 0
-              ? Array.from(new Set(itemVariants.filter((variant) => variant.color === selectedColor && variant.size).map((variant) => variant.size)))
+              ? Array.from(new Set(itemVariants.filter((variant) => variant.color === selectedColor && variant.size).map((variant) => normalizeSizeLabel(variant.size))))
               : (Array.isArray(item.sizes) ? item.sizes : []);
-            const itemSizes = sizesByColor.length > 0 ? sizesByColor : (Array.isArray(item.sizes) ? item.sizes : []);
-            const selectedSize = item.selectedSize || parsed.size || itemSizes[0] || '';
+            const itemSizes = sizesByColor.length > 0
+              ? getOrderedDisplaySizes(sizesByColor)
+              : getOrderedDisplaySizes(Array.isArray(item.sizes) ? item.sizes : []);
+            const selectedSize = normalizeSizeLabel(item.selectedSize || parsed.size || itemSizes[0] || '');
             
             return (
               <div key={item.cartId || item.id} className="cart-item">
@@ -1868,6 +2020,7 @@ function MainApp() {
           <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
             {t('checkout')}
           </button>
+        </div>
         </div>
       </div>
 

@@ -1,0 +1,163 @@
+# Load Test Report - Storefront Purchase Simulation
+
+- Start: 2026-05-17T13:39:52.209Z
+- End: 2026-05-17T13:39:52.718Z
+- API Base: http://localhost:4000
+- Bots: 20
+- Concurrency: 5
+
+## Summary
+- Passed: 20
+- Failed: 0
+- Success rate: 100.00%
+- Average duration: 112 ms
+- P95 duration: 154 ms
+- Max duration: 155 ms
+
+## UX and Purchase Experience Notes
+- Checkout reliability looks launch-ready under this test profile.
+- Flow speed is acceptable for end users under moderate concurrency.
+- Visit and payment notifications are now emitted in real time to Telegram for operational visibility.
+- Simulation orders are marked and excluded from Printify fulfillment to avoid accidental production charges during load tests.
+
+## Detailed Bot Results
+- Bot #1: PASS (121 ms)
+  - Order ID: 4
+  - visit: ok (79 ms)
+  - list_products: ok (13 ms)
+  - product_details: ok (8 ms)
+  - checkout_init: ok (15 ms)
+  - payment_webhook: ok (6 ms)
+- Bot #2: PASS (149 ms)
+  - Order ID: 5
+  - visit: ok (48 ms)
+  - list_products: ok (10 ms)
+  - product_details: ok (9 ms)
+  - checkout_init: ok (49 ms)
+  - payment_webhook: ok (33 ms)
+- Bot #3: PASS (152 ms)
+  - Order ID: 6
+  - visit: ok (48 ms)
+  - list_products: ok (9 ms)
+  - product_details: ok (10 ms)
+  - checkout_init: ok (50 ms)
+  - payment_webhook: ok (35 ms)
+- Bot #4: PASS (154 ms)
+  - Order ID: 7
+  - visit: ok (48 ms)
+  - list_products: ok (8 ms)
+  - product_details: ok (10 ms)
+  - checkout_init: ok (59 ms)
+  - payment_webhook: ok (29 ms)
+- Bot #5: PASS (155 ms)
+  - Order ID: 8
+  - visit: ok (50 ms)
+  - list_products: ok (8 ms)
+  - product_details: ok (9 ms)
+  - checkout_init: ok (60 ms)
+  - payment_webhook: ok (28 ms)
+- Bot #6: PASS (135 ms)
+  - Order ID: 9
+  - visit: ok (32 ms)
+  - list_products: ok (63 ms)
+  - product_details: ok (11 ms)
+  - checkout_init: ok (13 ms)
+  - payment_webhook: ok (16 ms)
+- Bot #7: PASS (102 ms)
+  - Order ID: 11
+  - visit: ok (12 ms)
+  - list_products: ok (25 ms)
+  - product_details: ok (10 ms)
+  - checkout_init: ok (35 ms)
+  - payment_webhook: ok (20 ms)
+- Bot #8: PASS (99 ms)
+  - Order ID: 12
+  - visit: ok (12 ms)
+  - list_products: ok (21 ms)
+  - product_details: ok (11 ms)
+  - checkout_init: ok (34 ms)
+  - payment_webhook: ok (21 ms)
+- Bot #9: PASS (91 ms)
+  - Order ID: 10
+  - visit: ok (10 ms)
+  - list_products: ok (21 ms)
+  - product_details: ok (11 ms)
+  - checkout_init: ok (28 ms)
+  - payment_webhook: ok (21 ms)
+- Bot #10: PASS (120 ms)
+  - Order ID: 13
+  - visit: ok (11 ms)
+  - list_products: ok (20 ms)
+  - product_details: ok (15 ms)
+  - checkout_init: ok (48 ms)
+  - payment_webhook: ok (26 ms)
+- Bot #11: PASS (89 ms)
+  - Order ID: 14
+  - visit: ok (25 ms)
+  - list_products: ok (36 ms)
+  - product_details: ok (11 ms)
+  - checkout_init: ok (10 ms)
+  - payment_webhook: ok (6 ms)
+- Bot #12: PASS (87 ms)
+  - Order ID: 15
+  - visit: ok (11 ms)
+  - list_products: ok (28 ms)
+  - product_details: ok (7 ms)
+  - checkout_init: ok (28 ms)
+  - payment_webhook: ok (13 ms)
+- Bot #13: PASS (107 ms)
+  - Order ID: 17
+  - visit: ok (10 ms)
+  - list_products: ok (30 ms)
+  - product_details: ok (6 ms)
+  - checkout_init: ok (36 ms)
+  - payment_webhook: ok (25 ms)
+- Bot #14: PASS (116 ms)
+  - Order ID: 18
+  - visit: ok (25 ms)
+  - list_products: ok (14 ms)
+  - product_details: ok (14 ms)
+  - checkout_init: ok (47 ms)
+  - payment_webhook: ok (16 ms)
+- Bot #15: PASS (76 ms)
+  - Order ID: 16
+  - visit: ok (4 ms)
+  - list_products: ok (6 ms)
+  - product_details: ok (6 ms)
+  - checkout_init: ok (33 ms)
+  - payment_webhook: ok (27 ms)
+- Bot #16: PASS (113 ms)
+  - Order ID: 19
+  - visit: ok (17 ms)
+  - list_products: ok (54 ms)
+  - product_details: ok (14 ms)
+  - checkout_init: ok (11 ms)
+  - payment_webhook: ok (17 ms)
+- Bot #17: PASS (97 ms)
+  - Order ID: 21
+  - visit: ok (24 ms)
+  - list_products: ok (30 ms)
+  - product_details: ok (7 ms)
+  - checkout_init: ok (29 ms)
+  - payment_webhook: ok (7 ms)
+- Bot #18: PASS (74 ms)
+  - Order ID: 20
+  - visit: ok (17 ms)
+  - list_products: ok (18 ms)
+  - product_details: ok (9 ms)
+  - checkout_init: ok (24 ms)
+  - payment_webhook: ok (6 ms)
+- Bot #19: PASS (112 ms)
+  - Order ID: 23
+  - visit: ok (21 ms)
+  - list_products: ok (13 ms)
+  - product_details: ok (20 ms)
+  - checkout_init: ok (53 ms)
+  - payment_webhook: ok (5 ms)
+- Bot #20: PASS (99 ms)
+  - Order ID: 22
+  - visit: ok (18 ms)
+  - list_products: ok (6 ms)
+  - product_details: ok (14 ms)
+  - checkout_init: ok (40 ms)
+  - payment_webhook: ok (21 ms)

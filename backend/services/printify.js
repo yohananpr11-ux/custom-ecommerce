@@ -6,6 +6,49 @@ class PrintifyService {
     this.token = process.env.PRINTIFY_API_TOKEN;
     this.shopId = process.env.PRINTIFY_SHOP_ID;
     this.baseUrl = 'https://api.printify.com/v1';
+    this.productSnapshotCache = new Map();
+    this.productSnapshotTtlMs = 2 * 60 * 1000;
+  }
+
+  async getLiveProductSnapshot(printifyProductId) {
+    if (!printifyProductId || !this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
+      return null;
+    }
+
+    const cacheKey = String(printifyProductId);
+    const now = Date.now();
+    const cached = this.productSnapshotCache.get(cacheKey);
+    if (cached && (now - cached.fetchedAt) < this.productSnapshotTtlMs) {
+      return cached.payload;
+    }
+
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/shops/${this.shopId}/products/${printifyProductId}.json`,
+        { headers: { 'Authorization': `Bearer ${this.token}` } }
+      );
+
+      const product = response.data || {};
+      const variants = Array.isArray(product.variants)
+        ? product.variants.map((variant) => ({
+          printifyVariantId: String(variant.id),
+          stockQty: Number.isFinite(Number(variant.quantity)) ? Math.max(0, Number(variant.quantity)) : null,
+          isAvailable: variant.is_available === false ? 0 : 1,
+          isEnabled: variant.is_enabled === false ? 0 : 1,
+        }))
+        : [];
+
+      const payload = {
+        updatedAt: product.updated_at || product.created_at || new Date().toISOString(),
+        variants,
+      };
+
+      this.productSnapshotCache.set(cacheKey, { fetchedAt: now, payload });
+      return payload;
+    } catch (error) {
+      console.warn(`Printify live snapshot failed for ${printifyProductId}:`, error.message);
+      return null;
+    }
   }
 
   async syncProducts() {
