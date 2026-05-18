@@ -5,12 +5,15 @@
  *   Meta Pixel: PIXEL_ID_HERE
  */
 
-const GA4_ID = 'G-XXXXXXXXXX';
-const META_PIXEL_ID = 'PIXEL_ID_HERE';
+const GA4_ID = (import.meta.env.VITE_GA4_ID || 'G-XXXXXXXXXX').trim();
+const META_PIXEL_ID = (import.meta.env.VITE_META_PIXEL_ID || 'PIXEL_ID_HERE').trim();
+
+const isPlaceholderId = (value) => !value || /^(G-XXXXXXXXXX|PIXEL_ID_HERE|null|undefined)$/i.test(value);
 
 // ─── GA4 ─────────────────────────────────────────────────────────────────────
 
 function injectGA4() {
+  if (isPlaceholderId(GA4_ID)) return;
   if (document.getElementById('ga4-script')) return;
 
   const script1 = document.createElement('script');
@@ -28,6 +31,7 @@ function injectGA4() {
 // ─── Meta Pixel ──────────────────────────────────────────────────────────────
 
 function injectMetaPixel() {
+  if (isPlaceholderId(META_PIXEL_ID)) return;
   if (window.fbq || document.getElementById('meta-pixel-script')) return;
 
   (function (f, b, e, v, n, t, s) {
@@ -71,6 +75,7 @@ export function initAnalytics() {
  */
 export function trackPageView(path) {
   try {
+    if (isPlaceholderId(GA4_ID)) return;
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'page_view', { page_path: path });
     }
@@ -89,6 +94,7 @@ export function trackPageView(path) {
  */
 export function trackViewItem(product, currency) {
   try {
+    if (isPlaceholderId(GA4_ID)) return;
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'view_item', {
         currency,

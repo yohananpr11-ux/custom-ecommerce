@@ -1714,6 +1714,171 @@ function MainApp() {
     }
   }
 
+  const cartDrawer = (
+    <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) closeCartDrawer(); }}>
+      <div className="cart-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="cart-header">
+          <h2>{t('cart')} ({totalItems})</h2>
+          <button className="close-cart" aria-label={t('close_cart_aria')} onClick={closeCartDrawer}>×</button>
+        </div>
+
+        <div className="cart-scroll-region">
+          {bundleActive ? (
+            <div className="bundle-banner active">{t('bundle_active')}</div>
+          ) : totalItems === 2 ? (
+            <div className="bundle-banner hint">{t('bundle_hint')}</div>
+          ) : null}
+
+          <div className="cart-items">
+            {cart.map(item => {
+              const itemPrice = getCartUnitPrice(item, currency, exchangeRate);
+              const parsed = splitVariantTitle(item.title);
+              const itemVariants = Array.isArray(item.variants) ? item.variants : [];
+              const itemColors = Array.isArray(item.colors) ? item.colors : [];
+              const selectedColor = item.selectedColor || parsed.color || itemColors[0]?.name || '';
+              const sizesByColor = itemVariants.length > 0
+                ? Array.from(new Set(itemVariants.filter((variant) => variant.color === selectedColor && variant.size).map((variant) => normalizeSizeLabel(variant.size))))
+                : (Array.isArray(item.sizes) ? item.sizes : []);
+              const itemSizes = sizesByColor.length > 0
+                ? getOrderedDisplaySizes(sizesByColor)
+                : getOrderedDisplaySizes(Array.isArray(item.sizes) ? item.sizes : []);
+              const selectedSize = normalizeSizeLabel(item.selectedSize || parsed.size || itemSizes[0] || '');
+
+              return (
+                <div key={item.cartId || item.id} className="cart-item">
+                  <div style={{ flex: 1 }}>
+                    <strong>{getCartDisplayTitle(item.title, locale)}</strong>
+                    {itemVariants.length > 0 && itemColors.length > 0 && (
+                      <div className="cart-variant-editor">
+                        <span>{t('cart_customize')}</span>
+                        <div className="cart-variant-grid">
+                          <label>
+                            {t('color')}
+                            <select
+                              value={selectedColor}
+                              onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, e.target.value, selectedSize)}
+                            >
+                              {itemColors.map((colorOption) => (
+                                <option key={colorOption.name} value={colorOption.name}>
+                                  {localizeColorName(colorOption.name, locale)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            {t('size')}
+                            <select
+                              value={selectedSize}
+                              onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, selectedColor, e.target.value)}
+                            >
+                              {itemSizes.map((sizeOption) => (
+                                <option key={sizeOption} value={sizeOption}>
+                                  {sizeOption}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                    <div className="cart-qty-controls">
+                      <button type="button" onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity - 1)}>−</button>
+                      <span>{item.quantity}</span>
+                      <button type="button" onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity + 1)}>+</button>
+                      <button type="button" className="remove-btn" onClick={() => removeFromCart(item.cartId || `${item.id}`)}>🗑</button>
+                    </div>
+                  </div>
+                  <div style={{ fontWeight: 600 }}>{curSym}{(itemPrice * item.quantity).toFixed(2)}</div>
+                </div>
+              );
+            })}
+            {cart.length === 0 && <p style={{color: '#666', textAlign: 'center', marginTop: '40px'}}>{t('cart_empty')}.</p>}
+          </div>
+
+          {cartRecommendations.length > 0 && (
+            <div className="cart-recommendations">
+              <div className="cart-recommendations-title">You Might Also Like</div>
+              <div className="cart-recommendations-row">
+                {cartRecommendations.map((product) => {
+                  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+                  return (
+                    <button
+                      key={`rec-${product.id}`}
+                      type="button"
+                      className="cart-recommendation-card"
+                      onClick={() => openQuickAdd(product)}
+                    >
+                      <img src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
+                      <strong>{getProductTitle(product.title, locale)}</strong>
+                      <span>{curSym}{displayPrice.toFixed(2)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="cart-footer">
+          {totalItems > 0 && (
+            <div className="shipping-progress cart-footer-progress">
+              {isFreeShipping ? (
+                <p className="shipping-unlocked">{t('shipping_unlocked')}</p>
+              ) : (
+                <>
+                  <p className="shipping-hint">{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
+                  <div className="progress-bar-bg">
+                    <motion.div 
+                      className="progress-bar-fill"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(totalItems / FREE_SHIPPING_THRESHOLD) * 100}%` }}
+                      transition={{ duration: 0.4 }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <button type="button" className="continue-shopping-btn" onClick={closeCartDrawer}>{t('continue_shopping')}</button>
+          {bundleDiscount > 0 && (
+            <div className="cart-savings-line">
+              <span>{t('bundle_deal', { sets: bundleSets })}</span>
+              <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(bundleDiscount).toFixed(2)}</span>
+            </div>
+          )}
+
+          {couponDiscount > 0 && (
+            <div className="cart-savings-line">
+              <span>{t('coupon_label')} ({activeCoupon.code})</span>
+              <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(couponDiscount).toFixed(2)}</span>
+            </div>
+          )}
+
+          <div className="cart-savings-line">
+            <span>{t('shipping')}</span>
+            <span style={{ color: isFreeShipping ? '#4caf50' : '#aaa' }}>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
+          </div>
+
+          <div className="cart-total">
+            <span>{t('total')}</span>
+            <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
+          </div>
+
+          <p className="cart-taxes-note">{t('taxes_shipping_note')}</p>
+          <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
+            {t('checkout')}
+          </button>
+          <div className="cart-payment-icons" aria-label={t('payment_icons_label')}>
+            <svg viewBox="0 0 38 24" width="38" height="24" aria-label="Visa" role="img"><rect width="38" height="24" rx="4" fill="#1a1f71"/><text x="6" y="17" fontFamily="Arial" fontWeight="bold" fontSize="11" fill="#fff">VISA</text></svg>
+            <svg viewBox="0 0 38 24" width="38" height="24" aria-label="Mastercard" role="img"><rect width="38" height="24" rx="4" fill="#252525"/><circle cx="15" cy="12" r="7" fill="#eb001b"/><circle cx="23" cy="12" r="7" fill="#f79e1b"/><path d="M19 6.8a7 7 0 0 1 0 10.4A7 7 0 0 1 19 6.8z" fill="#ff5f00"/></svg>
+            <svg viewBox="0 0 38 24" width="38" height="24" aria-label="PayPal" role="img"><rect width="38" height="24" rx="4" fill="#003087"/><text x="5" y="16" fontFamily="Arial" fontWeight="bold" fontSize="9" fill="#009cde">Pay</text><text x="17" y="16" fontFamily="Arial" fontWeight="bold" fontSize="9" fill="#fff">Pal</text></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   useEffect(() => {
     initAnalytics();
@@ -1963,7 +2128,7 @@ function MainApp() {
   // ============ ROUTE: PRODUCT DETAIL PAGE ============
   if (currentPath.startsWith('/product/')) {
     const productId = currentPath.split('/')[2];
-    return <ProductDetailPage productId={productId} addToCart={addToCart} goToCheckout={goToCheckoutNow} showToast={showToast} t={t} currency={currency} curSym={curSym} locale={locale} cartCount={totalItems} onOpenCart={openCartDrawer} />;
+    return <>{<ProductDetailPage productId={productId} addToCart={addToCart} goToCheckout={goToCheckoutNow} showToast={showToast} t={t} currency={currency} curSym={curSym} locale={locale} cartCount={totalItems} onOpenCart={openCartDrawer} />}{cartDrawer}</>;
   }
 
   // ============ ROUTE: 404 ============
