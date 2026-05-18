@@ -850,6 +850,11 @@ function MainApp() {
     }
   }, [cart])
 
+  useEffect(() => {
+    document.documentElement.dir = locale === 'he' ? 'rtl' : 'ltr';
+    document.documentElement.lang = locale;
+  }, [locale]);
+
   const categories = ['All', 'New Arrivals', 'Best Sellers', 'Hoodies', 'T-Shirts']
 
   const filteredProducts = useMemo(() => {
@@ -1182,7 +1187,8 @@ function MainApp() {
         <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
         <div className="search-bar">
           <input 
-            type="text" 
+            type="text"
+            dir={locale === 'he' ? 'rtl' : 'ltr'}
             placeholder={t('search_placeholder')} 
             value={searchQuery}
             aria-label={t('search_aria')}
