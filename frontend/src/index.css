@@ -74,6 +74,24 @@ body {
   font-family: inherit;
 }
 
+html[dir="rtl"] .search-bar input,
+html[dir="rtl"] .contact-form input,
+html[dir="rtl"] .contact-form textarea,
+html[dir="rtl"] .chat-input-form input,
+html[dir="rtl"] .checkout-page input {
+  direction: rtl;
+  text-align: right;
+}
+
+html[dir="ltr"] .search-bar input,
+html[dir="ltr"] .contact-form input,
+html[dir="ltr"] .contact-form textarea,
+html[dir="ltr"] .chat-input-form input,
+html[dir="ltr"] .checkout-page input {
+  direction: ltr;
+  text-align: left;
+}
+
 .search-bar input:focus {
   border-color: #666;
 }
