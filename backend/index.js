@@ -12,6 +12,66 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock');
+const PAYPAL_API_BASE = 'https://api-m.paypal.com';
+const PAYPAL_SUPPORTED_CURRENCIES = new Set(['USD', 'ILS']);
+
+const normalizePayPalCurrency = (currency) => {
+  const normalized = String(currency || '').toUpperCase();
+  return PAYPAL_SUPPORTED_CURRENCIES.has(normalized) ? normalized : 'ILS';
+};
+
+const getPayPalAccessToken = async () => {
+  const clientId = process.env.PAYPAL_CLIENT_ID;
+  const clientSecret = process.env.PAYPAL_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error('PayPal credentials are missing from environment variables');
+  }
+
+  const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const response = await axios.post(
+    `${PAYPAL_API_BASE}/v1/oauth2/token`,
+    'grant_type=client_credentials',
+    {
+      headers: {
+        Authorization: `Basic ${authHeader}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    }
+  );
+
+  return response.data.access_token;
+};
+
+const createPayPalOrder = async (accessToken, payload) => {
+  const response = await axios.post(
+    `${PAYPAL_API_BASE}/v2/checkout/orders`,
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  return response.data;
+};
+
+const capturePayPalOrder = async (accessToken, orderID) => {
+  const response = await axios.post(
+    `${PAYPAL_API_BASE}/v2/checkout/orders/${orderID}/capture`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  return response.data;
+};
 
 const normalizeUrl = (value) => {
   if (!value || typeof value !== 'string') return null;
@@ -765,6 +825,149 @@ const createPendingOrder = (customerName, customerEmail, address, items, couponC
       });
   });
 };
+
+app.get('/api/paypal/config', (req, res) => {
+  if (!process.env.PAYPAL_CLIENT_ID) {
+    return res.status(500).json({ error: 'PayPal client is not configured on the server' });
+  }
+
+  return res.json({ clientId: process.env.PAYPAL_CLIENT_ID });
+});
+
+app.post('/api/paypal/create-order', async (req, res) => {
+  const {
+    customerName,
+    customerEmail,
+    address,
+    items,
+    couponCode,
+    currency,
+  } = req.body || {};
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Cart items are required' });
+  }
+
+  if (!customerName || !customerEmail || !address) {
+    return res.status(400).json({ error: 'Shipping details are required' });
+  }
+
+  try {
+    const requestedCurrency = normalizePayPalCurrency(currency);
+    const { orderId, pricing } = await createPendingOrder(customerName, customerEmail, address, items, couponCode);
+    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
+    const totalInRequestedCurrency = requestedCurrency === 'USD'
+      ? (pricing.totalAmount / exchangeRate)
+      : pricing.totalAmount;
+
+    const amount = totalInRequestedCurrency.toFixed(2);
+    const accessToken = await getPayPalAccessToken();
+    const paypalOrder = await createPayPalOrder(accessToken, {
+      intent: 'CAPTURE',
+      purchase_units: [
+        {
+          reference_id: String(orderId),
+          custom_id: String(orderId),
+          amount: {
+            currency_code: requestedCurrency,
+            value: amount,
+          },
+          description: `Drip Street order #${orderId}`,
+        },
+      ],
+      application_context: {
+        user_action: 'PAY_NOW',
+      },
+    });
+
+    return res.json({
+      success: true,
+      orderID: paypalOrder.id,
+      orderId,
+      currency: requestedCurrency,
+      amount,
+    });
+  } catch (err) {
+    console.error('PayPal create-order failed:', err.response?.data || err.message);
+    return res.status(500).json({ error: 'Failed to create PayPal order' });
+  }
+});
+
+app.post('/api/paypal/capture-order', async (req, res) => {
+  const { orderID } = req.body || {};
+
+  if (!orderID || typeof orderID !== 'string') {
+    return res.status(400).json({ error: 'Valid orderID is required' });
+  }
+
+  try {
+    const accessToken = await getPayPalAccessToken();
+    const captureData = await capturePayPalOrder(accessToken, orderID);
+
+    if (captureData.status !== 'COMPLETED') {
+      return res.status(400).json({
+        success: false,
+        error: 'PayPal payment is not completed',
+        status: captureData.status,
+      });
+    }
+
+    const purchaseUnit = captureData.purchase_units && captureData.purchase_units[0];
+    const capture = purchaseUnit?.payments?.captures?.[0];
+    const localOrderId = Number(purchaseUnit?.custom_id || purchaseUnit?.reference_id);
+
+    if (!localOrderId || Number.isNaN(localOrderId)) {
+      return res.status(400).json({ success: false, error: 'Could not map PayPal order to local order' });
+    }
+
+    const existingOrder = await dbGetAsync(`SELECT id, status, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
+    if (!existingOrder) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (existingOrder.status === 'paid') {
+      return res.json({ success: true, duplicate: true, orderId: localOrderId });
+    }
+
+    const captureCurrency = String(capture?.amount?.currency_code || '').toUpperCase();
+    const captureValue = Number(capture?.amount?.value || 0);
+    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
+    const expectedValue = captureCurrency === 'USD'
+      ? (Number(existingOrder.totalAmount || 0) / exchangeRate)
+      : Number(existingOrder.totalAmount || 0);
+
+    if (!Number.isFinite(captureValue) || Math.abs(captureValue - expectedValue) > 0.02) {
+      return res.status(400).json({
+        success: false,
+        error: 'Captured amount mismatch',
+      });
+    }
+
+    const captureId = capture?.id || orderID;
+    const canProcess = await reserveWebhookEvent('paypal', captureId);
+    if (!canProcess) {
+      return res.json({ success: true, duplicate: true, orderId: localOrderId });
+    }
+
+    await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [localOrderId]);
+
+    const amountText = captureCurrency === 'USD'
+      ? `$${captureValue.toFixed(2)}`
+      : `₪${captureValue.toFixed(2)}`;
+
+    await sendPaymentNotification({ provider: 'PayPal', orderId: localOrderId, amountText });
+    await processPaidOrderFulfillment(localOrderId, 'PayPal');
+
+    return res.json({
+      success: true,
+      orderId: localOrderId,
+      status: captureData.status,
+    });
+  } catch (err) {
+    console.error('PayPal capture-order failed:', err.response?.data || err.message);
+    return res.status(500).json({ error: 'Failed to capture PayPal order' });
+  }
+});
 
 // Checkout via Stripe (USD)
 app.post('/api/checkout/stripe', async (req, res) => {

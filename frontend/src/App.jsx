@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
 import './index.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
@@ -46,6 +47,17 @@ const translations = {
     product_description: "תיאור",
     color: "צבע",
     size: "מידה",
+    quantity: "כמות",
+    configure_product_title: "בחר את ההתאמה המושלמת שלך",
+    configure_product_subtitle: "לפני הוספה לסל, בחר צבע, מידה וכמות בדיוק כמו שמתאים לך.",
+    choose_color: "בחר צבע",
+    choose_size: "בחר מידה",
+    choose_quantity: "בחר כמות",
+    add_selected_to_cart: "הוסף את הבחירה לסל",
+    continue_shopping: "חזרה לקטלוג",
+    cart_customize: "התאם את הפריט שלך",
+    review_title: "לפני תשלום — בדיקת בחירה",
+    review_subtitle: "אלה הפריטים שבחרת בקפידה. אפשר לעדכן כל פרט לפני ביצוע ההזמנה.",
     low_stock: "נשארו יחידות אחרונות במידה זו",
     select_available_variant: "בחר צבע ומידה זמינים כדי להוסיף לסל",
     empty_cart_toast: "הסל ריק, הוסף פריטים כדי להמשיך",
@@ -59,6 +71,7 @@ const translations = {
     payment_method: "בחר תשלום",
     payment_card_bit: "כרטיס אשראי / ביט",
     payment_stripe: "כרטיס בינלאומי (Stripe)",
+    payment_paypal: "PayPal",
     order_summary: "סיכום הזמנה",
     subtotal: "סכום ביניים",
     bundle_deal: "🎁 מבצע 3 חולצות",
@@ -126,6 +139,17 @@ const translations = {
     product_description: "Description",
     color: "Color",
     size: "Size",
+    quantity: "Quantity",
+    configure_product_title: "Choose Your Perfect Fit",
+    configure_product_subtitle: "Before adding to cart, select the color, size, and quantity that suit you best.",
+    choose_color: "Choose color",
+    choose_size: "Choose size",
+    choose_quantity: "Choose quantity",
+    add_selected_to_cart: "Add Selection to Cart",
+    continue_shopping: "Back to Catalog",
+    cart_customize: "Customize Your Item",
+    review_title: "Before Payment — Final Selection Review",
+    review_subtitle: "These are the exact items you selected. You can refine every detail before completing payment.",
     low_stock: "Only a few units left in this size",
     select_available_variant: "Please select an available color and size",
     empty_cart_toast: "Your cart is empty, add items to continue",
@@ -139,6 +163,7 @@ const translations = {
     payment_method: "Payment Method",
     payment_card_bit: "Credit Card / Bit (₪)",
     payment_stripe: "Stripe ($)",
+    payment_paypal: "PayPal",
     order_summary: "Order Summary",
     subtotal: "Subtotal",
     bundle_deal: "🎁 3-item bundle",
@@ -258,6 +283,15 @@ function getCartDisplayTitle(rawTitle, locale) {
   const base = getProductTitle(parts[0] || '', locale);
   const rest = parts.slice(1).map((part, idx) => (idx === 0 ? localizeColorName(part, locale) : part));
   return [base, ...rest].join(' - ');
+}
+
+function splitVariantTitle(rawTitle) {
+  const parts = String(rawTitle || '').split(' - ');
+  return {
+    base: parts[0] || String(rawTitle || ''),
+    color: parts[1] || '',
+    size: parts[2] || '',
+  };
 }
 
 function getLocalizedProductDescription(product, locale) {
@@ -708,10 +742,22 @@ function MainApp() {
     }
   })
   const [isCartOpen, setIsCartOpen] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('payplus')
+  const [paymentMethod, setPaymentMethod] = useState('paypal')
+  const [paypalClientId, setPaypalClientId] = useState(import.meta.env.VITE_PAYPAL_CLIENT_ID || '')
+  const [isPayPalProcessing, setIsPayPalProcessing] = useState(false)
+  const [checkoutForm, setCheckoutForm] = useState({
+    customerName: '',
+    customerEmail: '',
+    address: ''
+  })
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('All')
   const [activeCoupon, setActiveCoupon] = useState(null)
+  const [quickAddProduct, setQuickAddProduct] = useState(null)
+  const [quickAddColor, setQuickAddColor] = useState('')
+  const [quickAddSize, setQuickAddSize] = useState('')
+  const [quickAddQuantity, setQuickAddQuantity] = useState(1)
+  const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
 
   const [locale, setLocale] = useState('he')
   const [currency, setCurrency] = useState('ILS')
@@ -776,9 +822,7 @@ function MainApp() {
         setLocale(data.locale);
         setCurrency(data.currency);
         setExchangeRate(data.exchangeRate || 3.75);
-        if (data.currency === 'USD') {
-          setPaymentMethod('stripe');
-        }
+        setPaymentMethod('paypal');
 
         const visitKey = 'drip_street_visit_notified';
         if (!sessionStorage.getItem(visitKey)) {
@@ -797,6 +841,15 @@ function MainApp() {
         }
       })
       .catch(err => console.warn("Geolocation fallback applied:", err));
+
+    fetch(`${API_BASE}/api/paypal/config`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.clientId) setPaypalClientId(data.clientId);
+      })
+      .catch((err) => {
+        console.warn('PayPal config fallback applied:', err);
+      });
 
     fetch(`${API_BASE}/api/products`)
       .then(res => res.json())
@@ -869,6 +922,154 @@ function MainApp() {
     })
   }, [products, searchQuery, activeCategory])
 
+  const quickAddAvailableSizes = useMemo(() => {
+    if (!quickAddProduct || !quickAddColor) return [];
+    const variants = Array.isArray(quickAddProduct.variants) ? quickAddProduct.variants : [];
+    if (variants.length === 0) {
+      return Array.isArray(quickAddProduct.sizes) ? quickAddProduct.sizes : [];
+    }
+    const sizes = variants
+      .filter((variant) => variant.color === quickAddColor && variant.size)
+      .map((variant) => variant.size);
+    return Array.from(new Set(sizes));
+  }, [quickAddProduct, quickAddColor]);
+
+  useEffect(() => {
+    if (!quickAddProduct) return;
+    if (!quickAddAvailableSizes.length) return;
+    if (!quickAddAvailableSizes.includes(quickAddSize)) {
+      setQuickAddSize(quickAddAvailableSizes[0]);
+    }
+  }, [quickAddProduct, quickAddSize, quickAddAvailableSizes]);
+
+  const closeQuickAdd = () => {
+    setQuickAddProduct(null);
+    setQuickAddColor('');
+    setQuickAddSize('');
+    setQuickAddQuantity(1);
+    setIsQuickAddLoading(false);
+  };
+
+  const openQuickAdd = async (product) => {
+    if (!product) return;
+    setIsQuickAddLoading(true);
+    let resolvedProduct = product;
+
+    const hasDetailedVariants = Array.isArray(product.variants) && product.variants.length > 0;
+    if (!hasDetailedVariants) {
+      try {
+        const response = await fetch(`${API_BASE}/api/products/${product.id}`);
+        if (response.ok) {
+          const detail = await response.json();
+          if (detail && detail.id) resolvedProduct = detail;
+        }
+      } catch (error) {
+        console.error('Failed to fetch product variants for quick add:', error);
+      }
+    }
+
+    const defaultColor = resolvedProduct.colors?.[0]?.name || '';
+    const variants = Array.isArray(resolvedProduct.variants) ? resolvedProduct.variants : [];
+    let defaultSize = resolvedProduct.sizes?.[0] || '';
+
+    if (defaultColor && variants.length > 0) {
+      const preferred = variants.find((variant) => variant.color === defaultColor && variant.size);
+      if (preferred?.size) defaultSize = preferred.size;
+    }
+
+    setQuickAddProduct(resolvedProduct);
+    setQuickAddColor(defaultColor);
+    setQuickAddSize(defaultSize);
+    setQuickAddQuantity(1);
+    setIsQuickAddLoading(false);
+  };
+
+  const submitQuickAdd = () => {
+    if (!quickAddProduct) return;
+
+    const variants = Array.isArray(quickAddProduct.variants) ? quickAddProduct.variants : [];
+    let variantId = null;
+    let nextPrice = quickAddProduct.price;
+
+    if (variants.length > 0) {
+      const matchedVariant = findMatchingVariant(variants, quickAddColor, quickAddSize);
+      if (!matchedVariant || !matchedVariant.id) {
+        showToast(t('select_available_variant'));
+        return;
+      }
+      variantId = matchedVariant.id;
+      if (Number.isFinite(Number(matchedVariant.price))) {
+        nextPrice = Number(matchedVariant.price);
+      }
+    }
+
+    const variantTitle = [quickAddProduct.title];
+    if (quickAddColor) variantTitle.push(quickAddColor);
+    if (quickAddSize) variantTitle.push(quickAddSize);
+
+    addToCart({
+      ...quickAddProduct,
+      price: nextPrice,
+      baseTitle: quickAddProduct.title,
+      title: variantTitle.join(' - '),
+      cartId: `${quickAddProduct.id}-${quickAddColor}-${quickAddSize}`,
+      selectedColor: quickAddColor,
+      selectedSize: quickAddSize,
+      variantId,
+    }, { openCart: true, quantity: quickAddQuantity });
+
+    closeQuickAdd();
+  };
+
+  const updateCartVariant = (cartId, nextColor, nextSize) => {
+    const currentItem = cart.find((item) => (item.cartId || `${item.id}`) === cartId);
+    if (!currentItem) return;
+
+    const variants = Array.isArray(currentItem.variants) ? currentItem.variants : [];
+    if (variants.length === 0) return;
+
+    const matchedVariant = findMatchingVariant(variants, nextColor, nextSize);
+    if (!matchedVariant || !matchedVariant.id) {
+      showToast(t('select_available_variant'));
+      return;
+    }
+
+    const parsed = splitVariantTitle(currentItem.title);
+    const baseTitle = currentItem.baseTitle || parsed.base;
+    const nextCartId = `${currentItem.id}-${nextColor}-${nextSize}`;
+    const nextTitle = [baseTitle, nextColor, nextSize].filter(Boolean).join(' - ');
+    const nextPrice = Number.isFinite(Number(matchedVariant.price)) ? Number(matchedVariant.price) : currentItem.price;
+
+    setCart((prevCart) => {
+      const currentIndex = prevCart.findIndex((item) => (item.cartId || `${item.id}`) === cartId);
+      if (currentIndex < 0) return prevCart;
+
+      const duplicateIndex = prevCart.findIndex((item, idx) => idx !== currentIndex && (item.cartId || `${item.id}`) === nextCartId);
+      if (duplicateIndex >= 0) {
+        const merged = [...prevCart];
+        merged[duplicateIndex] = {
+          ...merged[duplicateIndex],
+          quantity: (merged[duplicateIndex].quantity || 0) + (merged[currentIndex].quantity || 0),
+        };
+        merged.splice(currentIndex, 1);
+        return merged;
+      }
+
+      const nextCart = [...prevCart];
+      nextCart[currentIndex] = {
+        ...nextCart[currentIndex],
+        baseTitle,
+        title: nextTitle,
+        selectedColor: nextColor,
+        selectedSize: nextSize,
+        variantId: matchedVariant.id,
+        cartId: nextCartId,
+        price: nextPrice,
+      };
+      return nextCart;
+    });
+  };
+
   const sendChatMessage = (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -906,13 +1107,14 @@ function MainApp() {
   };
 
   const addToCart = (product, options = {}) => {
-    const { openCart = true, onAdded } = options;
+    const { openCart = true, onAdded, quantity = 1 } = options;
+    const incrementBy = Math.max(1, Number(quantity) || 1);
     const cartId = product.cartId || `${product.id}`;
     setCart((prevCart) => {
       const existing = prevCart.find(item => (item.cartId || `${item.id}`) === cartId);
       const nextCart = existing
-        ? prevCart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: item.quantity + 1 } : item))
-        : [...prevCart, { ...product, cartId, quantity: 1 }];
+        ? prevCart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: item.quantity + incrementBy } : item))
+        : [...prevCart, { ...product, cartId, quantity: incrementBy }];
 
       if (typeof onAdded === 'function') {
         setTimeout(() => onAdded(nextCart), 0);
@@ -924,12 +1126,12 @@ function MainApp() {
   }
 
   const removeFromCart = (cartId) => {
-    setCart(cart.filter(item => (item.cartId || `${item.id}`) !== cartId))
+    setCart((prevCart) => prevCart.filter(item => (item.cartId || `${item.id}`) !== cartId))
   }
 
   const updateQuantity = (cartId, newQty) => {
     if (newQty <= 0) return removeFromCart(cartId);
-    setCart(cart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: newQty } : item)))
+    setCart((prevCart) => prevCart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: newQty } : item)))
   }
 
   // ============ PRICING LOGIC ============
@@ -961,14 +1163,72 @@ function MainApp() {
     window.dispatchEvent(new Event('popstate'));
   }
 
+  const hasInvalidVariant = cart.some((item) => (
+    item.selectedColor
+    && item.selectedSize
+    && (!item.variantId || Number.isNaN(Number(item.variantId)))
+  ));
+
+  const isCheckoutFormValid = checkoutForm.customerName.trim()
+    && checkoutForm.customerEmail.trim()
+    && checkoutForm.address.trim();
+
+  const buildCheckoutPayload = () => ({
+    customerName: checkoutForm.customerName.trim(),
+    customerEmail: checkoutForm.customerEmail.trim(),
+    address: checkoutForm.address.trim(),
+    items: cart,
+    totalAmount: cartTotal,
+    bundleCount: BUNDLE_ITEM_COUNT,
+    bundlePrice: BUNDLE_ITEM_PRICE,
+    shippingCost: shippingCost,
+    bundleDiscount: bundleDiscount,
+    couponCode: activeCoupon ? activeCoupon.code : null,
+    currency,
+  });
+
+  const createPayPalOrder = async () => {
+    if (hasInvalidVariant) {
+      showToast(t('variant_error_toast'));
+      throw new Error('Variant mismatch');
+    }
+
+    if (!isCheckoutFormValid) {
+      showToast(t('shipping_details'));
+      throw new Error('Missing shipping details');
+    }
+
+    const response = await fetch(`${API_BASE}/api/paypal/create-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildCheckoutPayload())
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.orderID) {
+      throw new Error(data.error || 'Failed to create PayPal order');
+    }
+
+    return data.orderID;
+  };
+
+  const capturePayPalOrder = async (orderID) => {
+    const response = await fetch(`${API_BASE}/api/paypal/capture-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderID })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to capture PayPal order');
+    }
+
+    return data;
+  };
+
   const submitCheckout = async (e) => {
     e.preventDefault();
-
-    const hasInvalidVariant = cart.some((item) => (
-      item.selectedColor
-      && item.selectedSize
-      && (!item.variantId || Number.isNaN(Number(item.variantId)))
-    ));
 
     if (hasInvalidVariant) {
       showToast(t('variant_error_toast'));
@@ -980,18 +1240,7 @@ function MainApp() {
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName: e.target.customerName.value,
-          customerEmail: e.target.customerEmail.value,
-          address: e.target.address.value,
-          items: cart,
-          totalAmount: cartTotal,
-          bundleCount: BUNDLE_ITEM_COUNT,
-          bundlePrice: BUNDLE_ITEM_PRICE,
-          shippingCost: shippingCost,
-          bundleDiscount: bundleDiscount,
-          couponCode: activeCoupon ? activeCoupon.code : null
-        })
+        body: JSON.stringify(buildCheckoutPayload())
       });
       const data = await response.json();
       if (data.success && data.paymentUrl) {
@@ -1039,12 +1288,37 @@ function MainApp() {
         <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
           <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1', minWidth: '300px' }}>
             <h3>{t('shipping_details')}</h3>
-            <input name="customerName" type="text" placeholder={t('full_name')} required />
-            <input name="customerEmail" type="email" placeholder={t('email')} required />
-            <input name="address" type="text" placeholder={t('address')} required />
+            <input
+              name="customerName"
+              type="text"
+              placeholder={t('full_name')}
+              required
+              value={checkoutForm.customerName}
+              onChange={(e) => setCheckoutForm((prev) => ({ ...prev, customerName: e.target.value }))}
+            />
+            <input
+              name="customerEmail"
+              type="email"
+              placeholder={t('email')}
+              required
+              value={checkoutForm.customerEmail}
+              onChange={(e) => setCheckoutForm((prev) => ({ ...prev, customerEmail: e.target.value }))}
+            />
+            <input
+              name="address"
+              type="text"
+              placeholder={t('address')}
+              required
+              value={checkoutForm.address}
+              onChange={(e) => setCheckoutForm((prev) => ({ ...prev, address: e.target.value }))}
+            />
             
             <h3 style={{ marginTop: '24px' }}>{t('payment_method')}</h3>
             <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="radio" name="payment" value="paypal" checked={paymentMethod === 'paypal'} onChange={() => setPaymentMethod('paypal')} />
+                {t('payment_paypal')}
+              </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                 <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
                 {t('payment_card_bit')}
@@ -1054,16 +1328,73 @@ function MainApp() {
                 {t('payment_stripe')}
               </label>
             </div>
-            <button type="submit" className="checkout-btn">{t('complete_order')} – {curSym}{displayVal(cartTotal).toFixed(2)}</button>
+            {paymentMethod === 'paypal' ? (
+              paypalClientId ? (
+                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture' }}>
+                  <PayPalButtons
+                    style={{ layout: 'vertical', label: 'paypal' }}
+                    forceReRender={[currency, cartTotal, paypalClientId]}
+                    createOrder={async () => {
+                      setIsPayPalProcessing(true);
+                      try {
+                        const orderID = await createPayPalOrder();
+                        return orderID;
+                      } catch (err) {
+                        showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+                        throw err;
+                      } finally {
+                        setIsPayPalProcessing(false);
+                      }
+                    }}
+                    onApprove={async (data) => {
+                      setIsPayPalProcessing(true);
+                      try {
+                        await capturePayPalOrder(data.orderID);
+                        localStorage.removeItem('drip_street_cart');
+                        setCart([]);
+                        window.history.pushState({}, '', '/success');
+                        window.dispatchEvent(new Event('popstate'));
+                      } catch (err) {
+                        showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+                      } finally {
+                        setIsPayPalProcessing(false);
+                      }
+                    }}
+                    onError={() => {
+                      showToast(GLOBAL_ERROR_TOAST_HE);
+                    }}
+                    disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0}
+                  />
+                </PayPalScriptProvider>
+              ) : (
+                <p style={{ color: '#ff6b6b', marginBottom: '16px' }}>PayPal is not configured yet. Please try again in a moment.</p>
+              )
+            ) : (
+              <button type="submit" className="checkout-btn">{t('complete_order')} – {curSym}{displayVal(cartTotal).toFixed(2)}</button>
+            )}
           </form>
           
           <div style={{ flex: '1', minWidth: '300px', backgroundColor: '#111', padding: '24px', borderRadius: '12px', height: 'fit-content' }}>
             <h3>{t('order_summary')}</h3>
+            <div className="checkout-review-card">
+              <h4>{t('review_title')}</h4>
+              <p>{t('review_subtitle')}</p>
+            </div>
             {cart.map(item => {
               const itemPrice = currency === 'USD' ? (item.priceUSD || (item.price / exchangeRate)) : item.price;
+              const parsed = splitVariantTitle(item.title);
               return (
-                <div key={item.cartId || item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span>{item.quantity}x {getCartDisplayTitle(item.title, locale)}</span>
+                <div key={item.cartId || item.id} className="checkout-review-line">
+                  <div>
+                    <span>{item.quantity}x {getProductTitle(parsed.base, locale)}</span>
+                    {(parsed.color || parsed.size) && (
+                      <small>
+                        {parsed.color ? `${t('color')}: ${localizeColorName(parsed.color, locale)}` : ''}
+                        {parsed.color && parsed.size ? ' • ' : ''}
+                        {parsed.size ? `${t('size')}: ${parsed.size}` : ''}
+                      </small>
+                    )}
+                  </div>
                   <span>{curSym}{(itemPrice * item.quantity).toFixed(2)}</span>
                 </div>
               );
@@ -1292,7 +1623,7 @@ function MainApp() {
                       </h3>
                       <span className="product-price">{curSym}{displayPrice.toFixed(2)}</span>
                     </div>
-                    <button className="add-to-cart" aria-label={`${t('add_to_cart')} ${getProductTitle(product.title, locale)}`} onClick={() => addToCart(product)}>
+                    <button className="add-to-cart" aria-label={`${t('add_to_cart')} ${getProductTitle(product.title, locale)}`} onClick={() => openQuickAdd(product)}>
                       {t('add_to_cart')}
                     </button>
                   </motion.div>
@@ -1302,6 +1633,101 @@ function MainApp() {
           </AnimatePresence>
         </motion.div>
       </main>
+
+      <AnimatePresence>
+        {quickAddProduct && (
+          <motion.div
+            className="quick-config-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeQuickAdd}
+          >
+            <motion.div
+              className="quick-config-modal"
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.96 }}
+              transition={{ duration: 0.22 }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button className="quick-config-close" onClick={closeQuickAdd} aria-label={t('close_cart_aria')}>×</button>
+              <div className="quick-config-head">
+                <h3>{t('configure_product_title')}</h3>
+                <p>{t('configure_product_subtitle')}</p>
+              </div>
+
+              <div className="quick-config-product">
+                <img src={quickAddProduct.imageUrl} alt={quickAddProduct.title} onError={(e) => setImageFallback(e)} />
+                <div>
+                  <strong>{getProductTitle(quickAddProduct.title, locale)}</strong>
+                  <span>{curSym}{displayVal(quickAddProduct.price).toFixed(2)}</span>
+                </div>
+              </div>
+
+              {isQuickAddLoading ? (
+                <p>{t('loading')}</p>
+              ) : (
+                <>
+                  {Array.isArray(quickAddProduct.colors) && quickAddProduct.colors.length > 0 && (
+                    <div className="quick-config-group">
+                      <label>{t('choose_color')}</label>
+                      <div className="quick-config-swatches">
+                        {quickAddProduct.colors.map((colorOption) => (
+                          <button
+                            key={colorOption.name}
+                            type="button"
+                            className={`quick-swatch ${quickAddColor === colorOption.name ? 'active' : ''}`}
+                            style={{ backgroundColor: colorOption.hex }}
+                            onClick={() => setQuickAddColor(colorOption.name)}
+                            title={localizeColorName(colorOption.name, locale)}
+                            aria-label={`${t('color')} ${localizeColorName(colorOption.name, locale)}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {quickAddAvailableSizes.length > 0 && (
+                    <div className="quick-config-group">
+                      <label>{t('choose_size')}</label>
+                      <div className="quick-config-sizes">
+                        {quickAddAvailableSizes.map((sizeOption) => (
+                          <button
+                            key={sizeOption}
+                            type="button"
+                            className={`quick-size-btn ${quickAddSize === sizeOption ? 'active' : ''}`}
+                            onClick={() => setQuickAddSize(sizeOption)}
+                          >
+                            {sizeOption}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="quick-config-group">
+                    <label htmlFor="quick-add-qty">{t('choose_quantity')}</label>
+                    <input
+                      id="quick-add-qty"
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={quickAddQuantity}
+                      onChange={(e) => setQuickAddQuantity(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+                    />
+                  </div>
+
+                  <div className="quick-config-actions">
+                    <button type="button" className="quick-config-secondary" onClick={closeQuickAdd}>{t('continue_shopping')}</button>
+                    <button type="button" className="quick-config-primary" onClick={submitQuickAdd}>{t('add_selected_to_cart')}</button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <footer className="footer container">
         <div className="payment-logos">
@@ -1353,11 +1779,53 @@ function MainApp() {
         <div className="cart-items">
           {cart.map(item => {
             const itemPrice = getCartUnitPrice(item, currency, exchangeRate);
+            const parsed = splitVariantTitle(item.title);
+            const itemVariants = Array.isArray(item.variants) ? item.variants : [];
+            const itemColors = Array.isArray(item.colors) ? item.colors : [];
+            const selectedColor = item.selectedColor || parsed.color || itemColors[0]?.name || '';
+            const sizesByColor = itemVariants.length > 0
+              ? Array.from(new Set(itemVariants.filter((variant) => variant.color === selectedColor && variant.size).map((variant) => variant.size)))
+              : (Array.isArray(item.sizes) ? item.sizes : []);
+            const itemSizes = sizesByColor.length > 0 ? sizesByColor : (Array.isArray(item.sizes) ? item.sizes : []);
+            const selectedSize = item.selectedSize || parsed.size || itemSizes[0] || '';
             
             return (
               <div key={item.cartId || item.id} className="cart-item">
                 <div style={{ flex: 1 }}>
                   <strong>{getCartDisplayTitle(item.title, locale)}</strong>
+                  {itemVariants.length > 0 && itemColors.length > 0 && (
+                    <div className="cart-variant-editor">
+                      <span>{t('cart_customize')}</span>
+                      <div className="cart-variant-grid">
+                        <label>
+                          {t('color')}
+                          <select
+                            value={selectedColor}
+                            onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, e.target.value, selectedSize)}
+                          >
+                            {itemColors.map((colorOption) => (
+                              <option key={colorOption.name} value={colorOption.name}>
+                                {localizeColorName(colorOption.name, locale)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          {t('size')}
+                          <select
+                            value={selectedSize}
+                            onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, selectedColor, e.target.value)}
+                          >
+                            {itemSizes.map((sizeOption) => (
+                              <option key={sizeOption} value={sizeOption}>
+                                {sizeOption}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                   <div className="cart-qty-controls">
                     <button onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity - 1)}>−</button>
                     <span>{item.quantity}</span>
