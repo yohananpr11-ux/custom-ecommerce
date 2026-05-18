@@ -1120,6 +1120,30 @@ function MainApp() {
     return getOrderedDisplaySizes(Array.from(new Set(sizes)));
   }, [quickAddProduct, quickAddColor]);
 
+  const quickAddActiveImage = useMemo(() => {
+    if (!quickAddProduct) return GLOBAL_IMAGE_FALLBACK;
+
+    const imagesByColor = quickAddProduct.imagesByColor && typeof quickAddProduct.imagesByColor === 'object'
+      ? quickAddProduct.imagesByColor
+      : null;
+
+    if (imagesByColor) {
+      const matchingColorEntry = Object.entries(imagesByColor).find(([colorName]) => (
+        normalizeValue(colorName) === normalizeValue(quickAddColor)
+      ));
+
+      if (matchingColorEntry && Array.isArray(matchingColorEntry[1]) && matchingColorEntry[1].length > 0) {
+        const preferredImage = matchingColorEntry[1][0];
+        return preferredImage?.src || preferredImage || quickAddProduct.imageUrl || GLOBAL_IMAGE_FALLBACK;
+      }
+    }
+
+    const matchedVariant = findMatchingVariant(quickAddProduct.variants, quickAddColor, quickAddSize)
+      || findFirstAvailableVariantForColor(quickAddProduct.variants, quickAddColor);
+
+    return matchedVariant?.imageUrl || quickAddProduct.imageUrl || GLOBAL_IMAGE_FALLBACK;
+  }, [quickAddColor, quickAddProduct, quickAddSize]);
+
   useEffect(() => {
     if (!quickAddProduct) return;
     if (!quickAddAvailableSizes.length) return;
@@ -1839,19 +1863,23 @@ function MainApp() {
                       )}
                       {isTeeProduct(product) && <span className="deal-badge">{dealBadgeText}</span>}
                     </div>
-                    <div className="product-info">
-                      <h3 
-                        className="product-title" 
-                        onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        {getProductTitle(product.title, locale)}
-                      </h3>
-                      <span className="product-price">{curSym}{displayPrice.toFixed(2)}</span>
+                    <div className="product-card-content">
+                      <div className="product-info">
+                        <h3 
+                          className="product-title" 
+                          onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {getProductTitle(product.title, locale)}
+                        </h3>
+                        <span className="product-price">{curSym}{displayPrice.toFixed(2)}</span>
+                      </div>
+                      <div className="product-card-actions">
+                        <button className="add-to-cart" aria-label={`${t('add_to_cart')} ${getProductTitle(product.title, locale)}`} onClick={() => openQuickAdd(product)}>
+                          {t('add_to_cart')}
+                        </button>
+                      </div>
                     </div>
-                    <button className="add-to-cart" aria-label={`${t('add_to_cart')} ${getProductTitle(product.title, locale)}`} onClick={() => openQuickAdd(product)}>
-                      {t('add_to_cart')}
-                    </button>
                   </motion.div>
                 );
               })
@@ -1884,7 +1912,19 @@ function MainApp() {
               </div>
 
               <div className="quick-config-product">
-                <img src={quickAddProduct.imageUrl} alt={quickAddProduct.title} onError={(e) => setImageFallback(e)} />
+                <AnimatePresence mode="wait">
+                  <motion.img
+                    key={quickAddActiveImage}
+                    src={quickAddActiveImage}
+                    alt={quickAddProduct.title}
+                    onError={(e) => setImageFallback(e)}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.28, ease: 'easeOut' }}
+                    className="quick-config-product-image"
+                  />
+                </AnimatePresence>
                 <div>
                   <strong>{getProductTitle(quickAddProduct.title, locale)}</strong>
                   <span>{curSym}{displayVal(quickAddProduct.price).toFixed(2)}</span>
@@ -1941,14 +1981,15 @@ function MainApp() {
 
                   <div className="quick-config-group">
                     <label htmlFor="quick-add-qty">{t('choose_quantity')}</label>
-                    <input
+                    <select
                       id="quick-add-qty"
-                      type="number"
-                      min="1"
-                      max="20"
                       value={quickAddQuantity}
-                      onChange={(e) => setQuickAddQuantity(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
-                    />
+                      onChange={(e) => setQuickAddQuantity(Number(e.target.value) || 1)}
+                    >
+                      {Array.from({ length: 10 }, (_, index) => index + 1).map((qty) => (
+                        <option key={`quick-qty-${qty}`} value={qty}>{qty}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="quick-config-actions">
@@ -1978,158 +2019,158 @@ function MainApp() {
       {/* Cart Drawer */}
       <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) closeCartDrawer(); }}>
         <div className="cart-panel" onClick={(event) => event.stopPropagation()}>
-        <div className="cart-header">
-          <h2>{t('cart')} ({totalItems})</h2>
-          <button className="close-cart" aria-label={t('close_cart_aria')} onClick={closeCartDrawer}>×</button>
-        </div>
-
-        {bundleActive ? (
-          <div className="bundle-banner active">{t('bundle_active')}</div>
-        ) : totalItems === 2 ? (
-          <div className="bundle-banner hint">{t('bundle_hint')}</div>
-        ) : null}
-
-        {/* Free Shipping Progress Bar */}
-        {totalItems > 0 && (
-          <div className="shipping-progress">
-            {isFreeShipping ? (
-              <p className="shipping-unlocked">{t('shipping_unlocked')}</p>
-            ) : (
-              <>
-                <p className="shipping-hint">{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
-                <div className="progress-bar-bg">
-                  <motion.div 
-                    className="progress-bar-fill"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(totalItems / FREE_SHIPPING_THRESHOLD) * 100}%` }}
-                    transition={{ duration: 0.4 }}
-                  />
-                </div>
-              </>
-            )}
+          <div className="cart-header">
+            <h2>{t('cart')} ({totalItems})</h2>
+            <button className="close-cart" aria-label={t('close_cart_aria')} onClick={closeCartDrawer}>×</button>
           </div>
-        )}
 
-        <div className="cart-items">
-          {cart.map(item => {
-            const itemPrice = getCartUnitPrice(item, currency, exchangeRate);
-            const parsed = splitVariantTitle(item.title);
-            const itemVariants = Array.isArray(item.variants) ? item.variants : [];
-            const itemColors = Array.isArray(item.colors) ? item.colors : [];
-            const selectedColor = item.selectedColor || parsed.color || itemColors[0]?.name || '';
-            const sizesByColor = itemVariants.length > 0
-              ? Array.from(new Set(itemVariants.filter((variant) => variant.color === selectedColor && variant.size).map((variant) => normalizeSizeLabel(variant.size))))
-              : (Array.isArray(item.sizes) ? item.sizes : []);
-            const itemSizes = sizesByColor.length > 0
-              ? getOrderedDisplaySizes(sizesByColor)
-              : getOrderedDisplaySizes(Array.isArray(item.sizes) ? item.sizes : []);
-            const selectedSize = normalizeSizeLabel(item.selectedSize || parsed.size || itemSizes[0] || '');
-            
-            return (
-              <div key={item.cartId || item.id} className="cart-item">
-                <div style={{ flex: 1 }}>
-                  <strong>{getCartDisplayTitle(item.title, locale)}</strong>
-                  {itemVariants.length > 0 && itemColors.length > 0 && (
-                    <div className="cart-variant-editor">
-                      <span>{t('cart_customize')}</span>
-                      <div className="cart-variant-grid">
-                        <label>
-                          {t('color')}
-                          <select
-                            value={selectedColor}
-                            onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, e.target.value, selectedSize)}
-                          >
-                            {itemColors.map((colorOption) => (
-                              <option key={colorOption.name} value={colorOption.name}>
-                                {localizeColorName(colorOption.name, locale)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          {t('size')}
-                          <select
-                            value={selectedSize}
-                            onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, selectedColor, e.target.value)}
-                          >
-                            {itemSizes.map((sizeOption) => (
-                              <option key={sizeOption} value={sizeOption}>
-                                {sizeOption}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+          <div className="cart-scroll-region">
+            {bundleActive ? (
+              <div className="bundle-banner active">{t('bundle_active')}</div>
+            ) : totalItems === 2 ? (
+              <div className="bundle-banner hint">{t('bundle_hint')}</div>
+            ) : null}
+
+            <div className="cart-items">
+              {cart.map(item => {
+                const itemPrice = getCartUnitPrice(item, currency, exchangeRate);
+                const parsed = splitVariantTitle(item.title);
+                const itemVariants = Array.isArray(item.variants) ? item.variants : [];
+                const itemColors = Array.isArray(item.colors) ? item.colors : [];
+                const selectedColor = item.selectedColor || parsed.color || itemColors[0]?.name || '';
+                const sizesByColor = itemVariants.length > 0
+                  ? Array.from(new Set(itemVariants.filter((variant) => variant.color === selectedColor && variant.size).map((variant) => normalizeSizeLabel(variant.size))))
+                  : (Array.isArray(item.sizes) ? item.sizes : []);
+                const itemSizes = sizesByColor.length > 0
+                  ? getOrderedDisplaySizes(sizesByColor)
+                  : getOrderedDisplaySizes(Array.isArray(item.sizes) ? item.sizes : []);
+                const selectedSize = normalizeSizeLabel(item.selectedSize || parsed.size || itemSizes[0] || '');
+                
+                return (
+                  <div key={item.cartId || item.id} className="cart-item">
+                    <div style={{ flex: 1 }}>
+                      <strong>{getCartDisplayTitle(item.title, locale)}</strong>
+                      {itemVariants.length > 0 && itemColors.length > 0 && (
+                        <div className="cart-variant-editor">
+                          <span>{t('cart_customize')}</span>
+                          <div className="cart-variant-grid">
+                            <label>
+                              {t('color')}
+                              <select
+                                value={selectedColor}
+                                onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, e.target.value, selectedSize)}
+                              >
+                                {itemColors.map((colorOption) => (
+                                  <option key={colorOption.name} value={colorOption.name}>
+                                    {localizeColorName(colorOption.name, locale)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              {t('size')}
+                              <select
+                                value={selectedSize}
+                                onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, selectedColor, e.target.value)}
+                              >
+                                {itemSizes.map((sizeOption) => (
+                                  <option key={sizeOption} value={sizeOption}>
+                                    {sizeOption}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                      <div className="cart-qty-controls">
+                        <button type="button" onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity - 1)}>−</button>
+                        <span>{item.quantity}</span>
+                        <button type="button" onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity + 1)}>+</button>
+                        <button type="button" className="remove-btn" onClick={() => removeFromCart(item.cartId || `${item.id}`)}>🗑</button>
                       </div>
                     </div>
-                  )}
-                  <div className="cart-qty-controls">
-                    <button onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity - 1)}>−</button>
-                    <span>{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity + 1)}>+</button>
-                    <button className="remove-btn" onClick={() => removeFromCart(item.cartId || `${item.id}`)}>🗑</button>
+                    <div style={{ fontWeight: 600 }}>{curSym}{(itemPrice * item.quantity).toFixed(2)}</div>
                   </div>
+                );
+              })}
+              {cart.length === 0 && <p style={{color: '#666', textAlign: 'center', marginTop: '40px'}}>{t('cart_empty')}.</p>}
+            </div>
+
+            {cartRecommendations.length > 0 && (
+              <div className="cart-recommendations">
+                <div className="cart-recommendations-title">You Might Also Like</div>
+                <div className="cart-recommendations-row">
+                  {cartRecommendations.map((product) => {
+                    const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+                    return (
+                      <button
+                        key={`rec-${product.id}`}
+                        type="button"
+                        className="cart-recommendation-card"
+                        onClick={() => openQuickAdd(product)}
+                      >
+                        <img src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
+                        <strong>{getProductTitle(product.title, locale)}</strong>
+                        <span>{curSym}{displayPrice.toFixed(2)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div style={{ fontWeight: 600 }}>{curSym}{(itemPrice * item.quantity).toFixed(2)}</div>
               </div>
-            );
-          })}
-          {cart.length === 0 && <p style={{color: '#666', textAlign: 'center', marginTop: '40px'}}>{t('cart_empty')}.</p>}
-        </div>
-
-        <div className="cart-footer">
-          <button type="button" className="continue-shopping-btn" onClick={closeCartDrawer}>{t('continue_shopping')}</button>
-          {bundleDiscount > 0 && (
-            <div className="cart-savings-line">
-              <span>{t('bundle_deal', { sets: bundleSets })}</span>
-              <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(bundleDiscount).toFixed(2)}</span>
-            </div>
-          )}
-
-          {couponDiscount > 0 && (
-            <div className="cart-savings-line">
-              <span>{t('coupon_label')} ({activeCoupon.code})</span>
-              <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(couponDiscount).toFixed(2)}</span>
-            </div>
-          )}
-
-          <div className="cart-savings-line">
-            <span>{t('shipping')}</span>
-            <span style={{ color: isFreeShipping ? '#4caf50' : '#aaa' }}>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
+            )}
           </div>
 
-          <div className="cart-total">
-            <span>{t('total')}</span>
-            <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
-          </div>
-
-          {cartRecommendations.length > 0 && (
-            <div className="cart-recommendations">
-              <div className="cart-recommendations-title">You Might Also Like</div>
-              <div className="cart-recommendations-row">
-                {cartRecommendations.map((product) => {
-                  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-
-                  return (
-                    <button
-                      key={`rec-${product.id}`}
-                      type="button"
-                      className="cart-recommendation-card"
-                      onClick={() => openQuickAdd(product)}
-                    >
-                      <img src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
-                      <strong>{getProductTitle(product.title, locale)}</strong>
-                      <span>{curSym}{displayPrice.toFixed(2)}</span>
-                    </button>
-                  );
-                })}
+          <div className="cart-footer">
+            {totalItems > 0 && (
+              <div className="shipping-progress cart-footer-progress">
+                {isFreeShipping ? (
+                  <p className="shipping-unlocked">{t('shipping_unlocked')}</p>
+                ) : (
+                  <>
+                    <p className="shipping-hint">{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
+                    <div className="progress-bar-bg">
+                      <motion.div 
+                        className="progress-bar-fill"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(totalItems / FREE_SHIPPING_THRESHOLD) * 100}%` }}
+                        transition={{ duration: 0.4 }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-          )}
+            )}
+            <button type="button" className="continue-shopping-btn" onClick={closeCartDrawer}>{t('continue_shopping')}</button>
+            {bundleDiscount > 0 && (
+              <div className="cart-savings-line">
+                <span>{t('bundle_deal', { sets: bundleSets })}</span>
+                <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(bundleDiscount).toFixed(2)}</span>
+              </div>
+            )}
 
-          <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
-            {t('checkout')}
-          </button>
-        </div>
+            {couponDiscount > 0 && (
+              <div className="cart-savings-line">
+                <span>{t('coupon_label')} ({activeCoupon.code})</span>
+                <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(couponDiscount).toFixed(2)}</span>
+              </div>
+            )}
+
+            <div className="cart-savings-line">
+              <span>{t('shipping')}</span>
+              <span style={{ color: isFreeShipping ? '#4caf50' : '#aaa' }}>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
+            </div>
+
+            <div className="cart-total">
+              <span>{t('total')}</span>
+              <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
+            </div>
+
+            <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
+              {t('checkout')}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -308,6 +308,7 @@ html[dir="ltr"] .checkout-page input {
   flex-direction: column;
   transition: var(--hover-transition);
   min-width: 0;
+  height: 100%;
 }
 
 .product-card:hover {
@@ -728,6 +729,22 @@ html[dir="ltr"] .checkout-page input {
   gap: 10px;
 }
 
+.product-card-content {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.skeleton-product-card-content {
+  margin-top: 16px;
+  flex-grow: 1;
+}
+
+.product-card-actions {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
 .product-title {
   font-size: 18px;
   font-weight: 600;
@@ -827,7 +844,8 @@ html[dir="ltr"] .checkout-page input {
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.quick-config-product img {
+.quick-config-product img,
+.quick-config-product-image {
   width: 72px;
   height: 86px;
   border-radius: 8px;
@@ -903,13 +921,23 @@ html[dir="ltr"] .checkout-page input {
   border-color: #fff;
 }
 
-.quick-config-group input {
+.quick-config-group input,
+.quick-config-group select {
   width: 110px;
   min-height: 40px;
   border: 1px solid #4a4a4a;
   background: #101010;
   color: #fff;
   padding: 0 10px;
+}
+
+.quick-config-group select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #d9d9d9 50%), linear-gradient(135deg, #d9d9d9 50%, transparent 50%);
+  background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 30px;
 }
 
 .quick-config-actions {
@@ -970,6 +998,7 @@ html[dir="ltr"] .checkout-page input {
   display: flex;
   flex-direction: column;
   box-shadow: -24px 0 48px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
 }
 
 .cart-overlay.open .cart-panel {
@@ -998,9 +1027,15 @@ html[dir="ltr"] .checkout-page input {
   min-height: 48px;
 }
 
-.cart-items {
+.cart-scroll-region {
   flex-grow: 1;
   overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.cart-items {
+  overflow: visible;
 }
 
 .cart-item {
@@ -1020,8 +1055,23 @@ html[dir="ltr"] .checkout-page input {
   margin-bottom: 14px;
 }
 
+.cart-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  background: linear-gradient(180deg, rgba(17, 17, 17, 0.9) 0%, #111 18%);
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -18px 34px rgba(0, 0, 0, 0.24);
+}
+
+.cart-footer-progress {
+  margin-bottom: 14px;
+}
+
 .cart-recommendations {
   margin-top: 18px;
+  margin-bottom: 8px;
   padding-top: 18px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
