@@ -1301,15 +1301,44 @@ button,
   position: absolute;
   top: 12px;
   right: 12px;
-  background: linear-gradient(135deg, #e2b714, #f5d442);
-  color: #000;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(10, 10, 10, 0.82);
+  color: #fff;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.3px;
-  box-shadow: 0 2px 8px rgba(226, 183, 20, 0.3);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
   z-index: 2;
+}
+
+.deal-badge-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  unicode-bidi: isolate;
+}
+
+.deal-badge-text-rtl {
+  direction: rtl;
+  unicode-bidi: isolate;
+}
+
+.deal-badge-token {
+  display: inline-block;
+}
+
+.deal-badge-token-count {
+  min-width: 0.9em;
+  text-align: center;
 }
 
 /* Shipping Progress Bar */
@@ -1639,8 +1668,11 @@ button,
   }
 
   .deal-badge {
+    top: 10px;
+    right: 10px;
+    min-height: 26px;
+    padding: 5px 9px;
     font-size: 10px;
-    padding: 4px 8px;
   }
 
   .pdp-container {

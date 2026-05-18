@@ -513,6 +513,30 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
   );
 }
 
+function PromoDealBadge({ locale, currency, curSym, displayVal }) {
+  if (locale === 'he') {
+    return (
+      <span className="deal-badge" dir="rtl">
+        <bdi className="deal-badge-text deal-badge-text-rtl">
+          <span className="deal-badge-token deal-badge-token-count">3</span>
+          <span className="deal-badge-token">פריטים</span>
+          <span className="deal-badge-token">ב-229₪</span>
+        </bdi>
+      </span>
+    );
+  }
+
+  return (
+    <span className="deal-badge">
+      <span className="deal-badge-text">
+        <span className="deal-badge-token">3 items</span>
+        <span className="deal-badge-token">for</span>
+        <span className="deal-badge-token">{curSym}{displayVal(BUNDLE_ITEM_PRICE).toFixed(2)}</span>
+      </span>
+    </span>
+  );
+}
+
 function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale, cartCount, onOpenCart }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1838,9 +1862,6 @@ function MainApp() {
             ) : (
               filteredProducts.map(product => {
                 const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-                const dealBadgeText = currency === 'USD'
-                  ? `${curSym}${displayVal(BUNDLE_ITEM_PRICE).toFixed(2)} for 3 items`
-                  : '3 פריטים ב-229₪';
                 
                 return (
                   <motion.div 
@@ -1861,7 +1882,7 @@ function MainApp() {
                       {product.backImageUrl && (
                         <img loading="lazy" src={product.backImageUrl} alt={`${product.title} back`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
-                      {isTeeProduct(product) && <span className="deal-badge">{dealBadgeText}</span>}
+                      {isTeeProduct(product) && <PromoDealBadge locale={locale} currency={currency} curSym={curSym} displayVal={displayVal} />}
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
