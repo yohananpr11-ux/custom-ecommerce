@@ -14,6 +14,56 @@ const PORT = process.env.PORT || 4000;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock');
 const PAYPAL_API_BASE = 'https://api-m.paypal.com';
 const PAYPAL_SUPPORTED_CURRENCIES = new Set(['USD', 'ILS']);
+const ENGLISH_SHIPPING_TEXT_REGEX = /^[A-Za-z0-9\s.,'\-/#()]+$/;
+
+const hasConfiguredValue = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+  return !/(YOUR_|CHANGE_ME|placeholder|example|mock)/i.test(normalized);
+};
+
+const hasPayPalCheckoutConfig = () => (
+  hasConfiguredValue(process.env.PAYPAL_CLIENT_ID)
+  && hasConfiguredValue(process.env.PAYPAL_SECRET)
+);
+
+const hasStripeCheckoutConfig = () => {
+  const key = String(process.env.STRIPE_SECRET_KEY || '').trim();
+  return key.startsWith('sk_') && hasConfiguredValue(key);
+};
+
+const hasPayPlusCheckoutConfig = () => (
+  hasConfiguredValue(process.env.PAYPLUS_API_KEY)
+  && hasConfiguredValue(process.env.PAYPLUS_SECRET_KEY)
+);
+
+const validateShippingDetails = (customerName, customerEmail, address) => {
+  const normalizedName = String(customerName || '').trim();
+  const normalizedEmail = String(customerEmail || '').trim();
+  const normalizedAddress = String(address || '').trim();
+
+  if (!normalizedName || !normalizedEmail || !normalizedAddress) {
+    throw new Error('Shipping details are required');
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new Error('Valid email is required');
+  }
+
+  if (!ENGLISH_SHIPPING_TEXT_REGEX.test(normalizedName) || !/[A-Za-z]/.test(normalizedName)) {
+    throw new Error('Shipping name must be in English only');
+  }
+
+  if (!ENGLISH_SHIPPING_TEXT_REGEX.test(normalizedAddress) || !/[A-Za-z]/.test(normalizedAddress)) {
+    throw new Error('Shipping address must be in English only');
+  }
+
+  return {
+    customerName: normalizedName,
+    customerEmail: normalizedEmail,
+    address: normalizedAddress,
+  };
+};
 
 const normalizePayPalCurrency = (currency) => {
   const normalized = String(currency || '').toUpperCase();
@@ -1030,11 +1080,12 @@ app.post('/api/contact', async (req, res) => {
 
 // General Order Creation Helper
 const createPendingOrder = async (customerName, customerEmail, address, items, couponCode) => {
+  const normalizedShipping = validateShippingDetails(customerName, customerEmail, address);
   const validatedItems = await resolveValidatedOrderItems(items);
   const pricing = calculateOrderPricing(validatedItems, couponCode);
   const orderInsert = await dbRunAsync(
     `INSERT INTO orders (customerName, customerEmail, address, totalAmount, status) VALUES (?, ?, ?, ?, ?)`,
-    [customerName, customerEmail, address, pricing.totalAmount, 'pending_payment']
+    [normalizedShipping.customerName, normalizedShipping.customerEmail, normalizedShipping.address, pricing.totalAmount, 'pending_payment']
   );
   const orderId = orderInsert.lastID;
 
@@ -1045,13 +1096,26 @@ const createPendingOrder = async (customerName, customerEmail, address, items, c
     );
   }
 
-  telegram.notifyNewOrder(orderId, customerName, pricing.totalAmount, validatedItems).catch(() => null);
+  telegram.notifyNewOrder(orderId, normalizedShipping.customerName, pricing.totalAmount, validatedItems).catch(() => null);
 
   return { orderId, pricing, items: validatedItems };
 };
 
+app.get('/api/checkout/config', (req, res) => {
+  const paypalEnabled = hasPayPalCheckoutConfig();
+  const stripeEnabled = hasStripeCheckoutConfig();
+  const payplusEnabled = hasPayPlusCheckoutConfig() && false;
+
+  return res.json({
+    paypalEnabled,
+    stripeEnabled,
+    payplusEnabled,
+    paypalClientId: paypalEnabled ? process.env.PAYPAL_CLIENT_ID : '',
+  });
+});
+
 app.get('/api/paypal/config', (req, res) => {
-  if (!process.env.PAYPAL_CLIENT_ID) {
+  if (!hasPayPalCheckoutConfig()) {
     return res.status(500).json({ error: 'PayPal client is not configured on the server' });
   }
 
@@ -1137,7 +1201,13 @@ app.post('/api/paypal/create-order', async (req, res) => {
     });
   } catch (err) {
     console.error('PayPal create-order failed:', err.response?.data || err.message);
-    const statusCode = String(err.message || '').includes('Variant mismatch') || String(err.message || '').includes('valid product id')
+    const errMessage = String(err.message || '');
+    const statusCode = errMessage.includes('Variant mismatch')
+      || errMessage.includes('valid product id')
+      || errMessage.includes('Shipping details')
+      || errMessage.includes('Shipping address must be in English only')
+      || errMessage.includes('Shipping name must be in English only')
+      || errMessage.includes('Valid email')
       ? 400
       : 500;
     return res.status(statusCode).json({ error: err.message || 'Failed to create PayPal order' });
@@ -1227,6 +1297,10 @@ app.post('/api/paypal/capture-order', async (req, res) => {
 // Checkout via Stripe (USD)
 app.post('/api/checkout/stripe', async (req, res) => {
   const { customerName, customerEmail, address, items, couponCode } = req.body;
+
+  if (!hasStripeCheckoutConfig()) {
+    return res.status(503).json({ success: false, error: 'Stripe checkout is currently unavailable. Please use PayPal.' });
+  }
   
   try {
     const { orderId, pricing } = await createPendingOrder(customerName, customerEmail, address, items, couponCode);
@@ -1254,32 +1328,14 @@ app.post('/api/checkout/stripe', async (req, res) => {
     res.json({ success: true, paymentUrl: session.url });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to initialize Stripe checkout' });
+    const statusCode = String(err.message || '').includes('Shipping') || String(err.message || '').includes('Valid email') ? 400 : 500;
+    res.status(statusCode).json({ error: err.message || 'Failed to initialize Stripe checkout' });
   }
 });
 
 // Checkout via PayPlus/Grow (NIS)
 app.post('/api/checkout/payplus', async (req, res) => {
-  const { customerName, customerEmail, address, items, couponCode } = req.body;
-  
-  try {
-    const { orderId, pricing } = await createPendingOrder(customerName, customerEmail, address, items, couponCode);
-    
-    // Integration logic for PayPlus
-    // Normally we make an axios.post to api.payplus.co.il with payload
-    const hasPayPlusKey = process.env.PAYPLUS_API_KEY && process.env.PAYPLUS_API_KEY !== 'YOUR_PAYPLUS_KEY';
-    
-    if (hasPayPlusKey) {
-      // Execute actual PayPlus API call here
-    }
-
-    // Return a mocked URL for demonstration if no keys
-    const mockPaymentUrl = `https://payment.payplus.co.il/mock-checkout/${orderId}`;
-    res.json({ success: true, paymentUrl: mockPaymentUrl, amount: pricing.totalAmount });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to initialize PayPlus checkout' });
-  }
+  return res.status(503).json({ success: false, error: 'Card checkout is temporarily unavailable. Please use PayPal.' });
 });
 
 const extractSessionIdFromText = (text) => {

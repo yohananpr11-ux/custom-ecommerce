@@ -76,10 +76,13 @@ const translations = {
     full_name: "שם מלא",
     email: "אימייל",
     address: "כתובת (רחוב, עיר, מיקוד)",
+    shipping_name_english_only: "שם מלא חייב להיות באנגלית בלבד.",
+    shipping_address_english_only: "כתובת משלוח חייבת להיות באנגלית בלבד כדי שהמשלוח יגיע נכון.",
     payment_method: "בחר תשלום",
     payment_card_bit: "כרטיס אשראי / ביט",
     payment_stripe: "כרטיס בינלאומי (Stripe)",
     payment_paypal: "PayPal",
+    payment_unavailable: "אמצעי התשלום שבחרת לא זמין כרגע. נסה PayPal.",
     order_summary: "סיכום הזמנה",
     subtotal: "סכום ביניים",
     bundle_deal: "🎁 מבצע 3 חולצות",
@@ -205,10 +208,13 @@ const translations = {
     full_name: "Full Name",
     email: "Email Address",
     address: "Full Address (Street, City, Zip)",
+    shipping_name_english_only: "Full name must be entered in English.",
+    shipping_address_english_only: "Shipping address must be entered in English so Printify can deliver correctly.",
     payment_method: "Payment Method",
     payment_card_bit: "Credit Card / Bit (₪)",
     payment_stripe: "Stripe ($)",
     payment_paypal: "PayPal",
+    payment_unavailable: "Selected payment method is unavailable right now. Please use PayPal.",
     order_summary: "Order Summary",
     subtotal: "Subtotal",
     bundle_deal: "🎁 3-item bundle",
@@ -468,6 +474,7 @@ const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
 const SIZE_ORDER = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
 const SIZE_RANK = SIZE_ORDER.reduce((acc, size, index) => ({ ...acc, [size]: index + 1 }), {});
+const ENGLISH_SHIPPING_TEXT_REGEX = /^[A-Za-z0-9\s.,'\-/#()]+$/;
 
 const normalizeValue = (value) => String(value || '').trim().toLowerCase();
 const normalizeSizeLabel = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
@@ -491,6 +498,14 @@ const pickFirstImageUrl = (...candidates) => {
     if (url) return url;
   }
   return null;
+};
+
+const isValidEnglishShippingValue = (value, { requireLetter = false } = {}) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+  if (!ENGLISH_SHIPPING_TEXT_REGEX.test(normalized)) return false;
+  if (requireLetter && !/[A-Za-z]/.test(normalized)) return false;
+  return true;
 };
 
 const getVariantIdsForColor = (variants, colorName) => {
@@ -1289,6 +1304,11 @@ function MainApp() {
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('paypal')
   const [paypalClientId, setPaypalClientId] = useState(import.meta.env.VITE_PAYPAL_CLIENT_ID || '')
+  const [checkoutConfig, setCheckoutConfig] = useState({
+    paypalEnabled: true,
+    stripeEnabled: false,
+    payplusEnabled: false,
+  })
   const [isPayPalProcessing, setIsPayPalProcessing] = useState(false)
   const [checkoutForm, setCheckoutForm] = useState({
     customerName: '',
@@ -1405,13 +1425,26 @@ function MainApp() {
       })
       .catch(err => console.warn("Geolocation fallback applied:", err));
 
-    fetch(`${API_BASE}/api/paypal/config`)
+    fetch(`${API_BASE}/api/checkout/config`)
       .then((res) => res.json())
       .then((data) => {
-        if (data && data.clientId) setPaypalClientId(data.clientId);
+        if (!data) return;
+
+        if (data.paypalClientId) setPaypalClientId(data.paypalClientId);
+        setCheckoutConfig({
+          paypalEnabled: Boolean(data.paypalEnabled),
+          stripeEnabled: Boolean(data.stripeEnabled),
+          payplusEnabled: Boolean(data.payplusEnabled),
+        });
       })
       .catch((err) => {
-        console.warn('PayPal config fallback applied:', err);
+        console.warn('Checkout config fallback applied:', err);
+        fetch(`${API_BASE}/api/paypal/config`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data && data.clientId) setPaypalClientId(data.clientId);
+          })
+          .catch(() => null);
       });
 
     fetch(`${API_BASE}/api/products`)
@@ -1475,6 +1508,26 @@ function MainApp() {
 
   const curSym = currency === 'USD' ? '$' : '₪';
   const displayVal = (nisValue) => (currency === 'USD' ? (nisValue / exchangeRate) : nisValue);
+  const isPayPalAvailable = Boolean(checkoutConfig.paypalEnabled && paypalClientId);
+  const isStripeAvailable = Boolean(checkoutConfig.stripeEnabled);
+  const isPayPlusAvailable = Boolean(checkoutConfig.payplusEnabled);
+  const shippingValidationMessage = !isValidEnglishShippingValue(checkoutForm.customerName, { requireLetter: true })
+    ? t('shipping_name_english_only')
+    : (!isValidEnglishShippingValue(checkoutForm.address, { requireLetter: true }) ? t('shipping_address_english_only') : '');
+  const isSelectedPaymentAvailable = paymentMethod === 'paypal'
+    ? isPayPalAvailable
+    : (paymentMethod === 'stripe' ? isStripeAvailable : isPayPlusAvailable);
+
+  useEffect(() => {
+    const availableMethods = [];
+    if (isPayPalAvailable) availableMethods.push('paypal');
+    if (isPayPlusAvailable) availableMethods.push('payplus');
+    if (isStripeAvailable) availableMethods.push('stripe');
+
+    if (availableMethods.length > 0 && !availableMethods.includes(paymentMethod)) {
+      setPaymentMethod(availableMethods[0]);
+    }
+  }, [isPayPalAvailable, isPayPlusAvailable, isStripeAvailable, paymentMethod]);
 
   const openCartDrawer = () => {
     setIsCartOpen(true);
@@ -1855,7 +1908,8 @@ function MainApp() {
 
   const isCheckoutFormValid = checkoutForm.customerName.trim()
     && checkoutForm.customerEmail.trim()
-    && checkoutForm.address.trim();
+    && checkoutForm.address.trim()
+    && !shippingValidationMessage;
 
   const buildCheckoutPayload = () => ({
     customerName: checkoutForm.customerName.trim(),
@@ -1879,7 +1933,7 @@ function MainApp() {
     }
 
     if (!isCheckoutFormValid) {
-      showToast(t('shipping_details'));
+      showToast(shippingValidationMessage || t('shipping_details'));
       throw new Error('Missing shipping details');
     }
 
@@ -1920,6 +1974,16 @@ function MainApp() {
       return;
     }
 
+    if (!isCheckoutFormValid) {
+      showToast(shippingValidationMessage || t('shipping_details'));
+      return;
+    }
+
+    if (!isSelectedPaymentAvailable) {
+      showToast(t('payment_unavailable'));
+      return;
+    }
+
     try {
       const endpoint = paymentMethod === 'stripe' ? '/api/checkout/stripe' : '/api/checkout/payplus';
       const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -1932,11 +1996,11 @@ function MainApp() {
         localStorage.removeItem('drip_street_cart');
         window.location.assign(data.paymentUrl);
       } else {
-        showToast(GLOBAL_ERROR_TOAST_HE);
+        showToast(data.error || t('payment_unavailable'));
       }
     } catch (err) {
       console.error('Checkout failed:', err);
-      showToast(GLOBAL_ERROR_TOAST_HE);
+      showToast(err.message || GLOBAL_ERROR_TOAST_HE);
     }
   }
 
@@ -2193,24 +2257,35 @@ function MainApp() {
               value={checkoutForm.address}
               onChange={(e) => setCheckoutForm((prev) => ({ ...prev, address: e.target.value }))}
             />
+            {shippingValidationMessage && (
+              <p style={{ marginTop: '-6px', marginBottom: '10px', color: '#ff6b6b', fontSize: '0.9rem' }}>
+                {shippingValidationMessage}
+              </p>
+            )}
             
             <h3 style={{ marginTop: '24px' }}>{t('payment_method')}</h3>
             <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="radio" name="payment" value="paypal" checked={paymentMethod === 'paypal'} onChange={() => setPaymentMethod('paypal')} />
-                {t('payment_paypal')}
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
-                {t('payment_card_bit')}
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
-                {t('payment_stripe')}
-              </label>
+              {isPayPalAvailable && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input type="radio" name="payment" value="paypal" checked={paymentMethod === 'paypal'} onChange={() => setPaymentMethod('paypal')} />
+                  {t('payment_paypal')}
+                </label>
+              )}
+              {isPayPlusAvailable && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
+                  {t('payment_card_bit')}
+                </label>
+              )}
+              {isStripeAvailable && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
+                  {t('payment_stripe')}
+                </label>
+              )}
             </div>
             {paymentMethod === 'paypal' ? (
-              paypalClientId ? (
+              isPayPalAvailable ? (
                 <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture' }}>
                   <PayPalButtons
                     style={{ layout: 'vertical', label: 'paypal' }}
@@ -2244,7 +2319,7 @@ function MainApp() {
                     onError={() => {
                       showToast(GLOBAL_ERROR_TOAST_HE);
                     }}
-                    disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0}
+                    disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
                   />
                 </PayPalScriptProvider>
               ) : (
