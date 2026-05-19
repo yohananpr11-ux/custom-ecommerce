@@ -493,6 +493,32 @@ const pickFirstImageUrl = (...candidates) => {
   return null;
 };
 
+const getVariantIdsForColor = (variants, colorName) => {
+  if (!Array.isArray(variants) || variants.length === 0 || !colorName) return [];
+  const normalizedColor = normalizeValue(colorName);
+  return variants
+    .filter((variant) => normalizeValue(variant.color) === normalizedColor)
+    .map((variant) => String(variant.printifyVariantId || variant.variantId || variant.id || ''))
+    .filter(Boolean);
+};
+
+const getMappedImagesForVariantIds = (productImages, variantIds) => {
+  if (!Array.isArray(productImages) || productImages.length === 0) return [];
+  if (!Array.isArray(variantIds) || variantIds.length === 0) return [];
+
+  const variantIdSet = new Set(variantIds.map((id) => String(id)));
+  const ordered = [];
+
+  productImages.forEach((entry) => {
+    const entryVariantId = String(entry?.variantId || '');
+    if (!entryVariantId || !variantIdSet.has(entryVariantId)) return;
+    const src = extractImageUrl(entry);
+    if (src) ordered.push(src);
+  });
+
+  return Array.from(new Set(ordered));
+};
+
 const getOrderedDisplaySizes = (sizes = []) => {
   const unique = Array.from(new Set((sizes || []).map((size) => normalizeSizeLabel(size)).filter(Boolean)));
   return unique
@@ -918,6 +944,13 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
   const activeImages = useMemo(() => {
     if (!product) return [];
+
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const mappedVariantImages = getMappedImagesForVariantIds(
+      Array.isArray(product.images) ? product.images : [],
+      getVariantIdsForColor(variants, selectedColor)
+    );
+    if (mappedVariantImages.length > 0) return mappedVariantImages;
 
     const imagesByColor = product.imagesByColor && typeof product.imagesByColor === 'object'
       ? product.imagesByColor
@@ -1501,6 +1534,13 @@ function MainApp() {
     if (!quickAddProduct) return GLOBAL_IMAGE_FALLBACK;
 
     const normalizedColor = normalizeValue(quickAddColor);
+    const variants = Array.isArray(quickAddProduct.variants) ? quickAddProduct.variants : [];
+
+    const mappedVariantImages = getMappedImagesForVariantIds(
+      Array.isArray(quickAddProduct.images) ? quickAddProduct.images : [],
+      getVariantIdsForColor(variants, quickAddColor)
+    );
+    if (mappedVariantImages.length > 0) return mappedVariantImages[0];
 
     const imagesByColor = quickAddProduct.imagesByColor && typeof quickAddProduct.imagesByColor === 'object'
       ? quickAddProduct.imagesByColor
@@ -1517,7 +1557,6 @@ function MainApp() {
       }
     }
 
-    const variants = Array.isArray(quickAddProduct.variants) ? quickAddProduct.variants : [];
     const firstVariantForColor = variants.find((variant) => (
       normalizeValue(variant.color) === normalizedColor
       && Number(variant.isEnabled) !== 0
