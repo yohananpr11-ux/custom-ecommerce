@@ -66,7 +66,7 @@ const translations = {
     cart_customize: "התאם את הפריט שלך",
     review_title: "לפני תשלום — בדיקת בחירה",
     review_subtitle: "אלה הפריטים שבחרת בקפידה. אפשר לעדכן כל פרט לפני ביצוע ההזמנה.",
-    low_stock: "נשארו יחידות אחרונות במידה זו",
+    low_stock: "ביקוש גבוה - מלאי מוגבל",
     select_available_variant: "בחר צבע ומידה זמינים כדי להוסיף לסל",
     empty_cart_toast: "הסל ריק, הוסף פריטים כדי להמשיך",
     variant_error_toast: "נמצאה שגיאה בוריאנט. רענן את העמוד ובחר מחדש",
@@ -142,8 +142,8 @@ const translations = {
     why_secure_desc: "SSL מוצפן + Stripe, PayPal, ויזה.",
     why_quality: "איכות פרימיום",
     why_quality_desc: "בד נוח עם הדפסה חדה שלא דוהה.",
-    why_returns: "החזרות פשוטות",
-    why_returns_desc: "חזר תוך 14 יום אם לא מרוצה — בלי שאלות.",
+    why_returns: "אחריות איכות פרימיום",
+    why_returns_desc: "הדפסה מושלמת. פריט פגום יוחלף מיד.",
     seo_title: "DRIP STREET | סטריטוור מינימליסטי",
     seo_description: "סטריטוור פרימיום מינימליסטי לחיי היומיום. חולצות אוברסייז, גופיות קיץ ובייסיקס איכותיים. משלוח לכל העולם.",
     taxes_shipping_note: "מסים ומשלוח יחושבו בקופה",
@@ -187,7 +187,7 @@ const translations = {
     cart_customize: "Customize Your Item",
     review_title: "Before Payment — Final Selection Review",
     review_subtitle: "These are the exact items you selected. You can refine every detail before completing payment.",
-    low_stock: "Only a few units left in this size",
+    low_stock: "High Demand - Limited Stock",
     select_available_variant: "Please select an available color and size",
     empty_cart_toast: "Your cart is empty, add items to continue",
     variant_error_toast: "Variant mismatch detected, refresh and select again",
@@ -263,8 +263,8 @@ const translations = {
     why_secure_desc: "SSL-encrypted + Stripe, PayPal, and more.",
     why_quality: "Premium Quality",
     why_quality_desc: "Soft fabric with sharp, fade-resistant prints.",
-    why_returns: "Easy Returns",
-    why_returns_desc: "Return within 14 days, no questions asked.",
+    why_returns: "Premium Quality Guarantee",
+    why_returns_desc: "Flawless prints. Defective items replaced immediately.",
     seo_title: "DRIP STREET | Minimalist Streetwear",
     seo_description: "Premium minimal streetwear built for confidence. Shop oversized tees, summer tanks, and high-quality basics. Worldwide shipping.",
     taxes_shipping_note: "Taxes and shipping calculated at checkout",
@@ -448,7 +448,7 @@ const calculateBundlePricing = (cart) => {
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
 const GLOBAL_ERROR_TOAST_HE = 'אירעה שגיאה זמנית, אנא נסה שוב';
-const LOW_STOCK_THRESHOLD = 5;
+const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
 const SIZE_ORDER = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
 const SIZE_RANK = SIZE_ORDER.reduce((acc, size, index) => ({ ...acc, [size]: index + 1 }), {});
@@ -892,7 +892,8 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     ? Number(selectedVariant.stockQty)
     : null;
   const isOutOfStock = selectedVariantStock === 0 || (selectedVariant && Number(selectedVariant.isAvailable) === 0);
-  const isLowStock = selectedVariantStock !== null && selectedVariantStock > 0 && selectedVariantStock < LOW_STOCK_THRESHOLD;
+  const hasLiveInventory = Boolean(product?.operationalNotice?.isLiveInventory);
+  const isLowStock = hasLiveInventory && selectedVariantStock !== null && selectedVariantStock > 0 && selectedVariantStock < LOW_STOCK_THRESHOLD;
 
   if (loading) {
     return (
@@ -1026,7 +1027,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
               <div className="pdp-section">
                 <h3>{t('size')}</h3>
                 {isOutOfStock && <div className="low-stock-badge out-of-stock">{locale === 'he' ? 'אזל מהמלאי' : 'Out of stock'}</div>}
-                {!isOutOfStock && isLowStock && <div className="low-stock-badge">{t('low_stock')}</div>}
+                {!isOutOfStock && isLowStock && <div className="low-stock-badge"><span className="stock-pulse-dot" />{t('low_stock')}</div>}
                 <div className="pdp-options premium-size-grid">
                   {orderedDisplaySizes.map((sizeOption) => {
                     const unavailable = availableSizesForColor.size > 0 && !availableSizesForColor.has(sizeOption);
@@ -1296,6 +1297,24 @@ function MainApp() {
     return () => window.removeEventListener('open-cart', handleOpenCart);
   }, [chatSessionId])
 
+  useEffect(() => {
+    if (!isWidgetChatOpen || !chatSessionId) return;
+
+    const pollHistory = () => {
+      fetch(`${API_BASE}/api/chat/history/${chatSessionId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          setChatHistory(data.history || []);
+          setChatStatus(data.status || 'bot');
+        })
+        .catch(() => null);
+    };
+
+    pollHistory();
+    const intervalId = setInterval(pollHistory, 5000);
+    return () => clearInterval(intervalId);
+  }, [isWidgetChatOpen, chatSessionId]);
+
   const t = (key, replaces = {}) => {
     let text = translations[locale]?.[key] || translations['en']?.[key] || key;
     Object.keys(replaces).forEach(k => {
@@ -1364,13 +1383,15 @@ function MainApp() {
   const quickAddActiveImage = useMemo(() => {
     if (!quickAddProduct) return GLOBAL_IMAGE_FALLBACK;
 
+    const normalizedColor = normalizeValue(quickAddColor);
+
     const imagesByColor = quickAddProduct.imagesByColor && typeof quickAddProduct.imagesByColor === 'object'
       ? quickAddProduct.imagesByColor
       : null;
 
-    if (imagesByColor) {
+    if (imagesByColor && normalizedColor) {
       const matchingColorEntry = Object.entries(imagesByColor).find(([colorName]) => (
-        normalizeValue(colorName) === normalizeValue(quickAddColor)
+        normalizeValue(colorName) === normalizedColor
       ));
 
       if (matchingColorEntry && Array.isArray(matchingColorEntry[1]) && matchingColorEntry[1].length > 0) {
@@ -1379,8 +1400,18 @@ function MainApp() {
       }
     }
 
-    const matchedVariant = findMatchingVariant(quickAddProduct.variants, quickAddColor, quickAddSize)
-      || findFirstAvailableVariantForColor(quickAddProduct.variants, quickAddColor);
+    const variants = Array.isArray(quickAddProduct.variants) ? quickAddProduct.variants : [];
+    const firstVariantForColor = variants.find((variant) => (
+      normalizeValue(variant.color) === normalizedColor
+      && Number(variant.isEnabled) !== 0
+      && Number(variant.isAvailable) !== 0
+      && variant.imageUrl
+    ));
+
+    if (firstVariantForColor?.imageUrl) return firstVariantForColor.imageUrl;
+
+    const matchedVariant = findMatchingVariant(variants, quickAddColor, quickAddSize)
+      || findFirstAvailableVariantForColor(variants, quickAddColor);
 
     return matchedVariant?.imageUrl || quickAddProduct.imageUrl || GLOBAL_IMAGE_FALLBACK;
   }, [quickAddColor, quickAddProduct, quickAddSize]);
@@ -2409,7 +2440,7 @@ function MainApp() {
               <div className="quick-config-product">
                 <AnimatePresence mode="wait">
                   <motion.img
-                    key={quickAddActiveImage}
+                    key={`${quickAddColor}-${quickAddActiveImage}`}
                     src={quickAddActiveImage}
                     alt={quickAddProduct.title}
                     onError={(e) => setImageFallback(e)}

@@ -781,6 +781,7 @@ app.get('/api/products/:id', (req, res) => {
 
     return {
       syncedAt: liveUpdatedAt || new Date().toISOString(),
+      isLiveInventory: Boolean(liveUpdatedAt),
       allOutOfStock,
       lowStockVariantCount,
       inStockVariantCount,
@@ -1148,6 +1149,67 @@ app.post('/api/checkout/payplus', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to initialize PayPlus checkout' });
+  }
+});
+
+const extractSessionIdFromText = (text) => {
+  const value = String(text || '');
+  const match = value.match(/session_[a-z0-9_-]+/i);
+  return match ? match[0] : null;
+};
+
+const appendAdminReplyToSession = async (sessionId, messageText) => {
+  if (!sessionId || !messageText) return false;
+
+  const session = await dbGetAsync("SELECT * FROM chat_sessions WHERE id = ?", [sessionId]);
+  if (!session) return false;
+
+  let history = [];
+  try {
+    history = JSON.parse(session.history || '[]');
+  } catch {
+    history = [];
+  }
+
+  history.push({ sender: 'bot', text: messageText, timestamp: new Date().toISOString(), source: 'admin_telegram' });
+  await dbRunAsync("UPDATE chat_sessions SET history = ?, status = 'escalated', updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [JSON.stringify(history), sessionId]);
+  return true;
+};
+
+app.post('/api/webhooks/telegram', async (req, res) => {
+  try {
+    const update = req.body || {};
+    const message = update.message;
+    if (!message || !message.text) {
+      return res.json({ received: true, ignored: true, reason: 'no_text_message' });
+    }
+
+    if (telegram.chatId && String(message.chat?.id || '') !== String(telegram.chatId)) {
+      return res.json({ received: true, ignored: true, reason: 'unauthorized_chat' });
+    }
+
+    const commandMatch = String(message.text).match(/^\/reply\s+(session_[a-z0-9_-]+)\s+([\s\S]+)/i);
+    const sessionId = commandMatch
+      ? commandMatch[1]
+      : extractSessionIdFromText(message.reply_to_message?.text) || extractSessionIdFromText(message.text);
+
+    if (!sessionId) {
+      return res.json({ received: true, ignored: true, reason: 'missing_session_id' });
+    }
+
+    const replyText = commandMatch
+      ? commandMatch[2].trim()
+      : String(message.text || '').replace(sessionId, '').trim();
+
+    if (!replyText) {
+      return res.json({ received: true, ignored: true, reason: 'missing_reply_text' });
+    }
+
+    const updated = await appendAdminReplyToSession(sessionId, replyText);
+    return res.json({ received: true, routed: updated, sessionId });
+  } catch (err) {
+    console.error('Telegram webhook routing failed:', err.message);
+    return res.status(500).json({ received: false, error: 'telegram_webhook_failed' });
   }
 });
 

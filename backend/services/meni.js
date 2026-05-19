@@ -84,7 +84,7 @@ class MeniChatService {
       `<b>לקוח:</b> ${customerName}\n` +
       `<b>מזהה שיחה:</b> <code>${sessionId}</code>\n` +
       `<b>הודעה אחרונה:</b>\n"${messageText}"\n\n` +
-      `להמשך שיחה ישירה מול הלקוח בטלגרם, תוכל להשיב לו בקבוצת התמיכה.`;
+      `<b>מענה מהיר:</b> <code>/reply ${sessionId} כאן כותבים את התשובה</code>`;
       
     await telegram.sendMessage(alertMsg);
   }
