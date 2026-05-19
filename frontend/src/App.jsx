@@ -472,6 +472,27 @@ const SIZE_RANK = SIZE_ORDER.reduce((acc, size, index) => ({ ...acc, [size]: ind
 const normalizeValue = (value) => String(value || '').trim().toLowerCase();
 const normalizeSizeLabel = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
 
+const extractImageUrl = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (typeof value === 'object' && typeof value.src === 'string') {
+    const trimmed = value.src.trim();
+    return trimmed ? trimmed : null;
+  }
+  return null;
+};
+
+const pickFirstImageUrl = (...candidates) => {
+  for (const candidate of candidates) {
+    const url = extractImageUrl(candidate);
+    if (url) return url;
+  }
+  return null;
+};
+
 const getOrderedDisplaySizes = (sizes = []) => {
   const unique = Array.from(new Set((sizes || []).map((size) => normalizeSizeLabel(size)).filter(Boolean)));
   return unique
@@ -897,14 +918,35 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
   const activeImages = useMemo(() => {
     if (!product) return [];
-    if (product.imagesByColor && product.imagesByColor[selectedColor] && product.imagesByColor[selectedColor].length > 0) {
-      return product.imagesByColor[selectedColor].map((entry) => entry.src || entry);
+
+    const imagesByColor = product.imagesByColor && typeof product.imagesByColor === 'object'
+      ? product.imagesByColor
+      : null;
+
+    if (imagesByColor) {
+      const matchingColorEntry = Object.entries(imagesByColor).find(([colorName]) => (
+        normalizeValue(colorName) === normalizeValue(selectedColor)
+      ));
+
+      if (matchingColorEntry && Array.isArray(matchingColorEntry[1])) {
+        const colorImages = matchingColorEntry[1].map((entry) => extractImageUrl(entry)).filter(Boolean);
+        if (colorImages.length > 0) return colorImages;
+      }
     }
-    if (product.images && product.images.length > 0) {
-      return product.images.map((entry) => entry.src || entry);
+
+    if (selectedVariant?.imageUrl) {
+      const variantImage = extractImageUrl(selectedVariant.imageUrl);
+      if (variantImage) return [variantImage];
     }
-    return [product.imageUrl || GLOBAL_IMAGE_FALLBACK];
-  }, [product, selectedColor]);
+
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      const productImages = product.images.map((entry) => extractImageUrl(entry)).filter(Boolean);
+      if (productImages.length > 0) return productImages;
+    }
+
+    const fallbackImage = pickFirstImageUrl(product.imageUrl, product.backImageUrl, GLOBAL_IMAGE_FALLBACK);
+    return [fallbackImage || GLOBAL_IMAGE_FALLBACK];
+  }, [product, selectedColor, selectedVariant]);
 
   useEffect(() => {
     setActiveImageIndex(0);
@@ -1470,8 +1512,8 @@ function MainApp() {
       ));
 
       if (matchingColorEntry && Array.isArray(matchingColorEntry[1]) && matchingColorEntry[1].length > 0) {
-        const preferredImage = matchingColorEntry[1][0];
-        return preferredImage?.src || preferredImage || quickAddProduct.imageUrl || GLOBAL_IMAGE_FALLBACK;
+        const preferredImage = matchingColorEntry[1].map((entry) => extractImageUrl(entry)).find(Boolean);
+        if (preferredImage) return preferredImage;
       }
     }
 
@@ -1483,12 +1525,16 @@ function MainApp() {
       && variant.imageUrl
     ));
 
-    if (firstVariantForColor?.imageUrl) return firstVariantForColor.imageUrl;
+    if (firstVariantForColor?.imageUrl) {
+      const byVariant = extractImageUrl(firstVariantForColor.imageUrl);
+      if (byVariant) return byVariant;
+    }
 
     const matchedVariant = findMatchingVariant(variants, quickAddColor, quickAddSize)
       || findFirstAvailableVariantForColor(variants, quickAddColor);
 
-    return matchedVariant?.imageUrl || quickAddProduct.imageUrl || GLOBAL_IMAGE_FALLBACK;
+    return pickFirstImageUrl(matchedVariant?.imageUrl, quickAddProduct.imageUrl, quickAddProduct.backImageUrl, GLOBAL_IMAGE_FALLBACK)
+      || GLOBAL_IMAGE_FALLBACK;
   }, [quickAddColor, quickAddProduct, quickAddSize]);
 
   useEffect(() => {
