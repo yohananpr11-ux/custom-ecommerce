@@ -685,6 +685,11 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
 
     await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
     await sendPaymentNotification({ provider: 'Stripe', orderId, amountText: `$${amount.toFixed(2)}` });
+    const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [orderId]);
+    const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [orderId]);
+    if (paidOrder) {
+      telegram.notifyNewOrder(orderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
+    }
     await processPaidOrderFulfillment(orderId, 'Stripe');
   }
   res.json({received: true});
@@ -1096,8 +1101,6 @@ const createPendingOrder = async (customerName, customerEmail, address, items, c
     );
   }
 
-  telegram.notifyNewOrder(orderId, normalizedShipping.customerName, pricing.totalAmount, validatedItems).catch(() => null);
-
   return { orderId, pricing, items: validatedItems };
 };
 
@@ -1281,6 +1284,11 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       : `₪${captureValue.toFixed(2)}`;
 
     await sendPaymentNotification({ provider: 'PayPal', orderId: localOrderId, amountText });
+    const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
+    const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [localOrderId]);
+    if (paidOrder) {
+      telegram.notifyNewOrder(localOrderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
+    }
     await processPaidOrderFulfillment(localOrderId, 'PayPal');
 
     return res.json({
