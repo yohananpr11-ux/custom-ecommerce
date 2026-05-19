@@ -215,7 +215,7 @@ class PrintifyService {
       }
 
       console.log(`✅ Synced ${syncedCount} products with variants from Printify.`);
-      await telegram.sendMessage(`🔄 <b>סנכרון Printify הושלם!</b>\n\n${syncedCount} מוצרים סונכרנו בהצלחה עם צבעים, מידות ותמונות.`);
+      await telegram.sendMessage(`🔄 <b>Printify Sync Completed</b>\n\n${syncedCount} products were synced successfully with colors, sizes, and images.`);
       return syncedCount;
     } catch (error) {
       console.error('❌ Printify sync failed:', error.message);

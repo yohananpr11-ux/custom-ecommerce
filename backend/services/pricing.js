@@ -167,9 +167,9 @@ class PricingEngine {
     if (lastReminderDate === today) return;
 
     await telegram.sendMessage(
-      `📊 <b>תזכורת בדיקת מחירון רבעונית</b>\n\n` +
-      `מומלץ לבצע בדיקה ידנית למחירון האתר לפי מצב הדולר, עלויות ייצור ושולי רווח.\n` +
-      `שער נוכחי: ₪${this.exchangeRateUSDILS.toFixed(4)} לדולר.`
+      `📊 <b>Quarterly Pricing Review Reminder</b>\n\n` +
+      `It is recommended to run a manual pricing review based on FX rate, production costs, and margin targets.\n` +
+      `Current USD/ILS rate: ₪${this.exchangeRateUSDILS.toFixed(4)} per USD.`
     );
     await this.setState('lastQuarterlyReviewReminderDate', today);
   }
@@ -258,13 +258,13 @@ class PricingEngine {
 
     if (plannedUpdates.length > 0) {
       await telegram.sendMessage(
-        `⚠️ <b>התראת Pre-Alert: שינוי מחירים אוטומטי עומד להתבצע</b>\n\n` +
-        `סיבה: ${reason}\n` +
-        `שינוי בשער: ${changePct.toFixed(2)}%\n` +
-        `שער קודם: ₪${previousAppliedRate.toFixed(4)}\n` +
-        `שער חדש: ₪${this.exchangeRateUSDILS.toFixed(4)}\n` +
-        `סף מוגדר: ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%\n` +
-        `מוצרים שצפויים להתעדכן: ${plannedUpdates.length}`
+        `⚠️ <b>Pre-Alert: Automatic pricing update will run</b>\n\n` +
+        `Reason: ${reason}\n` +
+        `FX change: ${changePct.toFixed(2)}%\n` +
+        `Previous rate: ₪${previousAppliedRate.toFixed(4)}\n` +
+        `New rate: ₪${this.exchangeRateUSDILS.toFixed(4)}\n` +
+        `Configured threshold: ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%\n` +
+        `Products expected to update: ${plannedUpdates.length}`
       );
     }
 
@@ -279,14 +279,14 @@ class PricingEngine {
     await this.setState('lastAppliedExchangeRate', this.exchangeRateUSDILS);
 
     await telegram.sendMessage(
-      `📈 <b>סיכום עדכון מחירים אוטומטי</b>\n\n` +
-      `סיבה: ${reason}\n` +
-      `שינוי בשער: ${changePct.toFixed(2)}%\n` +
-      `שער קודם: ₪${previousAppliedRate.toFixed(4)}\n` +
-      `שער חדש: ₪${this.exchangeRateUSDILS.toFixed(4)}\n` +
-      `סף עדכון: ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%\n` +
-      `מתוכנן לעדכון: ${plannedUpdates.length}\n` +
-      `עודכן בפועל: ${updatedCount}`
+      `📈 <b>Automatic Pricing Update Summary</b>\n\n` +
+      `Reason: ${reason}\n` +
+      `FX change: ${changePct.toFixed(2)}%\n` +
+      `Previous rate: ₪${previousAppliedRate.toFixed(4)}\n` +
+      `New rate: ₪${this.exchangeRateUSDILS.toFixed(4)}\n` +
+      `Update threshold: ${(this.autoExtremeThresholdPct * 100).toFixed(2)}%\n` +
+      `Planned updates: ${plannedUpdates.length}\n` +
+      `Applied updates: ${updatedCount}`
     );
 
     if (updatedCount === 0) {

@@ -118,20 +118,22 @@ class TelegramService {
 
   async notifyNewOrder(orderId, customerName, totalAmount, items) {
     const itemsList = items.map(item => `- ${item.quantity}x ${item.title}`).join('\n');
-    const message = `🛍️ <b>הזמנה חדשה באתר!</b>\n\n` +
-      `<b>מספר הזמנה:</b> #${orderId}\n` +
-      `<b>לקוח:</b> ${customerName}\n` +
-      `<b>סכום כולל:</b> ₪${totalAmount.toFixed(2)}\n\n` +
-      `<b>פריטים:</b>\n${itemsList}\n\n` +
-      `ההזמנה נקלטה בהצלחה במערכת.`;
+    const numericTotal = Number(totalAmount);
+    const formattedTotal = Number.isFinite(numericTotal) ? numericTotal.toFixed(2) : String(totalAmount);
+    const message = `🛍️ <b>New Order Received</b>\n\n` +
+      `<b>Order Number:</b> #${orderId}\n` +
+      `<b>Customer:</b> ${customerName}\n` +
+      `<b>Total Amount:</b> ${formattedTotal}\n\n` +
+      `<b>Items:</b>\n${itemsList}\n\n` +
+      `The order was successfully recorded in the system.`;
       
     await this.sendMessage(message);
   }
 
   async notifyError(context, errorMessage) {
-    const message = `🚨 <b>שגיאת מערכת!</b>\n\n` +
-      `<b>הקשר:</b> ${context}\n` +
-      `<b>שגיאה:</b> ${errorMessage}`;
+    const message = `🚨 <b>System Error</b>\n\n` +
+      `<b>Context:</b> ${context}\n` +
+      `<b>Error:</b> ${errorMessage}`;
     
     await this.sendMessage(message);
   }
@@ -139,10 +141,10 @@ class TelegramService {
   async notifySupportMessage(name, email, message) {
     if (!this.token || !this.chatId) return;
 
-    const text = `✉️ <b>הודעה חדשה מלקוח (צור קשר)</b>\n\n` +
-                 `<b>שם:</b> ${name}\n` +
-                 `<b>אימייל:</b> ${email}\n\n` +
-                 `<b>הודעה:</b>\n${message}`;
+    const text = `✉️ <b>New Contact Message</b>\n\n` +
+                 `<b>Name:</b> ${name}\n` +
+                 `<b>Email:</b> ${email}\n\n` +
+                 `<b>Message:</b>\n${message}`;
 
     try {
       await axios.post(`${this.baseUrl}/sendMessage`, {

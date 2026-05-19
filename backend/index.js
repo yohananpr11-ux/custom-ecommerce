@@ -436,7 +436,7 @@ const sendPaymentNotification = async ({ provider, orderId, amountText }) => {
       + `<b>Total Revenue:</b> ₪${totalPaid.toFixed(2)}`
     );
   } catch (err) {
-    await telegram.sendMessage(`⚠️ <b>תשלום נקלט אבל חישוב סכום מצטבר נכשל</b>\nהזמנה #${orderId}`).catch(() => null);
+    await telegram.sendMessage(`⚠️ <b>Payment captured but cumulative total calculation failed</b>\nOrder #${orderId}`).catch(() => null);
   }
 };
 
@@ -445,7 +445,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   if (!order) return;
 
   if (isSimulationOrder(order)) {
-    await telegram.sendMessage(`🧪 <b>סימולציה:</b> הזמנה #${orderId} סומנה כ-paid ב-${providerTag} ללא שליחה ל-Printify.`).catch(() => null);
+    await telegram.sendMessage(`🧪 <b>Simulation:</b> Order #${orderId} marked as paid via ${providerTag} without sending to Printify.`).catch(() => null);
     return;
   }
 
@@ -461,9 +461,9 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
 
   try {
     await printify.sendOrderToProduction(orderId, order.customerName, order.customerEmail, order.address, items);
-    await telegram.sendMessage(`🏭 <b>הזמנה #${orderId} נשלחה לייצור!</b>\nההזמנה הועברה בהצלחה למפעל ב-Printify.`);
+    await telegram.sendMessage(`🏭 <b>Order #${orderId} sent to production</b>\nThe order was successfully submitted to Printify.`);
   } catch (pErr) {
-    await telegram.sendMessage(`🚨 <b>שגיאה בשליחה לייצור</b>\nהזמנה #${orderId} שולמה אבל נכשלה בהעברה ל-Printify.`);
+    await telegram.sendMessage(`🚨 <b>Production submission failed</b>\nOrder #${orderId} was paid but failed to submit to Printify.`);
   }
 };
 
@@ -581,7 +581,7 @@ app.all('/api/admin/register-webhooks', registerWebhooksHandler);
 
 app.get('/api/admin/test-telegram', async (req, res) => {
   const timestamp = new Date().toISOString();
-  const message = `🧪 <b>בדיקת טלגרם</b>\n\nהודעת בדיקה מהשרת בזמן: ${timestamp}`;
+  const message = `🧪 <b>Telegram Test</b>\n\nServer test message at: ${timestamp}`;
   const result = await telegram.sendMessage(message);
 
   if (!result || !result.ok) {
@@ -612,7 +612,7 @@ app.post('/api/analytics/visit', express.json(), async (req, res) => {
     if (!lastNotifiedAt || now - lastNotifiedAt > VISIT_CACHE_TTL_MS) {
       visitNotificationCache.set(cacheKey, now);
 
-      const msg = `👀 <b>כניסה חדשה לחנות</b>\n\n`
+      const msg = `👀 <b>New Store Visit</b>\n\n`
         + `<b>Path:</b> ${path || '/'}\n`
         + `<b>Locale/Currency:</b> ${locale || '-'} / ${currency || '-'}\n`
         + `<b>Country:</b> ${country}\n`
@@ -770,10 +770,10 @@ app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res
         try {
           const count = await printify.syncProducts();
           const eventInfo = `Printify event: ${type}`;
-          await telegram.sendMessage(`✅ <b>Sync אוטומטי מ-Printify!</b>\n\n${eventInfo}\n${count} מוצרים סונכרנו בהצלחה.`);
+          await telegram.sendMessage(`✅ <b>Automatic Printify Sync Complete</b>\n\n${eventInfo}\n${count} products synced successfully.`);
         } catch (err) {
           console.error('❌ Auto-sync failed:', err.message);
-          await telegram.sendMessage(`⚠️ <b>Sync אוטומטי נכשל</b>\nEvent: ${type}\nError: ${err.message}`);
+          await telegram.sendMessage(`⚠️ <b>Automatic Printify Sync Failed</b>\nEvent: ${type}\nError: ${err.message}`);
         }
       });
     }
@@ -1422,7 +1422,7 @@ app.post('/api/chat/message', (req, res) => {
     // Add user message to history
     history.push({ sender: 'user', text: message, timestamp: new Date().toISOString() });
 
-    let botResponse = { text: "נציג אנושי עודכן והוא יחזור אליך בהקדם.", status: "escalated" };
+    let botResponse = { text: "A human support representative has been notified and will reply shortly.", status: "escalated" };
     if (!session || session.status !== 'escalated') {
       botResponse = await meniChat.processMessage(sessionId, message, customerName);
     }

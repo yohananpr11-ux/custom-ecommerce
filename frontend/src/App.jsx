@@ -22,7 +22,7 @@ class ErrorBoundary extends React.Component {
     }).catch(() => {});
   }
   render() {
-    if (this.state.hasError) return <div className="container" style={{padding: '100px 20px', textAlign: 'center'}}><h1>אירעה שגיאה זמנית</h1><p>אנא רענן את העמוד ונסה שוב.</p></div>;
+    if (this.state.hasError) return <div className="container" style={{padding: '100px 20px', textAlign: 'center'}}><h1>Temporary error</h1><p>Please refresh the page and try again.</p></div>;
     return this.props.children;
   }
 }
@@ -162,7 +162,7 @@ const translations = {
   },
   en: {
     logo: "DRIP STREET",
-    announcement: "Complimentary shipping on 5+ items | 3-item bundle for 229 ₪",
+    announcement: "Complimentary shipping on 5+ items | 3-item bundle from $61",
     search_placeholder: "Search items...",
     cart: "Cart",
     hero_title: "DRIP STREET",
@@ -211,7 +211,7 @@ const translations = {
     shipping_name_english_only: "Full name must be entered in English.",
     shipping_address_english_only: "Shipping address must be entered in English so Printify can deliver correctly.",
     payment_method: "Payment Method",
-    payment_card_bit: "Credit Card / Bit (₪)",
+    payment_card_bit: "Card Payment",
     payment_stripe: "Stripe ($)",
     payment_paypal: "PayPal",
     payment_unavailable: "Selected payment method is unavailable right now. Please use PayPal.",
@@ -469,7 +469,7 @@ const calculateBundlePricing = (cart) => {
 };
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
-const GLOBAL_ERROR_TOAST_HE = 'אירעה שגיאה זמנית, אנא נסה שוב';
+const GLOBAL_ERROR_TOAST_HE = 'A temporary error occurred, please try again';
 const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
 const SIZE_ORDER = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
@@ -764,7 +764,7 @@ function LeadCapturePopup({ t, locale }) {
         exit={{ opacity: 0, scale: 0.9, y: 30 }}
         transition={{ duration: 0.28 }}
         onClick={(e) => e.stopPropagation()}
-        dir={locale === 'he' ? 'rtl' : 'ltr'}
+        dir="ltr"
       >
         <button className="lead-popup-close" onClick={dismiss} aria-label="Close">×</button>
         {submitted ? (
@@ -832,7 +832,7 @@ const REVIEWS_EN = [
 ];
 
 function CustomerReviews({ t, locale }) {
-  const reviews = locale === 'he' ? REVIEWS_HE : REVIEWS_EN;
+  const reviews = REVIEWS_EN;
   return (
     <div className="customer-reviews">
       <h3 className="reviews-section-title">{t('reviews_title')}</h3>
@@ -1329,20 +1329,8 @@ function MainApp() {
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
-  const [locale, setLocale] = useState(() => {
-    try {
-      return localStorage.getItem('drip_street_locale') || 'he';
-    } catch {
-      return 'he';
-    }
-  })
-  const [currency, setCurrency] = useState(() => {
-    try {
-      return localStorage.getItem('drip_street_currency') || 'ILS';
-    } catch {
-      return 'ILS';
-    }
-  })
+  const [locale] = useState('en')
+  const [currency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
 
   const [isWidgetChatOpen, setIsWidgetChatOpen] = useState(false);
@@ -1398,32 +1386,23 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
-    // Geolocation detection
-    fetch(`${API_BASE}/api/geolocation`)
-      .then(res => res.json())
-      .then(data => {
-        setLocale(data.locale);
-        setCurrency(data.currency);
-        setExchangeRate(data.exchangeRate || 3.75);
-        setPaymentMethod('paypal');
+    setPaymentMethod('paypal');
 
-        const visitKey = 'drip_street_visit_notified';
-        if (!sessionStorage.getItem(visitKey)) {
-          fetch(`${API_BASE}/api/analytics/visit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId: chatSessionId,
-              path: window.location.pathname,
-              locale: data.locale,
-              currency: data.currency,
-              source: 'storefront'
-            })
-          }).catch(() => null);
-          sessionStorage.setItem(visitKey, '1');
-        }
-      })
-      .catch(err => console.warn("Geolocation fallback applied:", err));
+    const visitKey = 'drip_street_visit_notified';
+    if (!sessionStorage.getItem(visitKey)) {
+      fetch(`${API_BASE}/api/analytics/visit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: chatSessionId,
+          path: window.location.pathname,
+          locale: 'en',
+          currency: 'USD',
+          source: 'storefront'
+        })
+      }).catch(() => null);
+      sessionStorage.setItem(visitKey, '1');
+    }
 
     fetch(`${API_BASE}/api/checkout/config`)
       .then((res) => res.json())
@@ -1549,12 +1528,12 @@ function MainApp() {
   }, [cart])
 
   useEffect(() => {
-    document.documentElement.dir = locale === 'he' ? 'rtl' : 'ltr';
-    document.documentElement.lang = locale;
+    document.documentElement.dir = 'ltr';
+    document.documentElement.lang = 'en';
     document.title = t('seo_title');
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) metaDesc.setAttribute('content', t('seo_description'));
-  }, [locale]);
+  }, []);
 
   const categories = useMemo(() => buildDynamicCategories(products), [products])
 
@@ -2408,7 +2387,7 @@ function MainApp() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: e.target.name.value, email: e.target.email.value, message: e.target.message.value })
           }).then(() => {
-            showToast('ההודעה נשלחה בהצלחה');
+            showToast('Message sent successfully');
             window.location.href='/';
           }).catch((err) => {
             console.error('Contact submit failed:', err);
@@ -2468,7 +2447,7 @@ function MainApp() {
       <div className="announcement-bar">
         {t('announcement')}
       </div>
-      <script>{`document.documentElement.dir = '${locale === 'he' ? 'rtl' : 'ltr'}'; document.documentElement.lang = '${locale}';`}</script>
+      <script>{`document.documentElement.dir = 'ltr'; document.documentElement.lang = 'en';`}</script>
 
       <header className="header container storefront-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="header-leading">
@@ -2482,7 +2461,7 @@ function MainApp() {
         <div className="search-bar">
           <input 
             type="text"
-            dir={locale === 'he' ? 'rtl' : 'ltr'}
+            dir="ltr"
             placeholder={t('search_placeholder')} 
             value={searchQuery}
             aria-label={t('search_aria')}
@@ -2490,18 +2469,6 @@ function MainApp() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="locale-toggle-btn" title={t('language_currency')} onClick={() => {
-            const nextLocale = locale === 'he' ? 'en' : 'he';
-            const nextCurrency = locale === 'he' ? 'USD' : 'ILS';
-            const nextRate = locale === 'he' ? 3.75 : 3.75;
-            setLocale(nextLocale);
-            setCurrency(nextCurrency);
-            setExchangeRate(nextRate);
-            localStorage.setItem('drip_street_locale', nextLocale);
-            localStorage.setItem('drip_street_currency', nextCurrency);
-          }}>
-            {locale === 'he' ? '🇬🇧 EN / USD' : '🇮🇱 HE / ILS'}
-          </button>
           <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={openCartDrawer}>
             <span>🛒 {t('cart')}</span>
             {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
@@ -2515,18 +2482,6 @@ function MainApp() {
             <strong>{t('logo')}</strong>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
           </div>
-          <button className="locale-toggle-btn mobile-nav-locale" title={t('language_currency')} onClick={() => {
-            const nextLocale = locale === 'he' ? 'en' : 'he';
-            const nextCurrency = locale === 'he' ? 'USD' : 'ILS';
-            const nextRate = locale === 'he' ? 3.75 : 3.75;
-            setLocale(nextLocale);
-            setCurrency(nextCurrency);
-            setExchangeRate(nextRate);
-            localStorage.setItem('drip_street_locale', nextLocale);
-            localStorage.setItem('drip_street_currency', nextCurrency);
-          }}>
-            {locale === 'he' ? '🇬🇧 English / USD' : '🇮🇱 עברית / ILS'}
-          </button>
           <div className="side-nav-links">
             {categories.map((cat) => (
               <button
