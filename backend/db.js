@@ -56,10 +56,22 @@ db.serialize(() => {
       address TEXT NOT NULL,
       totalAmount REAL NOT NULL,
       shippingCost REAL DEFAULT 0,
+      promoCode TEXT,
+      promoDiscount REAL DEFAULT 0,
       status TEXT DEFAULT 'pending',
       locale TEXT DEFAULT 'he',
       currency TEXT DEFAULT 'ILS',
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      promo_code TEXT NOT NULL UNIQUE,
+      is_used INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -106,6 +118,10 @@ db.serialize(() => {
   db.run(`ALTER TABLE products ADD COLUMN fabric TEXT`, () => {});
   db.run(`ALTER TABLE products ADD COLUMN careInstructions TEXT`, () => {});
   db.run(`ALTER TABLE products ADD COLUMN deliveryInfo TEXT`, () => {});
+
+  // Migrate: add promo columns to orders table if missing
+  db.run(`ALTER TABLE orders ADD COLUMN promoCode TEXT`, () => {});
+  db.run(`ALTER TABLE orders ADD COLUMN promoDiscount REAL DEFAULT 0`, () => {});
   
   // Migrate: add imageUrl to product_variants table
   db.run(`ALTER TABLE product_variants ADD COLUMN imageUrl TEXT`, () => {});

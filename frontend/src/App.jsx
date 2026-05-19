@@ -126,12 +126,20 @@ const translations = {
     loading: "טוען...",
     product_not_found: "המוצר לא נמצא",
     shop_rights: "© 2026 Drip Street. כל הזכויות שמורות.",
-    popup_title: "קבל 10% הנחה על ההזמנה הראשונה שלך",
-    popup_subtitle: "הזן את האימייל שלך וקבל קוד בלעדי ישר לתיבת הדואל.",
+    popup_title: "הצטרפו למועדון שלנו וקבלו 10% הנחה לקנייה הראשונה.",
+    popup_subtitle: "השאירו אימייל וקבלו קוד אישי חד פעמי.",
     popup_placeholder: "האימייל שלך...",
     popup_cta: "קבל את ההנחה",
     popup_dismiss: "לא עכשיו, תודה",
     popup_success: "תודה! הקוד נשלח לאימייל שלך.",
+    popup_already_registered: "האימייל כבר רשום במערכת",
+    popup_unique_code: "הקוד הייחודי שלך",
+    popup_copy: "העתק קוד",
+    popup_copied: "הועתק!",
+    promo_code: "קוד קופון",
+    promo_apply: "החל",
+    promo_applied: "קוד הופעל",
+    promo_invalid: "קוד לא תקין או שכבר נוצל",
     rating_label: "מבוסס על בסיס ביקורות",
     reviews_title: "מה אומרים הלקוחות",
     trending_title: "טרנדינג עכשיו",
@@ -247,12 +255,20 @@ const translations = {
     loading: "Loading...",
     product_not_found: "Product not found",
     shop_rights: "© 2026 Drip Street. All rights reserved.",
-    popup_title: "Get 10% Off Your First Order",
-    popup_subtitle: "Enter your email and receive an exclusive discount code straight to your inbox.",
+    popup_title: "Join our club and get 10% off your first purchase.",
+    popup_subtitle: "Enter your email to unlock your unique one-time code.",
     popup_placeholder: "Your email address...",
     popup_cta: "Claim My Discount",
     popup_dismiss: "No thanks",
     popup_success: "Done! Your code is on its way.",
+    popup_already_registered: "Already registered",
+    popup_unique_code: "Your unique code",
+    popup_copy: "Copy code",
+    popup_copied: "Copied!",
+    promo_code: "Promo Code",
+    promo_apply: "Apply",
+    promo_applied: "Code applied",
+    promo_invalid: "Promo code is invalid or already used",
     rating_label: "based on reviews",
     reviews_title: "What Customers Are Saying",
     trending_title: "Trending Now",
@@ -600,6 +616,10 @@ function LeadCapturePopup({ t, locale }) {
   const [visible, setVisible] = useState(false);
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [generatedCode, setGeneratedCode] = useState('');
+  const [errorText, setErrorText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (localStorage.getItem(STORAGE_KEY)) return;
@@ -621,11 +641,54 @@ function LeadCapturePopup({ t, locale }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!email.trim()) return;
-    localStorage.setItem(STORAGE_KEY, '1');
-    localStorage.setItem('drip_street_lead_email', email.trim());
-    setSubmitted(true);
-    setTimeout(() => setVisible(false), 2200);
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || isSubmitting) return;
+
+    setErrorText('');
+    setCopied(false);
+    setIsSubmitting(true);
+
+    fetch(`${API_BASE}/api/leads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: normalizedEmail })
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const error = data.error || t('popup_already_registered');
+          throw new Error(error);
+        }
+        return data;
+      })
+      .then((data) => {
+        const promoCode = String(data.promoCode || '').trim();
+        if (!promoCode) throw new Error(GLOBAL_ERROR_TOAST_HE);
+
+        localStorage.setItem(STORAGE_KEY, '1');
+        localStorage.setItem('drip_street_lead_email', normalizedEmail);
+        localStorage.setItem('drip_street_lead_code', promoCode);
+
+        setGeneratedCode(promoCode);
+        setSubmitted(true);
+      })
+      .catch((err) => {
+        setErrorText(err.message || t('popup_already_registered'));
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
+  };
+
+  const handleCopyCode = async () => {
+    if (!generatedCode) return;
+    try {
+      await navigator.clipboard.writeText(generatedCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
   };
 
   if (!visible) return null;
@@ -646,6 +709,13 @@ function LeadCapturePopup({ t, locale }) {
           <div className="lead-popup-success">
             <div className="lead-popup-check">✓</div>
             <p>{t('popup_success')}</p>
+            <div className="lead-popup-code-wrap">
+              <span className="lead-popup-code-label">{t('popup_unique_code')}</span>
+              <div className="lead-popup-code">{generatedCode}</div>
+              <button type="button" className="lead-popup-copy-btn" onClick={handleCopyCode}>
+                {copied ? t('popup_copied') : t('popup_copy')}
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -661,8 +731,9 @@ function LeadCapturePopup({ t, locale }) {
                 onChange={(e) => setEmail(e.target.value)}
                 className="lead-popup-input"
               />
-              <button type="submit" className="lead-popup-cta">{t('popup_cta')}</button>
+              <button type="submit" className="lead-popup-cta" disabled={isSubmitting}>{isSubmitting ? '...' : t('popup_cta')}</button>
             </form>
+            {errorText && <p className="lead-popup-error">{errorText === 'This email is already registered' ? t('popup_already_registered') : errorText}</p>}
             <button type="button" className="lead-popup-dismiss" onClick={dismiss}>{t('popup_dismiss')}</button>
           </>
         )}
@@ -1152,6 +1223,10 @@ function MainApp() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('All')
   const [activeCoupon, setActiveCoupon] = useState(null)
+  const [promoInput, setPromoInput] = useState('')
+  const [activeLeadPromo, setActiveLeadPromo] = useState(null)
+  const [promoFeedback, setPromoFeedback] = useState('')
+  const [isApplyingPromo, setIsApplyingPromo] = useState(false)
   const [quickAddProduct, setQuickAddProduct] = useState(null)
   const [quickAddColor, setQuickAddColor] = useState('')
   const [quickAddSize, setQuickAddSize] = useState('')
@@ -1619,6 +1694,38 @@ function MainApp() {
     setCart((prevCart) => prevCart.filter(item => (item.cartId || `${item.id}`) !== cartId))
   }
 
+  const applyLeadPromo = async () => {
+    const candidate = promoInput.trim().toUpperCase();
+    if (!candidate || isApplyingPromo) return;
+
+    setIsApplyingPromo(true);
+    setPromoFeedback('');
+
+    try {
+      const response = await fetch(`${API_BASE}/api/promo/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promoCode: candidate })
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.valid) {
+        setActiveLeadPromo(null);
+        setPromoFeedback(t('promo_invalid'));
+        return;
+      }
+
+      setActiveLeadPromo({ code: data.promoCode || candidate, discountRate: Number(data.discountRate) || 0.1 });
+      setPromoInput(data.promoCode || candidate);
+      setPromoFeedback(t('promo_applied'));
+    } catch {
+      setActiveLeadPromo(null);
+      setPromoFeedback(t('promo_invalid'));
+    } finally {
+      setIsApplyingPromo(false);
+    }
+  };
+
   const updateQuantity = (cartId, newQty) => {
     if (newQty <= 0) return removeFromCart(cartId);
     setCart((prevCart) => prevCart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: newQty } : item)))
@@ -1639,7 +1746,9 @@ function MainApp() {
   const shippingCost = isFreeShipping ? 0 : (totalItems > 0 ? SHIPPING_COST : 0);
   const itemsToFreeShipping = FREE_SHIPPING_THRESHOLD - totalItems;
   const subtotalAfterDiscounts = Math.max(0, bundlePricing.subtotalAfterDiscounts - couponDiscount);
-  const cartTotal = subtotalAfterDiscounts + shippingCost;
+  const leadPromoDiscount = activeLeadPromo ? subtotalAfterDiscounts * 0.10 : 0;
+  const subtotalAfterLeadPromo = Math.max(0, subtotalAfterDiscounts - leadPromoDiscount);
+  const cartTotal = subtotalAfterLeadPromo + shippingCost;
 
   // ============ NAVIGATION ============
 
@@ -1674,6 +1783,7 @@ function MainApp() {
     shippingCost: shippingCost,
     bundleDiscount: bundleDiscount,
     couponCode: activeCoupon ? activeCoupon.code : null,
+    promoCode: activeLeadPromo ? activeLeadPromo.code : null,
     currency,
   });
 
@@ -1883,6 +1993,32 @@ function MainApp() {
             <div className="cart-savings-line">
               <span>{t('coupon_label')} ({activeCoupon.code})</span>
               <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(couponDiscount).toFixed(2)}</span>
+            </div>
+          )}
+
+          <div className="cart-promo-row">
+            <input
+              type="text"
+              value={promoInput}
+              onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+              placeholder={t('promo_code')}
+              className="cart-promo-input"
+            />
+            <button type="button" className="cart-promo-btn" onClick={applyLeadPromo} disabled={isApplyingPromo}>
+              {isApplyingPromo ? '...' : t('promo_apply')}
+            </button>
+          </div>
+
+          {promoFeedback && (
+            <div className={`cart-promo-feedback ${activeLeadPromo ? 'success' : 'error'}`}>
+              {promoFeedback}
+            </div>
+          )}
+
+          {activeLeadPromo && leadPromoDiscount > 0 && (
+            <div className="cart-savings-line">
+              <span>{t('promo_code')} ({activeLeadPromo.code})</span>
+              <span style={{ color: '#4caf50' }}>-{curSym}{displayVal(leadPromoDiscount).toFixed(2)}</span>
             </div>
           )}
 
@@ -2690,7 +2826,12 @@ function MainApp() {
 
             <div className="cart-total">
               <span>{t('total')}</span>
-              <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
+              <span>
+                {activeLeadPromo && leadPromoDiscount > 0 && (
+                  <span className="cart-total-old">{curSym}{displayVal(subtotalAfterDiscounts + shippingCost).toFixed(2)}</span>
+                )}
+                {curSym}{displayVal(cartTotal).toFixed(2)}
+              </span>
             </div>
 
             <p className="cart-taxes-note">{t('taxes_shipping_note')}</p>

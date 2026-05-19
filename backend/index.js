@@ -236,6 +236,45 @@ const dbRunAsync = (query, params = []) => new Promise((resolve, reject) => {
   });
 });
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LEAD_PROMO_DISCOUNT_RATE = 0.10;
+
+const normalizePromoCode = (value) => String(value || '').trim().toUpperCase();
+
+const isValidEmail = (value) => EMAIL_REGEX.test(String(value || '').trim().toLowerCase());
+
+const roundCurrency = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+const generatePromoCode = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let suffix = '';
+  for (let index = 0; index < 6; index += 1) {
+    const randomIndex = crypto.randomInt(0, chars.length);
+    suffix += chars[randomIndex];
+  }
+  return `DRP-${suffix}`;
+};
+
+const getLeadByPromoCode = async (promoCode) => {
+  const normalized = normalizePromoCode(promoCode);
+  if (!normalized) return null;
+  return dbGetAsync(`SELECT id, email, promo_code, is_used FROM leads WHERE promo_code = ?`, [normalized]);
+};
+
+const validateLeadPromoCode = async (promoCode) => {
+  const normalized = normalizePromoCode(promoCode);
+  if (!normalized) return null;
+  const lead = await getLeadByPromoCode(normalized);
+  if (!lead || Number(lead.is_used) === 1) return null;
+  return lead;
+};
+
+const consumeLeadPromoCode = async (promoCode) => {
+  const normalized = normalizePromoCode(promoCode);
+  if (!normalized) return;
+  await dbRunAsync(`UPDATE leads SET is_used = 1 WHERE promo_code = ?`, [normalized]);
+};
+
 const normalizeVariantValue = (value) => String(value || '').trim().toLowerCase();
 
 const resolveValidatedOrderItems = async (items = []) => {
@@ -874,6 +913,69 @@ app.get('/api/coupons/active', (req, res) => {
   res.json({ coupon: currentActiveCoupon });
 });
 
+app.post('/api/leads', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+
+    const existingLead = await dbGetAsync(`SELECT id FROM leads WHERE email = ?`, [email]);
+    if (existingLead) {
+      return res.status(400).json({ error: 'This email is already registered' });
+    }
+
+    let promoCode = null;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const candidate = generatePromoCode();
+      const existingCode = await dbGetAsync(`SELECT id FROM leads WHERE promo_code = ?`, [candidate]);
+      if (!existingCode) {
+        promoCode = candidate;
+        break;
+      }
+    }
+
+    if (!promoCode) {
+      return res.status(500).json({ error: 'Failed to generate promo code' });
+    }
+
+    await dbRunAsync(
+      `INSERT INTO leads (email, promo_code, is_used) VALUES (?, ?, 0)`,
+      [email, promoCode]
+    );
+
+    await telegram.sendMessage(`🔥 <b>New Lead</b>: ${email} | <b>Code Generated</b>: ${promoCode}`).catch(() => null);
+
+    return res.json({ success: true, promoCode });
+  } catch (err) {
+    if (String(err.message || '').includes('UNIQUE constraint failed: leads.email')) {
+      return res.status(400).json({ error: 'This email is already registered' });
+    }
+
+    console.error('Lead registration failed:', err.message);
+    return res.status(500).json({ error: 'Lead registration failed' });
+  }
+});
+
+app.post('/api/promo/validate', async (req, res) => {
+  try {
+    const promoCode = normalizePromoCode(req.body?.promoCode);
+    if (!promoCode) {
+      return res.status(400).json({ valid: false, error: 'Promo code is required' });
+    }
+
+    const lead = await validateLeadPromoCode(promoCode);
+    if (!lead) {
+      return res.status(400).json({ valid: false, error: 'Promo code is invalid or already used' });
+    }
+
+    return res.json({ valid: true, promoCode: lead.promo_code, discountRate: LEAD_PROMO_DISCOUNT_RATE });
+  } catch (err) {
+    console.error('Promo validation failed:', err.message);
+    return res.status(500).json({ valid: false, error: 'Promo validation failed' });
+  }
+});
+
 // Admin Set Coupon (Triggered by Meni Telegram Webhook)
 app.post('/api/admin/set-coupon', (req, res) => {
   const { code, discount_pct, duration_hours } = req.body;
@@ -963,6 +1065,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
     address,
     items,
     couponCode,
+    promoCode,
     currency,
   } = req.body || {};
 
@@ -976,11 +1079,33 @@ app.post('/api/paypal/create-order', async (req, res) => {
 
   try {
     const requestedCurrency = normalizePayPalCurrency(currency);
+    const normalizedPromoCode = normalizePromoCode(promoCode);
+    let validatedLeadPromo = null;
+    if (normalizedPromoCode) {
+      validatedLeadPromo = await validateLeadPromoCode(normalizedPromoCode);
+      if (!validatedLeadPromo) {
+        return res.status(400).json({ error: 'Promo code is invalid or already used' });
+      }
+    }
+
     const { orderId, pricing } = await createPendingOrder(customerName, customerEmail, address, items, couponCode);
+
+    const promoDiscountAmount = validatedLeadPromo
+      ? roundCurrency(pricing.totalAmount * LEAD_PROMO_DISCOUNT_RATE)
+      : 0;
+    const discountedTotal = Math.max(0, roundCurrency(pricing.totalAmount - promoDiscountAmount));
+
+    if (validatedLeadPromo) {
+      await dbRunAsync(
+        `UPDATE orders SET totalAmount = ?, promoCode = ?, promoDiscount = ? WHERE id = ?`,
+        [discountedTotal, validatedLeadPromo.promo_code, promoDiscountAmount, orderId]
+      );
+    }
+
     const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
     const totalInRequestedCurrency = requestedCurrency === 'USD'
-      ? (pricing.totalAmount / exchangeRate)
-      : pricing.totalAmount;
+      ? (discountedTotal / exchangeRate)
+      : discountedTotal;
 
     const amount = totalInRequestedCurrency.toFixed(2);
     const accessToken = await getPayPalAccessToken();
@@ -1008,6 +1133,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
       orderId,
       currency: requestedCurrency,
       amount,
+      promoCode: validatedLeadPromo ? validatedLeadPromo.promo_code : null,
     });
   } catch (err) {
     console.error('PayPal create-order failed:', err.response?.data || err.message);
@@ -1045,7 +1171,7 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Could not map PayPal order to local order' });
     }
 
-    const existingOrder = await dbGetAsync(`SELECT id, status, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
+    const existingOrder = await dbGetAsync(`SELECT id, status, totalAmount, promoCode FROM orders WHERE id = ?`, [localOrderId]);
     if (!existingOrder) {
       return res.status(404).json({ success: false, error: 'Order not found' });
     }
@@ -1075,6 +1201,10 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     }
 
     await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [localOrderId]);
+
+    if (existingOrder.promoCode) {
+      await consumeLeadPromoCode(existingOrder.promoCode);
+    }
 
     const amountText = captureCurrency === 'USD'
       ? `$${captureValue.toFixed(2)}`
