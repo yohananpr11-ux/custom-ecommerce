@@ -1,8 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { initAnalytics, trackPageView, trackViewItem } from './utils/analytics.js'
 import './index.css'
+
+// Shared Components
+import Footer from './components/Footer'
+import CookieConsent from './components/CookieConsent'
+
+// Compliance & Legal Pages
+import PrivacyPolicy from './pages/PrivacyPolicy'
+import TermsOfService from './pages/TermsOfService'
+import RefundPolicy from './pages/RefundPolicy'
+import ShippingPolicy from './pages/ShippingPolicy'
+import ContactUs from './pages/ContactUs'
+import AboutUs from './pages/AboutUs'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
 const SHIPPING_COST = 29.90;
@@ -22,7 +35,7 @@ class ErrorBoundary extends React.Component {
     }).catch(() => {});
   }
   render() {
-    if (this.state.hasError) return <div className="container" style={{padding: '100px 20px', textAlign: 'center'}}><h1>אירעה שגיאה זמנית</h1><p>אנא רענן את העמוד ונסה שוב.</p></div>;
+    if (this.state.hasError) return <div className="container" style={{padding: '100px 20px', textAlign: 'center'}}><h1>Temporary error</h1><p>Please refresh the page and try again.</p></div>;
     return this.props.children;
   }
 }
@@ -162,7 +175,7 @@ const translations = {
   },
   en: {
     logo: "DRIP STREET",
-    announcement: "Complimentary shipping on 5+ items | 3-item bundle for 229 ₪",
+    announcement: "Complimentary shipping on 5+ items | 3-item bundle from $61",
     search_placeholder: "Search items...",
     cart: "Cart",
     hero_title: "DRIP STREET",
@@ -211,7 +224,7 @@ const translations = {
     shipping_name_english_only: "Full name must be entered in English.",
     shipping_address_english_only: "Shipping address must be entered in English so Printify can deliver correctly.",
     payment_method: "Payment Method",
-    payment_card_bit: "Credit Card / Bit (₪)",
+    payment_card_bit: "Card Payment",
     payment_stripe: "Stripe ($)",
     payment_paypal: "PayPal",
     payment_unavailable: "Selected payment method is unavailable right now. Please use PayPal.",
@@ -469,7 +482,7 @@ const calculateBundlePricing = (cart) => {
 };
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
-const GLOBAL_ERROR_TOAST_HE = 'אירעה שגיאה זמנית, אנא נסה שוב';
+const GLOBAL_ERROR_TOAST_HE = 'A temporary error occurred, please try again';
 const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
 const SIZE_ORDER = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
@@ -764,7 +777,7 @@ function LeadCapturePopup({ t, locale }) {
         exit={{ opacity: 0, scale: 0.9, y: 30 }}
         transition={{ duration: 0.28 }}
         onClick={(e) => e.stopPropagation()}
-        dir={locale === 'he' ? 'rtl' : 'ltr'}
+        dir="ltr"
       >
         <button className="lead-popup-close" onClick={dismiss} aria-label="Close">×</button>
         {submitted ? (
@@ -832,7 +845,7 @@ const REVIEWS_EN = [
 ];
 
 function CustomerReviews({ t, locale }) {
-  const reviews = locale === 'he' ? REVIEWS_HE : REVIEWS_EN;
+  const reviews = REVIEWS_EN;
   return (
     <div className="customer-reviews">
       <h3 className="reviews-section-title">{t('reviews_title')}</h3>
@@ -853,6 +866,7 @@ function CustomerReviews({ t, locale }) {
 }
 
 function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale, cartCount, onOpenCart }) {
+  const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
@@ -1102,7 +1116,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   return (
     <>
       <header className="header container">
-        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
+        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><h1 className="logo">{t('logo')}</h1></a>
         <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={onOpenCart}>
           <span>🛒 {t('cart')}</span>
           {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
@@ -1286,11 +1300,17 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           </button>
         </div>
       )}
+      <Footer />
+      <CookieConsent />
     </>
   );
 }
 
 function MainApp() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname;
+
   const [products, setProducts] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [cart, setCart] = useState(() => {
@@ -1329,20 +1349,8 @@ function MainApp() {
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
-  const [locale, setLocale] = useState(() => {
-    try {
-      return localStorage.getItem('drip_street_locale') || 'he';
-    } catch {
-      return 'he';
-    }
-  })
-  const [currency, setCurrency] = useState(() => {
-    try {
-      return localStorage.getItem('drip_street_currency') || 'ILS';
-    } catch {
-      return 'ILS';
-    }
-  })
+  const [locale] = useState('en')
+  const [currency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
 
   const [isWidgetChatOpen, setIsWidgetChatOpen] = useState(false);
@@ -1398,32 +1406,23 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
-    // Geolocation detection
-    fetch(`${API_BASE}/api/geolocation`)
-      .then(res => res.json())
-      .then(data => {
-        setLocale(data.locale);
-        setCurrency(data.currency);
-        setExchangeRate(data.exchangeRate || 3.75);
-        setPaymentMethod('paypal');
+    setPaymentMethod('paypal');
 
-        const visitKey = 'drip_street_visit_notified';
-        if (!sessionStorage.getItem(visitKey)) {
-          fetch(`${API_BASE}/api/analytics/visit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId: chatSessionId,
-              path: window.location.pathname,
-              locale: data.locale,
-              currency: data.currency,
-              source: 'storefront'
-            })
-          }).catch(() => null);
-          sessionStorage.setItem(visitKey, '1');
-        }
-      })
-      .catch(err => console.warn("Geolocation fallback applied:", err));
+    const visitKey = 'drip_street_visit_notified';
+    if (!sessionStorage.getItem(visitKey)) {
+      fetch(`${API_BASE}/api/analytics/visit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: chatSessionId,
+          path: window.location.pathname,
+          locale: 'en',
+          currency: 'USD',
+          source: 'storefront'
+        })
+      }).catch(() => null);
+      sessionStorage.setItem(visitKey, '1');
+    }
 
     fetch(`${API_BASE}/api/checkout/config`)
       .then((res) => res.json())
@@ -1536,7 +1535,12 @@ function MainApp() {
     }
   };
 
-  const closeCartDrawer = () => setIsCartOpen(false);
+  const closeCartDrawer = () => {
+    setIsCartOpen(false);
+    if (location.pathname === '/cart') {
+      navigate('/');
+    }
+  };
   const openMobileNav = () => setIsMobileNavOpen(true);
   const closeMobileNav = () => setIsMobileNavOpen(false);
 
@@ -1549,12 +1553,12 @@ function MainApp() {
   }, [cart])
 
   useEffect(() => {
-    document.documentElement.dir = locale === 'he' ? 'rtl' : 'ltr';
-    document.documentElement.lang = locale;
+    document.documentElement.dir = 'ltr';
+    document.documentElement.lang = 'en';
     document.title = t('seo_title');
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) metaDesc.setAttribute('content', t('seo_description'));
-  }, [locale]);
+  }, []);
 
   const categories = useMemo(() => buildDynamicCategories(products), [products])
 
@@ -1800,8 +1804,7 @@ function MainApp() {
 
   const goToCheckoutNow = () => {
     closeCartDrawer();
-    window.history.pushState({}, '', '/checkout');
-    window.dispatchEvent(new Event('popstate'));
+    navigate('/checkout');
   };
 
   const addToCart = (product, options = {}) => {
@@ -1896,8 +1899,7 @@ function MainApp() {
       return;
     }
     closeCartDrawer();
-    window.history.pushState({}, '', '/checkout');
-    window.dispatchEvent(new Event('popstate'));
+    navigate('/checkout');
   }
 
   const hasInvalidVariant = cart.some((item) => (
@@ -2195,17 +2197,19 @@ function MainApp() {
     </div>
   );
 
-  const [currentPath, setCurrentPath] = useState(window.location.pathname);
   useEffect(() => {
     initAnalytics();
-    trackPageView(window.location.pathname);
-    const handleLocationChange = () => {
-      setCurrentPath(window.location.pathname);
-      trackPageView(window.location.pathname);
-    };
-    window.addEventListener('popstate', handleLocationChange);
-    return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
+
+  useEffect(() => {
+    trackPageView(location.pathname);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (location.pathname === '/cart') {
+      setIsCartOpen(true);
+    }
+  }, [location.pathname]);
 
   // ============ ROUTE: SUCCESS ============
   if (currentPath === '/success') {
@@ -2218,7 +2222,7 @@ function MainApp() {
         <p style={{ fontSize: '20px', color: '#888', marginBottom: '32px' }}>
           {t('success_desc')}
         </p>
-        <button className="checkout-btn" style={{ maxWidth: '250px' }} onClick={() => window.location.href = '/'}>
+        <button className="checkout-btn" style={{ maxWidth: '250px' }} onClick={() => navigate('/')}>
           {t('return_home')}
         </button>
       </div>
@@ -2308,8 +2312,7 @@ function MainApp() {
                         await capturePayPalOrder(data.orderID);
                         localStorage.removeItem('drip_street_cart');
                         setCart([]);
-                        window.history.pushState({}, '', '/success');
-                        window.dispatchEvent(new Event('popstate'));
+                        navigate('/success');
                       } catch (err) {
                         showToast(err.message || GLOBAL_ERROR_TOAST_HE);
                       } finally {
@@ -2397,154 +2400,8 @@ function MainApp() {
     );
   }
 
-  // ============ ROUTE: CONTACT ============
-  if (currentPath === '/contact') {
-    return (
-      <div className="container legal-page">
-        <h1>{t('contact_title')}</h1>
-        <form className="contact-form" onSubmit={(e) => {
-          e.preventDefault();
-          fetch(`${API_BASE}/api/contact`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: e.target.name.value, email: e.target.email.value, message: e.target.message.value })
-          }).then(() => {
-            showToast('ההודעה נשלחה בהצלחה');
-            window.location.href='/';
-          }).catch((err) => {
-            console.error('Contact submit failed:', err);
-            showToast(GLOBAL_ERROR_TOAST_HE);
-          })
-        }}>
-          <input name="name" type="text" placeholder={t('contact_name_placeholder')} required />
-          <input name="email" type="email" placeholder={t('contact_email_placeholder')} required />
-          <textarea name="message" placeholder={t('contact_message_placeholder')} required></textarea>
-          <button type="submit" className="checkout-btn">{t('contact_send')}</button>
-        </form>
-      </div>
-    );
-  }
-
-  // ============ ROUTE: LEGAL PAGES ============
-  if (currentPath === '/privacy' || currentPath === '/terms' || currentPath === '/refund') {
-    const pageTitleByPath = {
-      '/privacy': t('legal_privacy'),
-      '/terms': t('legal_terms'),
-      '/refund': t('legal_refund'),
-    };
-    const title = pageTitleByPath[currentPath] || t('legal_privacy');
-    return (
-      <div className="container legal-page" style={{ maxWidth: '800px', marginTop: '40px' }}>
-        <h1>{title}</h1>
-        <p style={{ lineHeight: '1.8', color: '#ccc' }}>
-          {t('legal_intro')}
-          <br/><br/>
-          <strong>1. {t('legal_info_collect_title')}</strong><br/>
-          {t('legal_info_collect_text')}
-          <br/><br/>
-          <strong>2. {t('legal_payments_title')}</strong><br/>
-          {t('legal_payments_text')}
-          <br/><br/>
-          <strong>3. {t('legal_refunds_title')}</strong><br/>
-          {t('legal_refunds_text')}
-        </p>
-        <button className="checkout-btn" style={{ maxWidth: '200px', marginTop: '40px' }} onClick={() => window.location.href = '/'}>{t('legal_back')}</button>
-      </div>
-    );
-  }
-
-  // ============ ROUTE: PRODUCT DETAIL PAGE ============
-  if (currentPath.startsWith('/product/')) {
-    const productId = currentPath.split('/')[2];
-    return <>{<ProductDetailPage productId={productId} addToCart={addToCart} goToCheckout={goToCheckoutNow} showToast={showToast} t={t} currency={currency} curSym={curSym} locale={locale} cartCount={totalItems} onOpenCart={openCartDrawer} />}{cartDrawer}</>;
-  }
-
-  // ============ ROUTE: 404 ============
-  if (currentPath !== '/' && currentPath !== '/cart') {
-    return <div className="container legal-page" style={{textAlign: 'center'}}><h1>{t('not_found_title')}</h1><button className="checkout-btn" style={{ maxWidth: '200px' }} onClick={() => window.location.href = '/'}>{t('return_home')}</button></div>;
-  }
-
-  return (
+  const homeContent = (
     <>
-      <div className="announcement-bar">
-        {t('announcement')}
-      </div>
-      <script>{`document.documentElement.dir = '${locale === 'he' ? 'rtl' : 'ltr'}'; document.documentElement.lang = '${locale}';`}</script>
-
-      <header className="header container storefront-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div className="header-leading">
-          <button className="nav-toggle" type="button" aria-label="Open navigation" onClick={openMobileNav}>
-            <span />
-            <span />
-            <span />
-          </button>
-          <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')); }}><h1 className="logo">{t('logo')}</h1></a>
-        </div>
-        <div className="search-bar">
-          <input 
-            type="text"
-            dir={locale === 'he' ? 'rtl' : 'ltr'}
-            placeholder={t('search_placeholder')} 
-            value={searchQuery}
-            aria-label={t('search_aria')}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="locale-toggle-btn" title={t('language_currency')} onClick={() => {
-            const nextLocale = locale === 'he' ? 'en' : 'he';
-            const nextCurrency = locale === 'he' ? 'USD' : 'ILS';
-            const nextRate = locale === 'he' ? 3.75 : 3.75;
-            setLocale(nextLocale);
-            setCurrency(nextCurrency);
-            setExchangeRate(nextRate);
-            localStorage.setItem('drip_street_locale', nextLocale);
-            localStorage.setItem('drip_street_currency', nextCurrency);
-          }}>
-            {locale === 'he' ? '🇬🇧 EN / USD' : '🇮🇱 HE / ILS'}
-          </button>
-          <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={openCartDrawer}>
-            <span>🛒 {t('cart')}</span>
-            {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
-          </button>
-        </div>
-      </header>
-
-      <div className={`side-nav-overlay ${isMobileNavOpen ? 'open' : ''}`} onClick={closeMobileNav}>
-        <aside className="side-nav-drawer" onClick={(event) => event.stopPropagation()}>
-          <div className="side-nav-header">
-            <strong>{t('logo')}</strong>
-            <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
-          </div>
-          <button className="locale-toggle-btn mobile-nav-locale" title={t('language_currency')} onClick={() => {
-            const nextLocale = locale === 'he' ? 'en' : 'he';
-            const nextCurrency = locale === 'he' ? 'USD' : 'ILS';
-            const nextRate = locale === 'he' ? 3.75 : 3.75;
-            setLocale(nextLocale);
-            setCurrency(nextCurrency);
-            setExchangeRate(nextRate);
-            localStorage.setItem('drip_street_locale', nextLocale);
-            localStorage.setItem('drip_street_currency', nextCurrency);
-          }}>
-            {locale === 'he' ? '🇬🇧 English / USD' : '🇮🇱 עברית / ILS'}
-          </button>
-          <div className="side-nav-links">
-            {categories.map((cat) => (
-              <button
-                key={`drawer-${cat}`}
-                type="button"
-                className={`side-nav-link ${activeCategory === cat ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveCategory(cat)
-                  closeMobileNav()
-                }}
-              >
-                {cat === 'All' ? t('all') : cat === 'New Arrivals' ? t('new_arrivals') : cat === 'Hoodies' ? t('hoodies') : cat === 'Shirts' ? t('tshirts') : cat === 'Tank Tops' ? t('tank_tops') : cat}
-              </button>
-            ))}
-          </div>
-        </aside>
-      </div>
-
       {activeCoupon && (
         <motion.div 
           initial={{ y: -50 }} animate={{ y: 0 }} 
@@ -2621,7 +2478,7 @@ function MainApp() {
                   >
                     <div 
                       className="product-image-wrapper" 
-                      onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
+                      onClick={() => navigate(`/product/${product.id}`)}
                       style={{ cursor: 'pointer' }}
                     >
                       <img loading={productIndex === 0 ? 'eager' : 'lazy'} src={product.imageUrl} alt={getProductTitle(product.title, locale)} className="product-image front-img" onError={(e) => setImageFallback(e)} />
@@ -2634,7 +2491,7 @@ function MainApp() {
                       <div className="product-info">
                         <h3 
                           className="product-title" 
-                          onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
+                          onClick={() => navigate(`/product/${product.id}`)}
                           style={{ cursor: 'pointer' }}
                         >
                           {getProductTitle(product.title, locale)}
@@ -2667,7 +2524,7 @@ function MainApp() {
                   key={`trend-${product.id}`}
                   type="button"
                   className="trending-card"
-                  onClick={() => { window.history.pushState({}, '', `/product/${product.id}`); window.dispatchEvent(new Event('popstate')); }}
+                  onClick={() => navigate(`/product/${product.id}`)}
                 >
                   <div className="trending-card-img-wrap">
                     <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
@@ -2709,6 +2566,83 @@ function MainApp() {
           </div>
         </div>
       </section>
+    </>
+  );
+
+  return (
+    <>
+      <div className="announcement-bar">
+        {t('announcement')}
+      </div>
+      <script>{`document.documentElement.dir = 'ltr'; document.documentElement.lang = 'en';`}</script>
+
+      <header className="header container storefront-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="header-leading">
+          <button className="nav-toggle" type="button" aria-label="Open navigation" onClick={openMobileNav}>
+            <span />
+            <span />
+            <span />
+          </button>
+          <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><h1 className="logo">{t('logo')}</h1></a>
+        </div>
+        <div className="search-bar">
+          <input 
+            type="text"
+            dir="ltr"
+            placeholder={t('search_placeholder')} 
+            value={searchQuery}
+            aria-label={t('search_aria')}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={openCartDrawer}>
+            <span>🛒 {t('cart')}</span>
+            {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
+          </button>
+        </div>
+      </header>
+
+      <div className={`side-nav-overlay ${isMobileNavOpen ? 'open' : ''}`} onClick={closeMobileNav}>
+        <aside className="side-nav-drawer" onClick={(event) => event.stopPropagation()}>
+          <div className="side-nav-header">
+            <strong>{t('logo')}</strong>
+            <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
+          </div>
+          <div className="side-nav-links">
+            {categories.map((cat) => (
+              <button
+                key={`drawer-${cat}`}
+                type="button"
+                className={`side-nav-link ${activeCategory === cat ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveCategory(cat)
+                  closeMobileNav()
+                }}
+              >
+                {cat === 'All' ? t('all') : cat === 'New Arrivals' ? t('new_arrivals') : cat === 'Hoodies' ? t('hoodies') : cat === 'Shirts' ? t('tshirts') : cat === 'Tank Tops' ? t('tank_tops') : cat}
+              </button>
+            ))}
+          </div>
+        </aside>
+      </div>
+
+      <Routes>
+        <Route path="/" element={homeContent} />
+        <Route path="/cart" element={homeContent} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/refund" element={<RefundPolicy />} />
+        <Route path="/shipping" element={<ShippingPolicy />} />
+        <Route path="/contact" element={<ContactUs />} />
+        <Route path="/about" element={<AboutUs />} />
+        <Route path="*" element={
+          <div className="container legal-page" style={{textAlign: 'center', padding: '100px 20px'}}>
+            <h1 style={{ fontSize: '36px', textTransform: 'uppercase', marginBottom: '16px' }}>{t('not_found_title')}</h1>
+            <button className="checkout-btn" style={{ maxWidth: '200px', marginTop: '24px' }} onClick={() => navigate('/')}>{t('return_home')}</button>
+          </div>
+        } />
+      </Routes>
 
       <AnimatePresence>
         {quickAddProduct && (
@@ -2825,18 +2759,7 @@ function MainApp() {
         )}
       </AnimatePresence>
 
-      <footer className="footer container">
-        <div className="payment-logos">
-          <span>VISA</span> • <span>MASTERCARD</span> • <span>BIT</span>
-        </div>
-        <div className="footer-links">
-          <a href="/privacy">{t('legal_privacy')}</a>
-          <a href="/terms">{t('legal_terms')}</a>
-          <a href="/refund">{t('legal_refund')}</a>
-          <a href="/contact">{t('legal_contact')}</a>
-        </div>
-        <p>{t('shop_rights')}</p>
-      </footer>
+
 
       {/* Cart Drawer */}
       <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) closeCartDrawer(); }}>
@@ -3085,6 +3008,8 @@ function MainApp() {
       <AnimatePresence>
         {true && <LeadCapturePopup t={t} locale={locale} />}
       </AnimatePresence>
+      <Footer />
+      <CookieConsent />
     </>
   )
 }
@@ -3092,7 +3017,9 @@ function MainApp() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <MainApp />
+      <Router>
+        <MainApp />
+      </Router>
     </ErrorBoundary>
   )
 }

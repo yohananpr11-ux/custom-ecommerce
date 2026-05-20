@@ -1,0 +1,17 @@
+# Environment files
+.env
+.env.local
+.env.production
+*.env
+backend/.env
+frontend/.env
+
+# Local DB backups and operational reports — contain customer data / noise
+backend/backups/
+backend/reports/
+
+# SQLite WAL/SHM runtime sidecar files — never commit
+backend/*.db-wal
+backend/*.db-shm
+*.db-wal
+*.db-shm

@@ -3,10 +3,10 @@ const db = require('../db');
 const telegram = require('./telegram');
 
 const SYSTEM_INSTRUCTION = `
-You are "Meni" (מני), the AI customer assistant of "Drip Street" (דריפ סטריט), a premium streetwear brand.
+You are "Meni", the AI customer assistant of "Drip Street", a premium streetwear brand.
 Answer questions about Drip Street's products, policies, sizing, and shipping in a friendly, cool, and premium tone.
 Keep your answers brief and concise (1-3 sentences max).
-Answer in the user's language (Hebrew if they write in Hebrew, English if English).
+Answer in English only.
 
 Store Sizing & Products:
 - Basic Tees (Gildan 64000 Softstyle): True to size, premium everyday tee (₪89.90 / $23.90).
@@ -26,20 +26,16 @@ class MeniChatService {
   async processMessage(sessionId, messageText, customerName = 'Guest') {
     const lower = messageText.toLowerCase();
     const isEscalationRequest = 
-      lower.includes('נציג') || 
-      lower.includes('אנושי') || 
-      lower.includes('בעלים') || 
-      lower.includes('בנאדם') || 
       lower.includes('human') || 
       lower.includes('support') || 
       lower.includes('representative') || 
       lower.includes('talk to') ||
-      lower.includes('עזרה');
+      lower.includes('help');
 
     if (isEscalationRequest) {
       await this.escalateToHuman(sessionId, customerName, messageText);
       return {
-        text: "אני מעביר אותך כעת לנציג אנושי. השאלה שלך נשלחה אליו ישירות בטלגרם והוא יחזור אליך בהקדם!",
+        text: "I'm transferring you to a human support representative now. Your message has been sent directly and you'll receive a reply shortly.",
         status: "escalated"
       };
     }
@@ -64,14 +60,14 @@ class MeniChatService {
       }
     }
 
-    // Smart Rule-based fallback engine (Multilingual)
-    let reply = "היי! אני מני, עוזר הבינה המלאכותית של דריפ סטריט. אני יכול לעזור לך עם שאלות על מידות, משלוחים או החזרות. לשאלות מורכבות יותר תוכל לבקש לדבר עם נציג אנושי!";
-    if (lower.includes('מידה') || lower.includes('מידות') || lower.includes('size') || lower.includes('sizing')) {
-      reply = "ההמלצות שלנו למידות:\n- טי-שירט בייסיק (Gildan Softstyle): מידה רגילה (True to size).\n- טי-שירט פרימיום (Bella Canvas): גזרה מעט צמודה, מומלץ לעלות מידה אחת ללוק אוברסייז/סטריט.\n- קפוצ'ונים: מידה רגילה ונוחה.";
-    } else if (lower.includes('משלוח') || lower.includes('משלוחים') || lower.includes('shipping') || lower.includes('delivery')) {
-      reply = "מדיניות המשלוחים שלנו:\n- משלוח חינם בכל רכישה של 5 פריטים ומעלה!\n- משלוח רגיל (5-7 ימי עסקים): 29.90₪\n- משלוח אקספרס (2-3 ימי עסקים): 49.90₪";
-    } else if (lower.includes('החזר') || lower.includes('החזרה') || lower.includes('החזרות') || lower.includes('return') || lower.includes('refund')) {
-      reply = "ניתן להחזיר או להחליף כל פריט שלא נלבש ושלא כובס תוך 14 ימים מקבלת המשלוח.";
+    // Smart rule-based fallback engine (English-only)
+    let reply = "Hi! I'm Meni, Drip Street's AI assistant. I can help with sizing, shipping, and returns. For anything advanced, ask to speak with a human support rep.";
+    if (lower.includes('size') || lower.includes('sizing')) {
+      reply = "Sizing guide:\n- Basic Tee (Gildan Softstyle): true to size.\n- Premium Tee (Bella+Canvas): slightly slim fit, we recommend sizing up for a boxy streetwear look.\n- Hoodies: comfortable regular fit.";
+    } else if (lower.includes('shipping') || lower.includes('delivery')) {
+      reply = "Shipping policy:\n- Free shipping on 5+ items.\n- Standard shipping (5-7 business days): ₪29.90\n- Express shipping (2-3 business days): ₪49.90";
+    } else if (lower.includes('return') || lower.includes('refund')) {
+      reply = "You can return or exchange any unworn and unwashed item within 14 days of delivery.";
     }
 
     return { text: reply, status: "bot" };
@@ -80,11 +76,11 @@ class MeniChatService {
   async escalateToHuman(sessionId, customerName, messageText) {
     db.run("UPDATE chat_sessions SET status = 'escalated' WHERE id = ?", [sessionId]);
     
-    const alertMsg = `🤖 <b>בוט מני: פניית לקוח הועברה לנציג אנושי!</b>\n\n` +
-      `<b>לקוח:</b> ${customerName}\n` +
-      `<b>מזהה שיחה:</b> <code>${sessionId}</code>\n` +
-      `<b>הודעה אחרונה:</b>\n"${messageText}"\n\n` +
-      `<b>מענה מהיר:</b> <code>/reply ${sessionId} כאן כותבים את התשובה</code>`;
+    const alertMsg = `🤖 <b>Meni Bot: Customer escalated to human support</b>\n\n` +
+      `<b>Customer:</b> ${customerName}\n` +
+      `<b>Session ID:</b> <code>${sessionId}</code>\n` +
+      `<b>Last message:</b>\n"${messageText}"\n\n` +
+      `<b>Quick reply:</b> <code>/reply ${sessionId} write your response here</code>`;
       
     await telegram.sendMessage(alertMsg);
   }
