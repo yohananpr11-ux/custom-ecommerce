@@ -2087,6 +2087,58 @@ app.post('/api/webhooks/telegram', async (req, res) => {
       return res.json({ received: true, ignored: true, reason: 'unauthorized_chat' });
     }
 
+    // === Admin Coupon Command (Telegram → quick coupon generation) ===
+    // Clear active coupon: "/coupon clear" or "קופון בטל"
+    const couponClearMatch = /^(?:\/coupon\s+(?:clear|off|stop|cancel)|קופון\s+(?:בטל|נקה|כיבוי|הפסק))\s*$/i.test(message.text);
+
+    if (couponClearMatch) {
+      const had = currentActiveCoupon ? currentActiveCoupon.code : null;
+      currentActiveCoupon = null;
+      await telegram.sendMessage(had
+        ? `🧹 Coupon <code>${had}</code> cleared.`
+        : `ℹ️ No active coupon to clear.`).catch(() => null);
+      return res.json({ received: true, action: 'coupon_cleared', code: had });
+    }
+
+    // Create coupon: "/coupon 50" or "/coupon 50 24" (pct, hours)
+    //                "קופון 100" or "קופון 50 2"
+    const couponMatch = String(message.text).match(/^(?:\/coupon|קופון)\s+(\d{1,3})\s*%?(?:\s+(\d{1,3}))?\s*$/i);
+
+    if (couponMatch) {
+      const pct = parseInt(couponMatch[1], 10);
+      const hours = couponMatch[2] ? parseInt(couponMatch[2], 10) : 1;
+
+      if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
+        await telegram.sendMessage(`⚠️ Invalid discount: <b>${pct}</b>. Use 1-100.`).catch(() => null);
+        return res.json({ received: true, error: 'invalid_pct' });
+      }
+      if (!Number.isFinite(hours) || hours < 1 || hours > 168) {
+        await telegram.sendMessage(`⚠️ Invalid duration: <b>${hours}h</b>. Use 1-168 hours.`).catch(() => null);
+        return res.json({ received: true, error: 'invalid_hours' });
+      }
+
+      const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+      const code = `MENI-${suffix}`;
+      currentActiveCoupon = { code, discount_pct: pct };
+
+      setTimeout(() => {
+        if (currentActiveCoupon && currentActiveCoupon.code === code) {
+          currentActiveCoupon = null;
+          console.log(`Coupon ${code} expired.`);
+          telegram.sendMessage(`⏰ Coupon <code>${code}</code> expired automatically.`).catch(() => null);
+        }
+      }, hours * 60 * 60 * 1000);
+
+      const reply = `✅ <b>Coupon Created</b>\n\n`
+        + `<b>Code:</b> <code>${code}</code>\n`
+        + `<b>Discount:</b> ${pct}% off\n`
+        + `<b>Valid for:</b> ${hours} hour${hours !== 1 ? 's' : ''}\n\n`
+        + `Tap the code above to copy, then paste at checkout.`;
+
+      await telegram.sendMessage(reply).catch(() => null);
+      return res.json({ received: true, coupon: code, discount: pct, hours });
+    }
+
     const commandMatch = String(message.text).match(/^\/reply\s+(session_[a-z0-9_-]+)\s+([\s\S]+)/i);
     const sessionId = commandMatch
       ? commandMatch[1]
