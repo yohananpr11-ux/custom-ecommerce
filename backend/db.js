@@ -126,55 +126,58 @@ db.serialize(() => {
     )
   `);
 
-  // Helper to safely add column if not exists
-  const addColumnIfMissing = (tableName, columnName, columnDefinition) => {
-    db.all(`PRAGMA table_info(${tableName})`, (err, columns) => {
-      if (err) {
-        console.error(`Error fetching table info for ${tableName}:`, err.message);
-        return;
+});
+
+// Helper to safely add column if not exists — returns a Promise
+const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Promise((resolve) => {
+  db.all(`PRAGMA table_info(${tableName})`, (err, columns) => {
+    if (err) {
+      console.error(`Error fetching table info for ${tableName}:`, err.message);
+      return resolve();
+    }
+    const hasColumn = columns && columns.some(c => c.name === columnName);
+    if (hasColumn) return resolve();
+
+    db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`, (alterErr) => {
+      if (alterErr && !/duplicate column name/i.test(alterErr.message)) {
+        console.error(`Error adding column ${columnName} to ${tableName}:`, alterErr.message);
+      } else {
+        console.log(`Successfully added column ${columnName} to ${tableName}`);
       }
-      const hasColumn = columns && columns.some(c => c.name === columnName);
-      if (!hasColumn) {
-        db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`, (alterErr) => {
-          if (alterErr) {
-            console.error(`Error adding column ${columnName} to ${tableName}:`, alterErr.message);
-          } else {
-            console.log(`Successfully added column ${columnName} to ${tableName}`);
-          }
-        });
-      }
+      resolve();
     });
-  };
+  });
+});
 
-  // Migrate: products table
-  addColumnIfMissing('products', 'backImageUrl', 'TEXT');
-  addColumnIfMissing('products', 'images', 'TEXT');
-  addColumnIfMissing('products', 'printifyId', 'TEXT');
-  addColumnIfMissing('products', 'fabric', 'TEXT');
-  addColumnIfMissing('products', 'careInstructions', 'TEXT');
-  addColumnIfMissing('products', 'deliveryInfo', 'TEXT');
-
-  // Migrate: orders table
-  addColumnIfMissing('orders', 'promoCode', 'TEXT');
-  addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0');
-  addColumnIfMissing('orders', 'emailSent', 'INTEGER DEFAULT 0');
-  addColumnIfMissing('orders', 'emailAttempts', 'INTEGER DEFAULT 0');
-  addColumnIfMissing('orders', 'lastEmailAttemptAt', 'TEXT');
-
-  // Migrate: product_variants table
-  addColumnIfMissing('product_variants', 'imageUrl', 'TEXT');
-  addColumnIfMissing('product_variants', 'stockQty', 'INTEGER');
-
-  // Migrate: order_items table
-  addColumnIfMissing('order_items', 'variantId', 'INTEGER');
-  addColumnIfMissing('order_items', 'selectedColor', 'TEXT');
-  addColumnIfMissing('order_items', 'selectedSize', 'TEXT');
-
-  // Migrate: leads table
-  addColumnIfMissing('leads', 'emailSent', 'INTEGER DEFAULT 0');
-  addColumnIfMissing('leads', 'emailAttempts', 'INTEGER DEFAULT 0');
-  addColumnIfMissing('leads', 'lastEmailAttemptAt', 'TEXT');
-  addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0');
+// Run all column migrations, then create indexes (which depend on the new columns)
+(async () => {
+  await Promise.all([
+    // products
+    addColumnIfMissing('products', 'backImageUrl', 'TEXT'),
+    addColumnIfMissing('products', 'images', 'TEXT'),
+    addColumnIfMissing('products', 'printifyId', 'TEXT'),
+    addColumnIfMissing('products', 'fabric', 'TEXT'),
+    addColumnIfMissing('products', 'careInstructions', 'TEXT'),
+    addColumnIfMissing('products', 'deliveryInfo', 'TEXT'),
+    // orders
+    addColumnIfMissing('orders', 'promoCode', 'TEXT'),
+    addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0'),
+    addColumnIfMissing('orders', 'emailSent', 'INTEGER DEFAULT 0'),
+    addColumnIfMissing('orders', 'emailAttempts', 'INTEGER DEFAULT 0'),
+    addColumnIfMissing('orders', 'lastEmailAttemptAt', 'TEXT'),
+    // product_variants
+    addColumnIfMissing('product_variants', 'imageUrl', 'TEXT'),
+    addColumnIfMissing('product_variants', 'stockQty', 'INTEGER'),
+    // order_items
+    addColumnIfMissing('order_items', 'variantId', 'INTEGER'),
+    addColumnIfMissing('order_items', 'selectedColor', 'TEXT'),
+    addColumnIfMissing('order_items', 'selectedSize', 'TEXT'),
+    // leads
+    addColumnIfMissing('leads', 'emailSent', 'INTEGER DEFAULT 0'),
+    addColumnIfMissing('leads', 'emailAttempts', 'INTEGER DEFAULT 0'),
+    addColumnIfMissing('leads', 'lastEmailAttemptAt', 'TEXT'),
+    addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0'),
+  ]);
 
   // Purge any local placeholder products to prevent non-fulfillment checkout errors
   db.run("DELETE FROM products WHERE type = 'local'", (err) => {
@@ -182,11 +185,13 @@ db.serialize(() => {
     else console.log("Purged local mock products successfully.");
   });
 
-  // Create indexes for scaling & query performance
+  // Create indexes only AFTER all column migrations complete
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_unsubscribed_emailSent ON leads(unsubscribed, emailSent, emailAttempts)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_orders_emailSent_status ON orders(status, emailSent, emailAttempts)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId)`);
+})().catch((err) => {
+  console.error('Schema migration block failed:', err.message);
 });
 
 module.exports = db;
