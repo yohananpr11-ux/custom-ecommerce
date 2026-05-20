@@ -8,6 +8,21 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.error('Error connecting to database:', err.message);
   } else {
     console.log('Connected to SQLite database.');
+    db.configure('busyTimeout', 5000);
+    db.run('PRAGMA journal_mode = WAL', (pragmaErr) => {
+      if (pragmaErr) {
+        console.error('Error setting journal_mode to WAL:', pragmaErr.message);
+      } else {
+        console.log('SQLite WAL mode enabled.');
+      }
+    });
+    db.run('PRAGMA synchronous = NORMAL', (syncErr) => {
+      if (syncErr) {
+        console.error('Error setting synchronous to NORMAL:', syncErr.message);
+      } else {
+        console.log('SQLite synchronous mode set to NORMAL.');
+      }
+    });
   }
 });
 
@@ -111,36 +126,67 @@ db.serialize(() => {
     )
   `);
 
-  // Migrate: add new columns to existing products table if they don't exist
-  db.run(`ALTER TABLE products ADD COLUMN backImageUrl TEXT`, () => {});
-  db.run(`ALTER TABLE products ADD COLUMN images TEXT`, () => {});
-  db.run(`ALTER TABLE products ADD COLUMN printifyId TEXT`, () => {});
-  db.run(`ALTER TABLE products ADD COLUMN fabric TEXT`, () => {});
-  db.run(`ALTER TABLE products ADD COLUMN careInstructions TEXT`, () => {});
-  db.run(`ALTER TABLE products ADD COLUMN deliveryInfo TEXT`, () => {});
+  // Helper to safely add column if not exists
+  const addColumnIfMissing = (tableName, columnName, columnDefinition) => {
+    db.all(`PRAGMA table_info(${tableName})`, (err, columns) => {
+      if (err) {
+        console.error(`Error fetching table info for ${tableName}:`, err.message);
+        return;
+      }
+      const hasColumn = columns && columns.some(c => c.name === columnName);
+      if (!hasColumn) {
+        db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`, (alterErr) => {
+          if (alterErr) {
+            console.error(`Error adding column ${columnName} to ${tableName}:`, alterErr.message);
+          } else {
+            console.log(`Successfully added column ${columnName} to ${tableName}`);
+          }
+        });
+      }
+    });
+  };
 
-  // Migrate: add promo columns to orders table if missing
-  db.run(`ALTER TABLE orders ADD COLUMN promoCode TEXT`, () => {});
-  db.run(`ALTER TABLE orders ADD COLUMN promoDiscount REAL DEFAULT 0`, () => {});
-  db.run(`ALTER TABLE orders ADD COLUMN emailSent INTEGER DEFAULT 0`, () => {});
-  db.run(`ALTER TABLE orders ADD COLUMN emailAttempts INTEGER DEFAULT 0`, () => {});
+  // Migrate: products table
+  addColumnIfMissing('products', 'backImageUrl', 'TEXT');
+  addColumnIfMissing('products', 'images', 'TEXT');
+  addColumnIfMissing('products', 'printifyId', 'TEXT');
+  addColumnIfMissing('products', 'fabric', 'TEXT');
+  addColumnIfMissing('products', 'careInstructions', 'TEXT');
+  addColumnIfMissing('products', 'deliveryInfo', 'TEXT');
 
-  
-  // Migrate: add imageUrl to product_variants table
-  db.run(`ALTER TABLE product_variants ADD COLUMN imageUrl TEXT`, () => {});
-  db.run(`ALTER TABLE product_variants ADD COLUMN stockQty INTEGER`, () => {});
-  
-  // Migrate: add missing columns to order_items table
-  db.run(`ALTER TABLE order_items ADD COLUMN variantId INTEGER`, () => {});
-  db.run(`ALTER TABLE order_items ADD COLUMN selectedColor TEXT`, () => {});
-  db.run(`ALTER TABLE order_items ADD COLUMN selectedSize TEXT`, () => {});
+  // Migrate: orders table
+  addColumnIfMissing('orders', 'promoCode', 'TEXT');
+  addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0');
+  addColumnIfMissing('orders', 'emailSent', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('orders', 'emailAttempts', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('orders', 'lastEmailAttemptAt', 'TEXT');
 
-  
+  // Migrate: product_variants table
+  addColumnIfMissing('product_variants', 'imageUrl', 'TEXT');
+  addColumnIfMissing('product_variants', 'stockQty', 'INTEGER');
+
+  // Migrate: order_items table
+  addColumnIfMissing('order_items', 'variantId', 'INTEGER');
+  addColumnIfMissing('order_items', 'selectedColor', 'TEXT');
+  addColumnIfMissing('order_items', 'selectedSize', 'TEXT');
+
+  // Migrate: leads table
+  addColumnIfMissing('leads', 'emailSent', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('leads', 'emailAttempts', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('leads', 'lastEmailAttemptAt', 'TEXT');
+  addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0');
+
   // Purge any local placeholder products to prevent non-fulfillment checkout errors
   db.run("DELETE FROM products WHERE type = 'local'", (err) => {
     if (err) console.error("Error purging local products:", err.message);
     else console.log("Purged local mock products successfully.");
   });
+
+  // Create indexes for scaling & query performance
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_unsubscribed_emailSent ON leads(unsubscribed, emailSent, emailAttempts)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_orders_emailSent_status ON orders(status, emailSent, emailAttempts)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId)`);
 });
 
 module.exports = db;

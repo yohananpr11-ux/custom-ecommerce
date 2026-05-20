@@ -1052,15 +1052,24 @@ app.post('/api/leads', async (req, res) => {
     }
 
     await dbRunAsync(
-      `INSERT INTO leads (email, promo_code, is_used) VALUES (?, ?, 0)`,
-      [email, promoCode]
+      `INSERT INTO leads (email, promo_code, is_used, emailSent, emailAttempts, lastEmailAttemptAt) VALUES (?, ?, 0, 0, 1, ?)`,
+      [email, promoCode, new Date().toISOString()]
     );
 
     emailService.sendCouponEmail(email, promoCode)
-      .then((resObj) => console.log(`[leads] welcome email sent to ${email} (ok: ${resObj?.ok})`))
-      .catch((err) => {
-        console.error(`[leads] welcome email failed for ${email}:`, err.message);
-        telegram.sendMessage(`⚠️ <b>Welcome email failed</b>\nLead: ${email}\nError: ${err.message}`).catch(() => null);
+      .then(async (resObj) => {
+        if (resObj && resObj.ok) {
+          console.log(`[leads] welcome email sent to ${email} (ok: true)`);
+          await dbRunAsync(`UPDATE leads SET emailSent = 1 WHERE email = ?`, [email]).catch(e => console.error(`Error updating lead emailSent for ${email}:`, e.message));
+        } else {
+          console.warn(`[leads] welcome email failed to deliver to ${email} (ok: false)`);
+          const errorMsg = resObj?.error?.message || resObj?.reason || 'Unknown delivery failure';
+          await telegram.sendMessage(`⚠️ <b>Welcome email delivery failed</b>\nLead: ${email}\nError: ${errorMsg}`).catch(() => null);
+        }
+      })
+      .catch(async (err) => {
+        console.error(`[leads] welcome email system error for ${email}:`, err.message);
+        await telegram.sendMessage(`⚠️ <b>Welcome email system error</b>\nLead: ${email}\nError: ${err.message}`).catch(() => null);
       });
 
     await telegram.sendMessage(`🔥 <b>New Lead</b>: ${email} | <b>Code Generated</b>: ${promoCode}`).catch(() => null);
@@ -1144,6 +1153,631 @@ app.post('/api/admin/update-prices', async (req, res) => {
     res.status(500).json({ error: 'Price update failed' });
   }
 });
+
+// Admin Manually Trigger Email Retry Recovery
+app.post('/api/admin/retry-emails', async (req, res) => {
+  try {
+    const force = req.body?.force === true;
+    console.log(`⏰ [Admin Manual Trigger] Running email recovery... (force: ${force})`);
+    const result = await runEmailRetryRecovery(force);
+    res.json({ success: true, message: 'Email retry recovery triggered successfully.', ...result });
+  } catch (error) {
+    res.status(500).json({ error: 'Manual email recovery trigger failed: ' + error.message });
+  }
+});
+
+// --- Helpers for Cryptographic Signatures & Webhook Verification ---
+
+const verifyUnsubscribeSig = (email, sig) => {
+  if (!email || !sig) return false;
+  const expectedSig = emailService.generateUnsubscribeSignature(email);
+  if (sig.length !== expectedSig.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSig, 'hex'));
+  } catch (e) {
+    return false;
+  }
+};
+
+const verifySvixSignature = (rawBody, headers, secret) => {
+  const svixId = headers['svix-id'] || headers['webhook-id'];
+  const svixTimestamp = headers['svix-timestamp'] || headers['webhook-timestamp'];
+  const svixSignature = headers['svix-signature'] || headers['webhook-signature'];
+
+  if (!svixId || !svixTimestamp || !svixSignature || !secret) {
+    return false;
+  }
+
+  // Check timestamp age to protect against replay attacks (e.g. 5 minutes)
+  const now = Math.floor(Date.now() / 1000);
+  const timestamp = parseInt(svixTimestamp, 10);
+  if (isNaN(timestamp) || Math.abs(now - timestamp) > 300) {
+    return false;
+  }
+
+  // Prepare secret key
+  let secretKey = secret;
+  if (secret.startsWith('whsec_')) {
+    secretKey = secret.substring(6);
+  }
+  const secretBuffer = Buffer.from(secretKey, 'base64');
+
+  // Construct signing payload
+  const toSign = `${svixId}.${svixTimestamp}.${rawBody}`;
+
+  // Calculate signature
+  const expectedSignature = crypto
+    .createHmac('sha256', secretBuffer)
+    .update(toSign)
+    .digest('base64');
+
+  // Check signature in the svix-signature header
+  const passedSignatures = svixSignature.split(' ');
+  for (const sig of passedSignatures) {
+    const parts = sig.split(',');
+    if (parts.length === 2 && parts[0] === 'v1') {
+      try {
+        if (crypto.timingSafeEqual(Buffer.from(parts[1], 'base64'), Buffer.from(expectedSignature, 'base64'))) {
+          return true;
+        }
+      } catch (e) {
+        // Handle potential buffer length mismatch
+      }
+    }
+  }
+  return false;
+};
+
+const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, sig, showConfirm }) => {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>DRIP STREET | SUBSCRIPTION</title>
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+      <style>
+        :root {
+          --bg-color: #050505;
+          --panel-bg: rgba(255, 255, 255, 0.02);
+          --panel-border: rgba(255, 255, 255, 0.05);
+          --accent-color: #ffffff;
+          --accent-hover: #111111;
+          --text-primary: #ffffff;
+          --text-secondary: #888888;
+          --text-muted: #444444;
+          --success-color: #4caf50;
+          --warning-color: #ff9800;
+          --error-color: #f44336;
+        }
+
+        body {
+          margin: 0;
+          padding: 0;
+          background-color: var(--bg-color);
+          color: var(--text-primary);
+          font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+          overflow-x: hidden;
+        }
+
+        .bg-glow-1 {
+          position: absolute;
+          width: 400px;
+          height: 400px;
+          background: radial-gradient(circle, rgba(255, 255, 255, 0.03) 0%, rgba(0,0,0,0) 70%);
+          top: 10%;
+          left: 10%;
+          z-index: 0;
+          pointer-events: none;
+        }
+        .bg-glow-2 {
+          position: absolute;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, rgba(255, 255, 255, 0.02) 0%, rgba(0,0,0,0) 70%);
+          bottom: 10%;
+          right: 10%;
+          z-index: 0;
+          pointer-events: none;
+        }
+
+        .container {
+          position: relative;
+          max-width: 480px;
+          width: 90%;
+          background: var(--panel-bg);
+          border: 1px solid var(--panel-border);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border-radius: 16px;
+          padding: 50px 40px;
+          text-align: center;
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+          z-index: 1;
+          animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          box-sizing: border-box;
+          transition: opacity 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .logo {
+          font-size: 32px;
+          font-weight: 900;
+          letter-spacing: 0.25em;
+          text-transform: uppercase;
+          margin-bottom: 40px;
+          color: var(--text-primary);
+          text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+        }
+
+        .icon-wrapper {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.01);
+          border: 1px solid var(--panel-border);
+          margin-bottom: 25px;
+          position: relative;
+        }
+
+        .icon {
+          font-size: 32px;
+          line-height: 1;
+          display: inline-block;
+          animation: scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes scaleIn {
+          from { transform: scale(0.5); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+
+        .icon.success { color: var(--success-color); text-shadow: 0 0 15px rgba(76, 175, 80, 0.3); }
+        .icon.warning { color: var(--warning-color); text-shadow: 0 0 15px rgba(255, 152, 0, 0.3); }
+        .icon.error { color: var(--error-color); text-shadow: 0 0 15px rgba(244, 67, 54, 0.3); }
+
+        h1 {
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          margin: 0 0 15px 0;
+          color: var(--text-primary);
+        }
+
+        p {
+          font-size: 14px;
+          line-height: 1.7;
+          color: var(--text-secondary);
+          margin: 0 0 35px 0;
+        }
+
+        p strong {
+          color: var(--text-primary);
+        }
+
+        .btn-group {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background-color: var(--accent-color);
+          color: #000000;
+          text-decoration: none;
+          width: 100%;
+          max-width: 240px;
+          height: 50px;
+          font-size: 13px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.15em;
+          border-radius: 8px;
+          border: 1px solid var(--accent-color);
+          cursor: pointer;
+          box-sizing: border-box;
+          transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .btn::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: -50%;
+          width: 200%;
+          height: 100%;
+          background: linear-gradient(to right, transparent, rgba(255,255,255,0.1), transparent);
+          transform: skewX(-25deg);
+          transition: 0.75s;
+        }
+
+        .btn:hover::after {
+          left: 125%;
+        }
+
+        .btn:hover {
+          background-color: transparent;
+          color: var(--text-primary);
+          transform: translateY(-2px);
+          box-shadow: 0 10px 20px rgba(255, 255, 255, 0.05);
+        }
+
+        .btn:active {
+          transform: translateY(0);
+        }
+
+        .btn-secondary {
+          background-color: transparent;
+          color: var(--text-secondary);
+          border: 1px solid var(--panel-border);
+        }
+
+        .btn-secondary:hover {
+          background-color: rgba(255, 255, 255, 0.02);
+          color: var(--text-primary);
+          border-color: rgba(255, 255, 255, 0.15);
+          box-shadow: none;
+        }
+
+        .footer-brand {
+          margin-top: 40px;
+          font-size: 11px;
+          letter-spacing: 0.15em;
+          color: var(--text-muted);
+          text-transform: uppercase;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="bg-glow-1"></div>
+      <div class="bg-glow-2"></div>
+      <div class="container">
+        <div class="logo">DRIP STREET</div>
+        <div class="icon-wrapper">
+          <div id="status-icon" class="icon ${statusClass}">
+            ${statusClass === 'success' ? '✓' : statusClass === 'warning' ? '?' : '⚠'}
+          </div>
+        </div>
+        <h1 id="status-title">${messageHtml}</h1>
+        <p id="status-desc">${subtextHtml}</p>
+        <div class="btn-group">
+          ${showConfirm ? `
+            <button id="confirm-unsubscribe-btn" class="btn">Confirm Unsubscribe</button>
+          ` : (statusClass === 'success' ? `
+            <button id="resubscribe-btn" class="btn">Keep Me Subscribed</button>
+          ` : '')}
+          <a href="https://custom-ecommerce-seven.vercel.app" class="btn btn-secondary">Return to Store</a>
+        </div>
+        <div class="footer-brand">&copy; 2026 DRIP STREET SHP</div>
+      </div>
+
+      <script>
+        const resubscribeBtn = document.getElementById('resubscribe-btn');
+        if (resubscribeBtn) {
+          resubscribeBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            resubscribeBtn.disabled = true;
+            resubscribeBtn.textContent = 'Processing...';
+            
+            try {
+              const response = await fetch('/api/resubscribe?email=' + encodeURIComponent('${email}'), {
+                method: 'POST'
+              });
+              const result = await response.json();
+              if (result.success) {
+                const container = document.querySelector('.container');
+                container.style.opacity = 0;
+                setTimeout(() => {
+                  document.getElementById('status-icon').className = 'icon success';
+                  document.getElementById('status-icon').textContent = '✓';
+                  document.getElementById('status-title').textContent = 'WELCOME BACK';
+                  document.getElementById('status-desc').innerHTML = 'Your subscription has been successfully restored! You will continue to receive fresh drops and discount codes at <strong>${email}</strong>.';
+                  resubscribeBtn.style.display = 'none';
+                  container.style.opacity = 1;
+                }, 300);
+              } else {
+                resubscribeBtn.disabled = false;
+                resubscribeBtn.textContent = 'Keep Me Subscribed';
+                alert('Failed to resubscribe: ' + (result.error || 'unknown error'));
+              }
+            } catch (err) {
+              resubscribeBtn.disabled = false;
+              resubscribeBtn.textContent = 'Keep Me Subscribed';
+              alert('Failed to resubscribe due to a network error.');
+            }
+          });
+        }
+
+        const confirmBtn = document.getElementById('confirm-unsubscribe-btn');
+        if (confirmBtn) {
+          confirmBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Unsubscribing...';
+
+            try {
+              const response = await fetch('/api/unsubscribe', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  email: '${email}',
+                  sig: '${sig}',
+                  confirm: true
+                })
+              });
+              const result = await response.json();
+              if (result.success) {
+                const container = document.querySelector('.container');
+                container.style.opacity = 0;
+                setTimeout(() => {
+                  document.getElementById('status-icon').className = 'icon success';
+                  document.getElementById('status-icon').textContent = '✓';
+                  document.getElementById('status-title').textContent = 'UNSUBSCRIBED';
+                  document.getElementById('status-desc').innerHTML = 'You have been removed from our newsletter list. You will no longer receive emails at <strong>${email}</strong>.';
+                  confirmBtn.style.display = 'none';
+                  
+                  const btnGroup = document.querySelector('.btn-group');
+                  btnGroup.innerHTML = \`
+                    <button id="resubscribe-btn-dynamic" class="btn">Keep Me Subscribed</button>
+                    <a href="https://custom-ecommerce-seven.vercel.app" class="btn btn-secondary">Return to Store</a>
+                  \`;
+                  
+                  const dynamicResubscribeBtn = document.getElementById('resubscribe-btn-dynamic');
+                  dynamicResubscribeBtn.addEventListener('click', async (evt) => {
+                    evt.preventDefault();
+                    dynamicResubscribeBtn.disabled = true;
+                    dynamicResubscribeBtn.textContent = 'Processing...';
+                    try {
+                      const resObj = await fetch('/api/resubscribe?email=' + encodeURIComponent('${email}'), { method: 'POST' });
+                      const resData = await resObj.json();
+                      if (resData.success) {
+                        container.style.opacity = 0;
+                        setTimeout(() => {
+                          document.getElementById('status-icon').className = 'icon success';
+                          document.getElementById('status-icon').textContent = '✓';
+                          document.getElementById('status-title').textContent = 'WELCOME BACK';
+                          document.getElementById('status-desc').innerHTML = 'Your subscription has been successfully restored! You will continue to receive fresh drops and discount codes at <strong>${email}</strong>.';
+                          dynamicResubscribeBtn.style.display = 'none';
+                          container.style.opacity = 1;
+                        }, 300);
+                      } else {
+                        dynamicResubscribeBtn.disabled = false;
+                        dynamicResubscribeBtn.textContent = 'Keep Me Subscribed';
+                        alert('Failed to resubscribe: ' + (resData.error || 'unknown error'));
+                      }
+                    } catch (ex) {
+                      dynamicResubscribeBtn.disabled = false;
+                      dynamicResubscribeBtn.textContent = 'Keep Me Subscribed';
+                      alert('Network error trying to resubscribe.');
+                    }
+                  });
+                  
+                  container.style.opacity = 1;
+                }, 300);
+              } else {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Confirm Unsubscribe';
+                alert('Failed to unsubscribe: ' + (result.error || 'unknown error'));
+              }
+            } catch (err) {
+              confirmBtn.disabled = false;
+              confirmBtn.textContent = 'Confirm Unsubscribe';
+              alert('Failed to unsubscribe due to a network error.');
+            }
+          });
+        }
+      </script>
+    </body>
+    </html>
+  `;
+};
+
+// Unsubscribe Endpoint (Opt-out compliant with RFC 8058 One-Click unsubscribe)
+app.post('/api/unsubscribe', async (req, res) => {
+  try {
+    const email = String(req.query.email || req.body.email || '').trim().toLowerCase();
+    const sig = String(req.query.sig || req.body.sig || '').trim();
+    const confirm = String(req.query.confirm || req.body.confirm || '').trim() === 'true';
+
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+
+    const isValid = verifyUnsubscribeSig(email, sig);
+
+    // Block non-confirmed unsubscribes that have invalid signatures (crawler prevention)
+    if (!isValid && !confirm) {
+      console.warn(`🛡️ [Unsubscribe Blocked] Opt-out rejected for ${email} - invalid signature and no manual confirmation.`);
+      return res.status(403).json({ success: false, error: 'Invalid unsubscribe signature or confirmation required' });
+    }
+
+    const result = await dbRunAsync(`UPDATE leads SET unsubscribed = 1 WHERE email = ?`, [email]);
+    console.log(`✉️ [Unsubscribe] Programmatic opt-out completed for ${email} (changes: ${result.changes}, validSig: ${isValid}, manualConfirm: ${confirm})`);
+    return res.json({ success: true, message: 'Unsubscribed successfully.' });
+  } catch (err) {
+    console.error('Unsubscribe POST failed:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// Resubscribe Endpoint (Allow users to opt back in)
+app.post('/api/resubscribe', async (req, res) => {
+  try {
+    const email = String(req.query.email || req.body.email || '').trim().toLowerCase();
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+
+    const lead = await dbGetAsync(`SELECT id FROM leads WHERE email = ?`, [email]);
+    if (!lead) {
+      return res.status(404).json({ success: false, error: 'Email address is not registered' });
+    }
+
+    await dbRunAsync(
+      `UPDATE leads SET unsubscribed = 0, emailSent = 0, emailAttempts = 0, lastEmailAttemptAt = NULL WHERE email = ?`,
+      [email]
+    );
+
+    console.log(`✉️ [Resubscribe] Opt-in completed for ${email}`);
+    await telegram.sendMessage(`🔥 <b>Lead Resubscribed</b>\nEmail: <code>${email}</code>`).catch(() => null);
+
+    return res.json({ success: true, message: 'Resubscribed successfully.' });
+  } catch (err) {
+    console.error('Resubscribe POST failed:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// Resend Webhooks: Catch bounces and spam complaints to protect sender reputation
+// Raw body is required for Svix signature verification
+app.post('/api/webhooks/resend', express.raw({type: 'application/json'}), async (req, res) => {
+  try {
+    const rawBody = req.body ? req.body.toString('utf8') : '';
+    let payload = {};
+    try {
+      payload = JSON.parse(rawBody || '{}');
+    } catch (parseErr) {
+      return res.status(400).json({ error: 'Invalid JSON payload' });
+    }
+
+    // Verify Svix Webhook Signatures if configured
+    const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+    if (webhookSecret && webhookSecret !== 'your_webhook_secret_here') {
+      const verified = verifySvixSignature(rawBody, req.headers, webhookSecret);
+      if (!verified) {
+        console.warn('⚠️ [Resend Webhook] Signature verification failed');
+        return res.status(401).send('Webhook signature verification failed');
+      }
+    }
+
+    const type = payload.type; // e.g. "email.bounced" or "email.complained"
+    const data = payload.data || {};
+    const toList = Array.isArray(data.to) ? data.to : (data.to ? [data.to] : []);
+
+    if (!type || toList.length === 0) {
+      return res.json({ received: true, ignored: true, reason: 'missing_event_or_recipient' });
+    }
+
+    console.log(`✉️ [Resend Webhook] Event: ${type} for recipients: ${toList.join(', ')}`);
+
+    for (const recipient of toList) {
+      const email = String(recipient).trim().toLowerCase();
+      if (isValidEmail(email)) {
+        if (type === 'email.bounced' || type === 'email.complained') {
+          // Mark as unsubscribed to block further recovery attempts
+          await dbRunAsync(`UPDATE leads SET unsubscribed = 1 WHERE email = ?`, [email]);
+          
+          let alertMsg = '';
+          if (type === 'email.bounced') {
+            alertMsg = `⚠️ <b>Email Bounced (Resend)</b>\nRecipient: <code>${email}</code>\nSubject: ${data.subject || 'N/A'}\nStatus: Marked as unsubscribed/bounced locally.`;
+          } else {
+            alertMsg = `⚠️ <b>Spam Complaint (Resend)</b>\nRecipient: <code>${email}</code>\nSubject: ${data.subject || 'N/A'}\nStatus: Marked as unsubscribed locally.`;
+          }
+          await telegram.sendMessage(alertMsg).catch(() => null);
+        }
+      }
+    }
+
+    return res.json({ received: true });
+  } catch (err) {
+    console.error('Resend Webhook failed:', err.message);
+    return res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+app.get('/api/unsubscribe', async (req, res) => {
+  const email = String(req.query.email || '').trim().toLowerCase();
+  const sig = String(req.query.sig || '').trim();
+
+  if (!email || !isValidEmail(email)) {
+    return res.send(renderUnsubscribePage({
+      statusClass: 'error',
+      messageHtml: 'INVALID REQUEST',
+      subtextHtml: 'The unsubscribe link is invalid or incomplete. Please check your email link or contact support.',
+      email: '',
+      sig: '',
+      showConfirm: false
+    }));
+  }
+
+  const isValid = verifyUnsubscribeSig(email, sig);
+
+  if (isValid) {
+    // Automatically unsubscribe on GET if signature matches (human 1-click experience)
+    try {
+      const lead = await dbGetAsync(`SELECT id FROM leads WHERE email = ?`, [email]);
+      if (!lead) {
+        // Render success even if lead is not found to prevent user enum/leakage, but log it
+        return res.send(renderUnsubscribePage({
+          statusClass: 'success',
+          messageHtml: 'SUCCESSFULLY UNSUBSCRIBED',
+          subtextHtml: `Your email address <strong>${email}</strong> is not registered or has already been removed.`,
+          email,
+          sig,
+          showConfirm: false
+        }));
+      }
+
+      await dbRunAsync(`UPDATE leads SET unsubscribed = 1 WHERE email = ?`, [email]);
+      console.log(`✉️ [Unsubscribe] GET auto opt-out completed for ${email}`);
+      
+      return res.send(renderUnsubscribePage({
+        statusClass: 'success',
+        messageHtml: 'SUCCESSFULLY UNSUBSCRIBED',
+        subtextHtml: `You have been removed from our streetwear newsletter group. You will no longer receive drops, restock updates, or coupon emails at <strong>${email}</strong>.`,
+        email,
+        sig,
+        showConfirm: false
+      }));
+    } catch (err) {
+      console.error('Unsubscribe GET DB failed:', err.message);
+      return res.send(renderUnsubscribePage({
+        statusClass: 'error',
+        messageHtml: 'SYSTEM ERROR',
+        subtextHtml: 'An unexpected error occurred while processing your unsubscribe request. Please try again later.',
+        email,
+        sig,
+        showConfirm: false
+      }));
+    }
+  } else {
+    // Missing or invalid signature (bot-crawler protection active)
+    // Display interactive streetwear confirmation gate
+    return res.send(renderUnsubscribePage({
+      statusClass: 'warning',
+      messageHtml: 'CONFIRM UNSUBSCRIBE',
+      subtextHtml: `Are you sure you want to unsubscribe <strong>${email}</strong> from our newsletter?`,
+      email,
+      sig,
+      showConfirm: true
+    }));
+  }
+});
+
 
 // Contact Form Endpoint
 app.post('/api/contact', async (req, res) => {
@@ -1533,6 +2167,154 @@ app.get('/api/chat/history/:sessionId', (req, res) => {
   });
 });
 
+// Core Email Recovery & Retry Logic
+const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
+  console.log(`🔄 [Email Recovery] Checking for undelivered receipt and welcome emails... (forceIgnoreBackoff: ${forceIgnoreBackoff})`);
+  const stats = { ordersChecked: 0, ordersRecovered: 0, leadsChecked: 0, leadsRecovered: 0 };
+  
+  try {
+    const nowIso = new Date().toISOString();
+
+    // 1. Recover Order Emails
+    const pendingOrders = await dbAllAsync(
+      `SELECT * FROM orders WHERE status = 'paid' AND (emailSent IS NULL OR emailSent = 0) AND COALESCE(emailAttempts, 0) < 5`
+    );
+    
+    if (pendingOrders && pendingOrders.length > 0) {
+      console.log(`🔄 Found ${pendingOrders.length} paid orders with unsent emails. Assessing...`);
+      for (const order of pendingOrders) {
+        try {
+          stats.ordersChecked += 1;
+          const attempts = Number(order.emailAttempts || 0);
+          const lastAttemptAt = order.lastEmailAttemptAt;
+
+          if (!forceIgnoreBackoff && attempts > 0 && lastAttemptAt) {
+            const elapsedMs = Date.now() - new Date(lastAttemptAt).getTime();
+            const elapsedMinutes = elapsedMs / (1000 * 60);
+            
+            let requiredDelayMinutes = 5;
+            if (attempts === 2) requiredDelayMinutes = 15;
+            else if (attempts === 3) requiredDelayMinutes = 60;
+            else if (attempts === 4) requiredDelayMinutes = 240;
+            
+            if (elapsedMinutes < requiredDelayMinutes) {
+              console.log(`⏭️ [Retry Gatekeeper] Skipping order #${order.id} (Email: ${order.customerEmail}). Delay of ${requiredDelayMinutes}m required, only ${Math.round(elapsedMinutes)}m elapsed.`);
+              continue;
+            }
+          }
+
+          // Proceed with attempt
+          const nextAttemptCount = attempts + 1;
+          await dbRunAsync(`UPDATE orders SET emailAttempts = ?, lastEmailAttemptAt = ? WHERE id = ?`, [nextAttemptCount, nowIso, order.id]).catch(() => null);
+
+          const items = await dbAllAsync(
+            `SELECT oi.*, p.title, p.printifyId AS printifyProductId, pv.printifyVariantId
+             FROM order_items oi
+             LEFT JOIN products p ON p.id = oi.productId
+             LEFT JOIN product_variants pv ON pv.id = oi.variantId
+             WHERE oi.orderId = ?`,
+            [order.id]
+          );
+          if (!items || !items.length) {
+            console.warn(`⚠️ No items found for order #${order.id}. Skipping.`);
+            continue;
+          }
+
+          const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+          const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+          const shipping = totalQuantity >= FREE_SHIPPING_THRESHOLD ? 0 : (totalQuantity > 0 ? SHIPPING_COST_NIS : 0);
+          const total = Number(order.totalAmount) || 0;
+          const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
+
+          const emailItems = items.map((item) => ({
+            title: item.title || 'Drip Street Item',
+            color: item.selectedColor || null,
+            size: item.selectedSize || null,
+            quantity: item.quantity,
+            price: item.price,
+          }));
+
+          const emailRes = await emailService.sendOrderConfirmationEmail(
+            order.customerEmail,
+            order.id,
+            order.customerName,
+            emailItems,
+            { subtotal: roundCurrency(subtotal), shipping, discount, total },
+            order.address
+          );
+
+          if (emailRes && emailRes.ok) {
+            await dbRunAsync(`UPDATE orders SET emailSent = 1 WHERE id = ?`, [order.id]);
+            stats.ordersRecovered += 1;
+            console.log(`✅ [Retry Recovery] Email sent and DB updated for order #${order.id}`);
+          } else {
+            console.warn(`⚠️ [Retry Recovery] Email attempt failed for order #${order.id}`);
+            if (nextAttemptCount >= 5) {
+              await telegram.sendMessage(`🚨 <b>Email Delivery Permanently Failed</b>\nOrder #${order.id} for ${order.customerName} has reached 5 delivery attempts and will not be retried automatically. Please verify customer email manually: <code>${order.customerEmail}</code>`).catch(() => null);
+            }
+          }
+        } catch (itemErr) {
+          console.error(`❌ [Retry Recovery] Error processing order #${order.id}:`, itemErr.message);
+        }
+      }
+    }
+
+    // 2. Recover Lead Emails
+    const pendingLeads = await dbAllAsync(
+      `SELECT * FROM leads WHERE (emailSent IS NULL OR emailSent = 0) AND COALESCE(emailAttempts, 0) < 5 AND unsubscribed = 0`
+    );
+
+    if (pendingLeads && pendingLeads.length > 0) {
+      console.log(`🔄 Found ${pendingLeads.length} leads with unsent welcome emails. Assessing...`);
+      for (const lead of pendingLeads) {
+        try {
+          stats.leadsChecked += 1;
+          const attempts = Number(lead.emailAttempts || 0);
+          const lastAttemptAt = lead.lastEmailAttemptAt;
+
+          if (!forceIgnoreBackoff && attempts > 0 && lastAttemptAt) {
+            const elapsedMs = Date.now() - new Date(lastAttemptAt).getTime();
+            const elapsedMinutes = elapsedMs / (1000 * 60);
+            
+            let requiredDelayMinutes = 5;
+            if (attempts === 2) requiredDelayMinutes = 15;
+            else if (attempts === 3) requiredDelayMinutes = 60;
+            else if (attempts === 4) requiredDelayMinutes = 240;
+            
+            if (elapsedMinutes < requiredDelayMinutes) {
+              console.log(`⏭️ [Retry Gatekeeper] Skipping lead #${lead.id} (Email: ${lead.email}). Delay of ${requiredDelayMinutes}m required, only ${Math.round(elapsedMinutes)}m elapsed.`);
+              continue;
+            }
+          }
+
+          // Proceed with attempt
+          const nextAttemptCount = attempts + 1;
+          await dbRunAsync(`UPDATE leads SET emailAttempts = ?, lastEmailAttemptAt = ? WHERE id = ?`, [nextAttemptCount, nowIso, lead.id]).catch(() => null);
+
+          const emailRes = await emailService.sendCouponEmail(lead.email, lead.promo_code);
+
+          if (emailRes && emailRes.ok) {
+            await dbRunAsync(`UPDATE leads SET emailSent = 1 WHERE id = ?`, [lead.id]);
+            stats.leadsRecovered += 1;
+            console.log(`✅ [Retry Recovery] Welcome email sent and DB updated for lead #${lead.id}`);
+          } else {
+            console.warn(`⚠️ [Retry Recovery] Welcome email attempt failed for lead #${lead.id}`);
+            if (nextAttemptCount >= 5) {
+              await telegram.sendMessage(`🚨 <b>Welcome Email Permanently Failed</b>\nLead #${lead.id} (${lead.email}) has reached 5 delivery attempts and will not be retried automatically. Please verify manually.`).catch(() => null);
+            }
+          }
+        } catch (leadErr) {
+          console.error(`❌ [Retry Recovery] Error processing lead #${lead.id}:`, leadErr.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('⚠️ [Retry Recovery] Core recovery execution failed:', err.message);
+  }
+  
+  return stats;
+};
+
 // Start background cron jobs
 pricingEngine.start();
 
@@ -1580,74 +2362,7 @@ app.listen(PORT, () => {
 
     // ---- SCHEDULED EMAIL RETRY: Every 15 minutes ----
     const emailRetryJob = cron.schedule('*/15 * * * *', async () => {
-      console.log('🔄 [Scheduled Retry] Checking for undelivered receipt emails...');
-      try {
-        const pending = await dbAllAsync(`SELECT * FROM orders WHERE status = 'paid' AND (emailSent IS NULL OR emailSent = 0) AND COALESCE(emailAttempts, 0) < 5`);
-        if (!pending || pending.length === 0) {
-          return;
-        }
-        
-        console.log(`🔄 Found ${pending.length} paid orders with unsent emails. Attempting recovery...`);
-        for (const order of pending) {
-          try {
-            // Increment attempts
-            await dbRunAsync(`UPDATE orders SET emailAttempts = COALESCE(emailAttempts, 0) + 1 WHERE id = ?`, [order.id]).catch(() => null);
-
-            const items = await dbAllAsync(
-              `SELECT oi.*, p.title, p.printifyId AS printifyProductId, pv.printifyVariantId
-               FROM order_items oi
-               LEFT JOIN products p ON p.id = oi.productId
-               LEFT JOIN product_variants pv ON pv.id = oi.variantId
-               WHERE oi.orderId = ?`,
-              [order.id]
-            );
-            if (!items || !items.length) {
-              console.warn(`⚠️ No items found for order #${order.id}. Skipping.`);
-              continue;
-            }
-
-            const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
-            const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-            const shipping = totalQuantity >= FREE_SHIPPING_THRESHOLD ? 0 : (totalQuantity > 0 ? SHIPPING_COST_NIS : 0);
-            const total = Number(order.totalAmount) || 0;
-            const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
-
-            const emailItems = items.map((item) => ({
-              title: item.title || 'Drip Street Item',
-              color: item.selectedColor || null,
-              size: item.selectedSize || null,
-              quantity: item.quantity,
-              price: item.price,
-            }));
-
-            const emailRes = await emailService.sendOrderConfirmationEmail(
-              order.customerEmail,
-              order.id,
-              order.customerName,
-              emailItems,
-              { subtotal: roundCurrency(subtotal), shipping, discount, total },
-              order.address
-            );
-
-            if (emailRes && emailRes.ok) {
-              await dbRunAsync(`UPDATE orders SET emailSent = 1 WHERE id = ?`, [order.id]);
-              console.log(`✅ [Retry Recovery] Email sent and DB updated for order #${order.id}`);
-            } else {
-              console.warn(`⚠️ [Retry Recovery] Email attempt failed for order #${order.id}`);
-              
-              // If we reached the limit of 5, send a Telegram alert so store admin can investigate manual resolution
-              const checkOrder = await dbGetAsync(`SELECT emailAttempts FROM orders WHERE id = ?`, [order.id]);
-              if (checkOrder && checkOrder.emailAttempts >= 5) {
-                await telegram.sendMessage(`🚨 <b>Email Delivery Permanently Failed</b>\nOrder #${order.id} for ${order.customerName} has reached 5 delivery attempts and will not be retried automatically. Please verify the customer's email manually: <code>${order.customerEmail}</code>`).catch(() => null);
-              }
-            }
-          } catch (itemErr) {
-            console.error(`❌ [Retry Recovery] Error processing order #${order.id}:`, itemErr.message);
-          }
-        }
-      } catch (err) {
-        console.error('⚠️ [Scheduled Retry] Failed to recover pending emails:', err.message);
-      }
+      await runEmailRetryRecovery(false);
     }, { scheduled: true });
 
     console.log('✅ Scheduled email recovery configured: Every 15 minutes');

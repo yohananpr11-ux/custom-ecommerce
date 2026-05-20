@@ -1,11 +1,22 @@
 const { Resend } = require('resend');
+const crypto = require('crypto');
+const API_BASE_URL = process.env.API_BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:4000';
 
 class EmailService {
   constructor() {
     this.resend = null;
-    this.fromEmail = 'Drip Street Shop <hello@dripstreetshop.com>';
+    this.fromEmail = process.env.FROM_EMAIL || 'Drip Street Shop <hello@dripstreetshop.com>';
     this.logoUrl = process.env.BRAND_LOGO_URL || null;
     this.init();
+  }
+
+  getUnsubscribeSecret() {
+    return process.env.UNSUBSCRIBE_SECRET || process.env.STRIPE_SECRET_KEY || 'drip-street-fallback-secret';
+  }
+
+  generateUnsubscribeSignature(email) {
+    const secret = this.getUnsubscribeSecret();
+    return crypto.createHmac('sha256', secret).update(String(email).trim().toLowerCase()).digest('hex');
   }
 
   init() {
@@ -26,6 +37,22 @@ class EmailService {
 
 
   async sendEmail({ to, subject, html, text = null, headers = {} }) {
+    const recipient = Array.isArray(to) ? to[0] : to;
+    const recipientStr = String(recipient || '').toLowerCase().trim();
+
+    // Reputation Safeguard: Local junk and simulated/load-test domain filtration
+    const isJunkOrSimulated = 
+      recipientStr.includes('example.com') ||
+      recipientStr.includes('test.com') ||
+      recipientStr.includes('loadtest+') ||
+      recipientStr.includes('+sim') ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientStr);
+
+    if (isJunkOrSimulated) {
+      console.log(`🛡️ [Reputation Safeguard] Skipped sending to simulated/junk address: ${recipientStr}`);
+      return { ok: true, mocked: true, reason: 'safeguarded_junk_or_simulation' };
+    }
+
     if (!this.resend) {
       console.log(`[MOCK EMAIL] To: ${to}, Subject: ${subject}`);
       if (text) {
@@ -60,7 +87,10 @@ class EmailService {
 
   async sendCouponEmail(email, promoCode) {
     const subject = '🚀 Welcome to Drip Street - Here is your 10% Discount';
-    const text = `Welcome to the Club!\n\nThanks for joining our exclusive streetwear circle. As a member of Drip Street, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.\n\nYour Unique Promo Code: ${promoCode}\n10% OFF YOUR FIRST ORDER\n\nShop The Collection: https://custom-ecommerce-seven.vercel.app\n\nNeed help? Contact us at support@dripstreet.shop\n\n© 2026 DRIP STREET. All rights reserved.`;
+    const sig = this.generateUnsubscribeSignature(email);
+    const unsubscribeUrl = `${API_BASE_URL}/api/unsubscribe?email=${encodeURIComponent(email)}&sig=${sig}`;
+    
+    const text = `Welcome to the Club!\n\nThanks for joining our exclusive streetwear circle. As a member of Drip Street, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.\n\nYour Unique Promo Code: ${promoCode}\n10% OFF YOUR FIRST ORDER\n\nShop The Collection: https://custom-ecommerce-seven.vercel.app\n\nNeed help? Contact us at support@dripstreet.shop\n\nTo unsubscribe from our newsletter, visit:\n${unsubscribeUrl}\n\n© 2026 DRIP STREET. All rights reserved.`;
 
     const html = `
       <!DOCTYPE html>
@@ -115,6 +145,10 @@ class EmailService {
               <p style="margin: 0; font-size: 11px; color: #444444; text-transform: uppercase; letter-spacing: 0.05em;">
                 &copy; 2026 DRIP STREET. All rights reserved.
               </p>
+              <p style="margin: 10px 0 0 0; font-size: 10px; color: #444444;">
+                You are receiving this because you signed up for the Drip Street newsletter. 
+                <a href="${unsubscribeUrl}" target="_blank" style="color: #666666; text-decoration: underline; margin-left: 5px;">Unsubscribe</a>
+              </p>
             </td>
           </tr>
         </table>
@@ -122,7 +156,12 @@ class EmailService {
       </html>
     `;
 
-    return this.sendEmail({ to: email, subject, html, text });
+    const headers = {
+      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:unsubscribe@dripstreetshop.com?subject=unsubscribe-${encodeURIComponent(email)}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+    };
+
+    return this.sendEmail({ to: email, subject, html, text, headers });
   }
 
   async sendOrderConfirmationEmail(email, orderId, customerName, items, totals, address = null) {
