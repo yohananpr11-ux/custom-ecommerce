@@ -25,6 +25,8 @@ services:
         sync: false
       - key: PRINTIFY_API_TOKEN
         sync: false
+      - key: ENABLE_PRINTIFY_SYNC
+        value: "true"
       - key: PRINTIFY_SHOP_ID
         value: "27495153"
       - key: STRIPE_SECRET_KEY

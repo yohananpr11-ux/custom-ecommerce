@@ -30,7 +30,6 @@ const resolveChatId = () => {
   const meniCoreEnvPaths = [
     process.env.MENI_CORE_ENV_PATH,
     process.env.MENI_CORE_PATH ? path.join(process.env.MENI_CORE_PATH, '.env') : null,
-    userProfile ? path.join(userProfile, 'OneDrive', 'שולחן העבודה', 'MENI_CORE', '.env') : null,
     userProfile ? path.join(userProfile, 'OneDrive', 'Desktop', 'MENI_CORE', '.env') : null,
     userProfile ? path.join(userProfile, 'Desktop', 'MENI_CORE', '.env') : null
   ].filter(Boolean);

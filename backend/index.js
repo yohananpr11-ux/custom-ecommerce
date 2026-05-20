@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -7,7 +8,7 @@ const telegram = require('./services/telegram');
 const pricingEngine = require('./services/pricing');
 const printify = require('./services/printify');
 const meniChat = require('./services/meni');
-require('dotenv').config();
+const emailService = require('./services/emailService');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -15,6 +16,17 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock'
 const PAYPAL_API_BASE = 'https://api-m.paypal.com';
 const PAYPAL_SUPPORTED_CURRENCIES = new Set(['USD', 'ILS']);
 const ENGLISH_SHIPPING_TEXT_REGEX = /^[A-Za-z0-9\s.,'\-/#()]+$/;
+const DEFAULT_USD_CONVERSION_RATE = 3.6;
+
+const resolveUsdPrice = (price, storedPriceUSD = null) => {
+  const stored = Number(storedPriceUSD);
+  if (Number.isFinite(stored) && stored > 0) {
+    return Number(stored.toFixed(2));
+  }
+
+  const exchangeRate = pricingEngine.exchangeRateUSDILS || DEFAULT_USD_CONVERSION_RATE;
+  return parseFloat((Number(price || 0) / exchangeRate).toFixed(2));
+};
 
 const hasConfiguredValue = (value) => {
   const normalized = String(value || '').trim();
@@ -24,7 +36,7 @@ const hasConfiguredValue = (value) => {
 
 const hasPayPalCheckoutConfig = () => (
   hasConfiguredValue(process.env.PAYPAL_CLIENT_ID)
-  && hasConfiguredValue(process.env.PAYPAL_SECRET)
+  && hasConfiguredValue(process.env.PAYPAL_CLIENT_SECRET || process.env.PAYPAL_SECRET)
 );
 
 const hasStripeCheckoutConfig = () => {
@@ -36,6 +48,8 @@ const hasPayPlusCheckoutConfig = () => (
   hasConfiguredValue(process.env.PAYPLUS_API_KEY)
   && hasConfiguredValue(process.env.PAYPLUS_SECRET_KEY)
 );
+
+const isPrintifySyncEnabled = () => process.env.ENABLE_PRINTIFY_SYNC === 'true';
 
 const validateShippingDetails = (customerName, customerEmail, address) => {
   const normalizedName = String(customerName || '').trim();
@@ -72,7 +86,7 @@ const normalizePayPalCurrency = (currency) => {
 
 const getPayPalAccessToken = async () => {
   const clientId = process.env.PAYPAL_CLIENT_ID;
-  const clientSecret = process.env.PAYPAL_SECRET;
+  const clientSecret = process.env.PAYPAL_CLIENT_SECRET || process.env.PAYPAL_SECRET;
 
   if (!clientId || !clientSecret) {
     throw new Error('PayPal credentials are missing from environment variables');
@@ -444,13 +458,8 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   const order = await dbGetAsync(`SELECT * FROM orders WHERE id = ?`, [orderId]);
   if (!order) return;
 
-  if (isSimulationOrder(order)) {
-    await telegram.sendMessage(`🧪 <b>Simulation:</b> Order #${orderId} marked as paid via ${providerTag} without sending to Printify.`).catch(() => null);
-    return;
-  }
-
   const items = await dbAllAsync(
-    `SELECT oi.*, p.printifyId AS printifyProductId, pv.printifyVariantId
+    `SELECT oi.*, p.title, p.printifyId AS printifyProductId, pv.printifyVariantId
      FROM order_items oi
      LEFT JOIN products p ON p.id = oi.productId
      LEFT JOIN product_variants pv ON pv.id = oi.variantId
@@ -459,9 +468,61 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   );
   if (!items.length) return;
 
+  const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+  const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  const shipping = totalQuantity >= FREE_SHIPPING_THRESHOLD ? 0 : (totalQuantity > 0 ? SHIPPING_COST_NIS : 0);
+  const total = Number(order.totalAmount) || 0;
+  const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
+
+  const emailItems = items.map((item) => ({
+    title: item.title || 'Drip Street Item',
+    color: item.selectedColor || null,
+    size: item.selectedSize || null,
+    quantity: item.quantity,
+    price: item.price,
+  }));
+
+  if (isSimulationOrder(order)) {
+    await telegram.sendMessage(`🧪 <b>Simulation:</b> Order #${orderId} marked as paid via ${providerTag} without sending to Printify.`).catch(() => null);
+    
+    // Increment attempts
+    await dbRunAsync(`UPDATE orders SET emailAttempts = COALESCE(emailAttempts, 0) + 1 WHERE id = ?`, [orderId]).catch(() => null);
+
+    // Send email confirmation for simulation orders to facilitate testing and validation
+    await emailService.sendOrderConfirmationEmail(
+      order.customerEmail,
+      orderId,
+      order.customerName,
+      emailItems,
+      { subtotal: roundCurrency(subtotal), shipping, discount, total },
+      order.address
+    ).then(async (res) => {
+      if (res && res.ok) {
+        await dbRunAsync(`UPDATE orders SET emailSent = 1 WHERE id = ?`, [orderId]);
+      }
+    }).catch((e) => console.error(`[email] failed to send order confirmation email for #${orderId}:`, e.message));
+    return;
+  }
+
   try {
     await printify.sendOrderToProduction(orderId, order.customerName, order.customerEmail, order.address, items);
     await telegram.sendMessage(`🏭 <b>Order #${orderId} sent to production</b>\nThe order was successfully submitted to Printify.`);
+    
+    // Increment attempts
+    await dbRunAsync(`UPDATE orders SET emailAttempts = COALESCE(emailAttempts, 0) + 1 WHERE id = ?`, [orderId]).catch(() => null);
+
+    await emailService.sendOrderConfirmationEmail(
+      order.customerEmail,
+      orderId,
+      order.customerName,
+      emailItems,
+      { subtotal: roundCurrency(subtotal), shipping, discount, total },
+      order.address
+    ).then(async (res) => {
+      if (res && res.ok) {
+        await dbRunAsync(`UPDATE orders SET emailSent = 1 WHERE id = ?`, [orderId]);
+      }
+    }).catch((e) => console.error(`[email] failed to send order confirmation email for #${orderId}:`, e.message));
   } catch (pErr) {
     await telegram.sendMessage(`🚨 <b>Production submission failed</b>\nOrder #${orderId} was paid but failed to submit to Printify.`);
   }
@@ -796,18 +857,17 @@ app.get('/', (req, res) => {
 // Geolocation and config helper
 app.get('/api/geolocation', (req, res) => {
   const country = req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || 'IL';
-  const isIsrael = country === 'IL';
   res.json({
     country,
-    currency: isIsrael ? 'ILS' : 'USD',
-    locale: isIsrael ? 'he' : 'en',
+    currency: 'USD',
+    locale: 'en',
     exchangeRate: pricingEngine.exchangeRateUSDILS
   });
 });
 
-// Get all products (list view - includes backImageUrl for hover effect and dynamic USD prices)
+// Get all products (list view - includes backImageUrl for hover effect and USD prices)
 app.get('/api/products', (req, res) => {
-  db.all("SELECT id, title, description, price, imageUrl, backImageUrl, stock, type FROM products", [], (err, rows) => {
+  db.all("SELECT id, title, description, price, priceUSD, imageUrl, backImageUrl, stock, type FROM products", [], (err, rows) => {
     if (err) {
       res.status(500).json({ error: err.message });
       return;
@@ -817,11 +877,9 @@ app.get('/api/products', (req, res) => {
     const hasPrintifyProducts = rows.some(r => r.type === 'printify');
     const visibleRows = hasPrintifyProducts ? rows.filter(r => r.type === 'printify') : rows;
     
-    // Add priceUSD dynamically using the live rate
-    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
     const productsWithUSD = visibleRows.map(r => ({
       ...r,
-      priceUSD: parseFloat((r.price / exchangeRate).toFixed(2))
+      priceUSD: resolveUsdPrice(r.price, r.priceUSD)
     }));
     
     res.json(productsWithUSD);
@@ -898,8 +956,7 @@ app.get('/api/products/:id', (req, res) => {
         imageData = { allImages: [], variantImageMap: {} };
       }
 
-      const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
-      row.priceUSD = parseFloat((row.price / exchangeRate).toFixed(2));
+      row.priceUSD = resolveUsdPrice(row.price, row.priceUSD);
 
       const storedVariants = await dbAllAsync("SELECT * FROM product_variants WHERE productId = ? AND isEnabled = 1", [id]);
       const { variants: mergedVariants, liveUpdatedAt } = await enrichLiveVariantInventory(storedVariants || [], row.printifyId);
@@ -925,7 +982,7 @@ app.get('/api/products/:id', (req, res) => {
 
       row.variants = mergedVariants.map((variant) => ({
         ...variant,
-        priceUSD: parseFloat((variant.price / exchangeRate).toFixed(2))
+        priceUSD: resolveUsdPrice(variant.price, variant.priceUSD)
       }));
       row.colors = Object.values(colors);
       row.sizes = Array.from(sizes);
@@ -999,6 +1056,13 @@ app.post('/api/leads', async (req, res) => {
       [email, promoCode]
     );
 
+    emailService.sendCouponEmail(email, promoCode)
+      .then((resObj) => console.log(`[leads] welcome email sent to ${email} (ok: ${resObj?.ok})`))
+      .catch((err) => {
+        console.error(`[leads] welcome email failed for ${email}:`, err.message);
+        telegram.sendMessage(`⚠️ <b>Welcome email failed</b>\nLead: ${email}\nError: ${err.message}`).catch(() => null);
+      });
+
     await telegram.sendMessage(`🔥 <b>New Lead</b>: ${email} | <b>Code Generated</b>: ${promoCode}`).catch(() => null);
 
     return res.json({ success: true, promoCode });
@@ -1057,6 +1121,13 @@ app.post('/api/admin/set-coupon', (req, res) => {
 // Admin Printify Sync
 app.post('/api/admin/printify-sync', async (req, res) => {
   try {
+    const printifySyncEnabled = isPrintifySyncEnabled();
+    if (!printifySyncEnabled) {
+      return res.status(409).json({
+        error: 'Printify sync is disabled in this environment. Set ENABLE_PRINTIFY_SYNC=true to enable it.'
+      });
+    }
+
     const productsSynced = await printify.syncProducts();
     res.json({ success: true, count: productsSynced });
   } catch (error) {
@@ -1471,6 +1542,12 @@ app.listen(PORT, () => {
   // ---- AUTO-SYNC INITIALIZATION ----
   const performSync = async () => {
     try {
+      const printifySyncEnabled = isPrintifySyncEnabled();
+      if (!printifySyncEnabled) {
+        console.log('⏭️ Printify auto-sync disabled for this environment.');
+        return 0;
+      }
+
       const hasPrintifyKey = process.env.PRINTIFY_API_TOKEN && process.env.PRINTIFY_API_TOKEN !== 'YOUR_PRINTIFY_TOKEN';
       if (hasPrintifyKey) {
         const count = await printify.syncProducts();
@@ -1500,6 +1577,80 @@ app.listen(PORT, () => {
     }, { scheduled: true });
     
     console.log('✅ Scheduled sync configured: Every hour (UTC)');
+
+    // ---- SCHEDULED EMAIL RETRY: Every 15 minutes ----
+    const emailRetryJob = cron.schedule('*/15 * * * *', async () => {
+      console.log('🔄 [Scheduled Retry] Checking for undelivered receipt emails...');
+      try {
+        const pending = await dbAllAsync(`SELECT * FROM orders WHERE status = 'paid' AND (emailSent IS NULL OR emailSent = 0) AND COALESCE(emailAttempts, 0) < 5`);
+        if (!pending || pending.length === 0) {
+          return;
+        }
+        
+        console.log(`🔄 Found ${pending.length} paid orders with unsent emails. Attempting recovery...`);
+        for (const order of pending) {
+          try {
+            // Increment attempts
+            await dbRunAsync(`UPDATE orders SET emailAttempts = COALESCE(emailAttempts, 0) + 1 WHERE id = ?`, [order.id]).catch(() => null);
+
+            const items = await dbAllAsync(
+              `SELECT oi.*, p.title, p.printifyId AS printifyProductId, pv.printifyVariantId
+               FROM order_items oi
+               LEFT JOIN products p ON p.id = oi.productId
+               LEFT JOIN product_variants pv ON pv.id = oi.variantId
+               WHERE oi.orderId = ?`,
+              [order.id]
+            );
+            if (!items || !items.length) {
+              console.warn(`⚠️ No items found for order #${order.id}. Skipping.`);
+              continue;
+            }
+
+            const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+            const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+            const shipping = totalQuantity >= FREE_SHIPPING_THRESHOLD ? 0 : (totalQuantity > 0 ? SHIPPING_COST_NIS : 0);
+            const total = Number(order.totalAmount) || 0;
+            const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
+
+            const emailItems = items.map((item) => ({
+              title: item.title || 'Drip Street Item',
+              color: item.selectedColor || null,
+              size: item.selectedSize || null,
+              quantity: item.quantity,
+              price: item.price,
+            }));
+
+            const emailRes = await emailService.sendOrderConfirmationEmail(
+              order.customerEmail,
+              order.id,
+              order.customerName,
+              emailItems,
+              { subtotal: roundCurrency(subtotal), shipping, discount, total },
+              order.address
+            );
+
+            if (emailRes && emailRes.ok) {
+              await dbRunAsync(`UPDATE orders SET emailSent = 1 WHERE id = ?`, [order.id]);
+              console.log(`✅ [Retry Recovery] Email sent and DB updated for order #${order.id}`);
+            } else {
+              console.warn(`⚠️ [Retry Recovery] Email attempt failed for order #${order.id}`);
+              
+              // If we reached the limit of 5, send a Telegram alert so store admin can investigate manual resolution
+              const checkOrder = await dbGetAsync(`SELECT emailAttempts FROM orders WHERE id = ?`, [order.id]);
+              if (checkOrder && checkOrder.emailAttempts >= 5) {
+                await telegram.sendMessage(`🚨 <b>Email Delivery Permanently Failed</b>\nOrder #${order.id} for ${order.customerName} has reached 5 delivery attempts and will not be retried automatically. Please verify the customer's email manually: <code>${order.customerEmail}</code>`).catch(() => null);
+              }
+            }
+          } catch (itemErr) {
+            console.error(`❌ [Retry Recovery] Error processing order #${order.id}:`, itemErr.message);
+          }
+        }
+      } catch (err) {
+        console.error('⚠️ [Scheduled Retry] Failed to recover pending emails:', err.message);
+      }
+    }, { scheduled: true });
+
+    console.log('✅ Scheduled email recovery configured: Every 15 minutes');
   } catch (cronErr) {
     console.warn('⚠️ Cron not available (dev environment):', cronErr.message);
   }

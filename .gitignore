@@ -5,3 +5,7 @@
 *.env
 backend/.env
 frontend/.env
+
+# Local DB backups and operational reports — contain customer data / noise
+backend/backups/
+backend/reports/

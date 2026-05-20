@@ -122,10 +122,19 @@ db.serialize(() => {
   // Migrate: add promo columns to orders table if missing
   db.run(`ALTER TABLE orders ADD COLUMN promoCode TEXT`, () => {});
   db.run(`ALTER TABLE orders ADD COLUMN promoDiscount REAL DEFAULT 0`, () => {});
+  db.run(`ALTER TABLE orders ADD COLUMN emailSent INTEGER DEFAULT 0`, () => {});
+  db.run(`ALTER TABLE orders ADD COLUMN emailAttempts INTEGER DEFAULT 0`, () => {});
+
   
   // Migrate: add imageUrl to product_variants table
   db.run(`ALTER TABLE product_variants ADD COLUMN imageUrl TEXT`, () => {});
   db.run(`ALTER TABLE product_variants ADD COLUMN stockQty INTEGER`, () => {});
+  
+  // Migrate: add missing columns to order_items table
+  db.run(`ALTER TABLE order_items ADD COLUMN variantId INTEGER`, () => {});
+  db.run(`ALTER TABLE order_items ADD COLUMN selectedColor TEXT`, () => {});
+  db.run(`ALTER TABLE order_items ADD COLUMN selectedSize TEXT`, () => {});
+
   
   // Purge any local placeholder products to prevent non-fulfillment checkout errors
   db.run("DELETE FROM products WHERE type = 'local'", (err) => {
