@@ -34,6 +34,7 @@ db.serialize(() => {
       title TEXT NOT NULL,
       description TEXT,
       price REAL NOT NULL,
+      priceUSD REAL,
       imageUrl TEXT,
       backImageUrl TEXT,
       images TEXT,
@@ -159,6 +160,7 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('products', 'fabric', 'TEXT'),
     addColumnIfMissing('products', 'careInstructions', 'TEXT'),
     addColumnIfMissing('products', 'deliveryInfo', 'TEXT'),
+    addColumnIfMissing('products', 'priceUSD', 'REAL'),
     // orders
     addColumnIfMissing('orders', 'promoCode', 'TEXT'),
     addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0'),
