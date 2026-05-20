@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { initAnalytics, trackPageView, trackViewItem } from './utils/analytics.js'
 import './index.css'
 
@@ -1304,6 +1304,20 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       <CookieConsent />
     </>
   );
+}
+
+// Thin wrapper so /product/:productId can render ProductDetailPage with URL params
+function ProductDetailRoute(props) {
+  const { productId } = useParams();
+  const parsed = Number(productId);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return (
+      <div className="container legal-page" style={{ textAlign: 'center', padding: '100px 20px' }}>
+        <h1 style={{ fontSize: '36px', textTransform: 'uppercase', marginBottom: '16px' }}>404 NOT FOUND</h1>
+      </div>
+    );
+  }
+  return <ProductDetailPage productId={parsed} {...props} />;
 }
 
 function MainApp() {
@@ -2630,6 +2644,19 @@ function MainApp() {
       <Routes>
         <Route path="/" element={homeContent} />
         <Route path="/cart" element={homeContent} />
+        <Route path="/product/:productId" element={
+          <ProductDetailRoute
+            addToCart={addToCart}
+            goToCheckout={goToCheckoutNow}
+            showToast={showToast}
+            t={t}
+            currency={currency}
+            curSym={curSym}
+            locale={locale}
+            cartCount={totalItems}
+            onOpenCart={openCartDrawer}
+          />
+        } />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/refund" element={<RefundPolicy />} />
