@@ -856,10 +856,11 @@ app.get('/', (req, res) => {
 
 // Geolocation and config helper
 app.get('/api/geolocation', (req, res) => {
-  const country = req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || 'IL';
+  const country = String(req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || 'IL').toUpperCase();
+  const isIsrael = country === 'IL';
   res.json({
     country,
-    currency: 'USD',
+    currency: isIsrael ? 'ILS' : 'USD',
     locale: 'en',
     exchangeRate: pricingEngine.exchangeRateUSDILS
   });

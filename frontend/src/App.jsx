@@ -1116,7 +1116,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   return (
     <>
       <header className="header container">
-        <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><h1 className="logo">{t('logo')}</h1></a>
+        <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
         <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={onOpenCart}>
           <span>🛒 {t('cart')}</span>
           {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
@@ -1364,8 +1364,23 @@ function MainApp() {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
   const [locale] = useState('en')
-  const [currency] = useState('USD')
+  const [currency, setCurrency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
+
+  // Geo-aware currency: IL visitors see ₪ (ILS), everyone else sees $ (USD)
+  useEffect(() => {
+    fetch(`${API_BASE}/api/geolocation`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && (data.currency === 'ILS' || data.currency === 'USD')) {
+          setCurrency(data.currency);
+        }
+        if (data && Number.isFinite(Number(data.exchangeRate)) && Number(data.exchangeRate) > 0) {
+          setExchangeRate(Number(data.exchangeRate));
+        }
+      })
+      .catch(() => { /* fallback to USD default */ });
+  }, []);
 
   const [isWidgetChatOpen, setIsWidgetChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([]);
@@ -1857,22 +1872,35 @@ function MainApp() {
     setPromoFeedback('');
 
     try {
-      const response = await fetch(`${API_BASE}/api/promo/validate`, {
+      // 1) Try lead promo (DRP-XXXXXX from newsletter signups)
+      const leadResp = await fetch(`${API_BASE}/api/promo/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ promoCode: candidate })
       });
-      const data = await response.json();
+      const leadData = await leadResp.json().catch(() => ({}));
 
-      if (!response.ok || !data.valid) {
-        setActiveLeadPromo(null);
-        setPromoFeedback(t('promo_invalid'));
+      if (leadResp.ok && leadData.valid) {
+        setActiveLeadPromo({ code: leadData.promoCode || candidate, discountRate: Number(leadData.discountRate) || 0.1 });
+        setPromoInput(leadData.promoCode || candidate);
+        setPromoFeedback(t('promo_applied'));
         return;
       }
 
-      setActiveLeadPromo({ code: data.promoCode || candidate, discountRate: Number(data.discountRate) || 0.1 });
-      setPromoInput(data.promoCode || candidate);
-      setPromoFeedback(t('promo_applied'));
+      // 2) Fallback: check admin coupon (MENI-XXX, SAMPLE100, etc. from Telegram)
+      const adminResp = await fetch(`${API_BASE}/api/coupons/active`);
+      const adminData = await adminResp.json().catch(() => ({}));
+      if (adminData && adminData.coupon && String(adminData.coupon.code).toUpperCase() === candidate) {
+        setActiveCoupon(adminData.coupon);
+        setPromoInput(adminData.coupon.code);
+        setPromoFeedback(t('promo_applied'));
+        setActiveLeadPromo(null);
+        return;
+      }
+
+      // Neither matched
+      setActiveLeadPromo(null);
+      setPromoFeedback(t('promo_invalid'));
     } catch {
       setActiveLeadPromo(null);
       setPromoFeedback(t('promo_invalid'));
@@ -2050,51 +2078,34 @@ function MainApp() {
                 : getOrderedDisplaySizes(Array.isArray(item.sizes) ? item.sizes : []);
               const selectedSize = normalizeSizeLabel(item.selectedSize || parsed.size || itemSizes[0] || '');
 
+              const itemThumbnail = item.imageUrl || (Array.isArray(item.images) && item.images[0]) || null;
               return (
-                <div key={item.cartId || item.id} className="cart-item">
-                  <div style={{ flex: 1 }}>
-                    <strong>{getCartDisplayTitle(item.title, locale)}</strong>
-                    {itemVariants.length > 0 && itemColors.length > 0 && (
-                      <div className="cart-variant-editor">
-                        <span>{t('cart_customize')}</span>
-                        <div className="cart-variant-grid">
-                          <label>
-                            {t('color')}
-                            <select
-                              value={selectedColor}
-                              onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, e.target.value, selectedSize)}
-                            >
-                              {itemColors.map((colorOption) => (
-                                <option key={colorOption.name} value={colorOption.name}>
-                                  {localizeColorName(colorOption.name, locale)}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            {t('size')}
-                            <select
-                              value={selectedSize}
-                              onChange={(e) => updateCartVariant(item.cartId || `${item.id}`, selectedColor, e.target.value)}
-                            >
-                              {itemSizes.map((sizeOption) => (
-                                <option key={sizeOption} value={sizeOption}>
-                                  {sizeOption}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
+                <div key={item.cartId || item.id} className="cart-item" style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  {itemThumbnail && (
+                    <img
+                      src={itemThumbnail}
+                      alt={item.title}
+                      style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, background: '#1a1a1a' }}
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ display: 'block', fontSize: '14px', lineHeight: '1.3' }}>{getCartDisplayTitle(item.title, locale)}</strong>
+                    {(selectedColor || selectedSize) && (
+                      <div style={{ fontSize: '11px', color: '#888', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        {selectedColor && <span>{localizeColorName(selectedColor, locale)}</span>}
+                        {selectedColor && selectedSize && <span> · </span>}
+                        {selectedSize && <span>{selectedSize}</span>}
                       </div>
                     )}
-                    <div className="cart-qty-controls">
+                    <div className="cart-qty-controls" style={{ marginTop: '8px' }}>
                       <button type="button" onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity - 1)}>−</button>
                       <span>{item.quantity}</span>
                       <button type="button" onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity + 1)}>+</button>
                       <button type="button" className="remove-btn" onClick={() => removeFromCart(item.cartId || `${item.id}`)}>🗑</button>
                     </div>
                   </div>
-                  <div style={{ fontWeight: 600 }}>{curSym}{(itemPrice * item.quantity).toFixed(2)}</div>
+                  <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{curSym}{(itemPrice * item.quantity).toFixed(2)}</div>
                 </div>
               );
             })}
@@ -2161,17 +2172,23 @@ function MainApp() {
             </div>
           )}
 
-          <div className="cart-promo-row">
-            <input
-              type="text"
-              value={promoInput}
-              onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
-              placeholder={t('promo_code')}
-              className="cart-promo-input"
-            />
-            <button type="button" className="cart-promo-btn" onClick={applyLeadPromo} disabled={isApplyingPromo}>
-              {isApplyingPromo ? '...' : t('promo_apply')}
-            </button>
+          <div className="cart-promo-section" style={{ marginTop: '12px', marginBottom: '8px', padding: '12px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#aaa', marginBottom: '8px' }}>
+              🎟️ {t('promo_code')}?
+            </div>
+            <div className="cart-promo-row">
+              <input
+                type="text"
+                value={promoInput}
+                onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                placeholder="MENI-XXXX / DRP-XXXX"
+                className="cart-promo-input"
+                style={{ flex: 1 }}
+              />
+              <button type="button" className="cart-promo-btn" onClick={applyLeadPromo} disabled={isApplyingPromo || !promoInput.trim()}>
+                {isApplyingPromo ? '...' : t('promo_apply')}
+              </button>
+            </div>
           </div>
 
           {promoFeedback && (
@@ -2597,7 +2614,7 @@ function MainApp() {
             <span />
             <span />
           </button>
-          <a href="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><h1 className="logo">{t('logo')}</h1></a>
+          <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
         </div>
         <div className="search-bar">
           <input 
