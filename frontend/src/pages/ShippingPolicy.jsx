@@ -36,14 +36,24 @@ export default function ShippingPolicy() {
                 📦 Phase 2: Shipping
               </h3>
               <p style={{ margin: 0, fontSize: '14px', opacity: 0.8 }}>
-                <strong>7 - 14 Business Days</strong><br/>
-                Logistics carriers (DHL, FedEx, UPS) process and transport the parcel to your delivery destination.
+                <strong>Varies by destination</strong><br/>
+                Logistics carriers (DHL, FedEx, UPS, USPS, local post) process and transport the parcel. Transit time depends on your country.
               </p>
             </div>
           </div>
-          <p style={{ margin: 0 }}>
-            On average, most streetwear purchases arrive within 9-16 calendar days from the initial transaction window.
-          </p>
+          <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+            <p style={{ margin: '0 0 8px 0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '13px' }}>Typical total delivery (production + shipping):</p>
+            <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', opacity: 0.85, lineHeight: 1.8 }}>
+              <li><strong>United States:</strong> 6 – 14 business days</li>
+              <li><strong>European Union & UK:</strong> 8 – 17 business days</li>
+              <li><strong>Canada, Australia, New Zealand:</strong> 8 – 20 business days</li>
+              <li><strong>Israel, Middle East:</strong> 12 – 30 business days</li>
+              <li><strong>Asia, Latin America, Africa, Rest of World:</strong> 14 – 35 business days</li>
+            </ul>
+            <p style={{ margin: '12px 0 0 0', fontSize: '13px', opacity: 0.7 }}>
+              These are realistic estimates from our print partner. Customs clearance for international orders can occasionally extend transit by a few additional business days.
+            </p>
+          </div>
         </section>
 
         <section>
@@ -51,7 +61,7 @@ export default function ShippingPolicy() {
             3. Shipping Rates & Discounts
           </h2>
           <p style={{ margin: 0 }}>
-            Standard tracked delivery is flat-rated at **$8.30** (converted dynamically from our operational base cost) for single-item purchases. We provide **FREE SHIPPING** on all orders containing 5 or more items in the shopping cart.
+            Shipping is calculated at checkout based on your destination and order size. We provide <strong>FREE SHIPPING</strong> on all orders containing 5 or more items.
           </p>
         </section>
 

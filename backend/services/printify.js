@@ -231,10 +231,34 @@ class PrintifyService {
     return 'Premium quality fabric. See product description for details.';
   }
 
-  async sendOrderToProduction(orderId, customerName, customerEmail, address, items) {
+  async sendOrderToProduction(orderId, shipping, items) {
     if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
       console.warn(`⚠️ Printify token missing. Simulating sending order #${orderId} to Printify.`);
       return { id: `mock_printify_${orderId}`, status: 'simulated' };
+    }
+
+    // Backward compat: if called with the legacy (orderId, customerName, customerEmail, address, items) signature,
+    // turn it into a structured shipping object so we don't crash callers that haven't been updated.
+    if (typeof shipping === 'string') {
+      const legacyCustomerName = shipping;
+      const legacyCustomerEmail = items;
+      const legacyAddress = arguments[3];
+      const legacyItems = arguments[4];
+      const parts = String(legacyAddress || '').split(',').map(p => p.trim()).filter(Boolean);
+      shipping = {
+        customerName: legacyCustomerName,
+        customerEmail: legacyCustomerEmail,
+        firstName: String(legacyCustomerName || '').split(' ')[0] || 'Customer',
+        lastName: String(legacyCustomerName || '').split(' ').slice(1).join(' ') || 'Customer',
+        phone: '',
+        addressLine1: parts[0] || '',
+        addressLine2: '',
+        city: parts[1] || '',
+        region: '',
+        postalCode: '',
+        country: 'IL',
+      };
+      items = legacyItems;
     }
 
     try {
@@ -244,10 +268,7 @@ class PrintifyService {
         quantity: item.quantity
       }));
 
-      const addressParts = address.split(',');
-      const city = addressParts.length > 1 ? addressParts[1].trim() : 'Tel Aviv';
-      const address1 = addressParts[0].trim();
-
+      const country = String(shipping.country || 'IL').toUpperCase();
       const payload = {
         external_id: orderId.toString(),
         label: `Order ${orderId}`,
@@ -255,16 +276,16 @@ class PrintifyService {
         shipping_method: 1,
         send_shipping_notification: false,
         address_to: {
-          first_name: customerName.split(' ')[0],
-          last_name: customerName.split(' ').slice(1).join(' ') || 'Customer',
-          email: customerEmail,
-          phone: '',
-          country: 'IL',
-          region: '',
-          address1: address1,
-          address2: '',
-          city: city,
-          zip: '0000000'
+          first_name: String(shipping.firstName || '').trim() || 'Customer',
+          last_name:  String(shipping.lastName  || '').trim() || 'Customer',
+          email:      String(shipping.customerEmail || '').trim(),
+          phone:      String(shipping.phone || '').trim(),
+          country:    country,
+          region:     String(shipping.region || '').trim(),
+          address1:   String(shipping.addressLine1 || '').trim(),
+          address2:   String(shipping.addressLine2 || '').trim(),
+          city:       String(shipping.city || '').trim(),
+          zip:        String(shipping.postalCode || '').trim() || '00000'
         }
       };
 

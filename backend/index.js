@@ -51,31 +51,109 @@ const hasPayPlusCheckoutConfig = () => (
 
 const isPrintifySyncEnabled = () => process.env.ENABLE_PRINTIFY_SYNC === 'true';
 
-const validateShippingDetails = (customerName, customerEmail, address) => {
-  const normalizedName = String(customerName || '').trim();
-  const normalizedEmail = String(customerEmail || '').trim();
-  const normalizedAddress = String(address || '').trim();
+// ISO-3166 alpha-2 codes for countries Printify supports for shipping (subset of common destinations).
+const PRINTIFY_SUPPORTED_COUNTRIES = new Set([
+  'IL','US','GB','CA','AU','DE','FR','IT','ES','NL','BE','SE','NO','DK','FI','CH','AT','IE',
+  'PT','PL','CZ','GR','RO','HU','LU','NZ','JP','SG','HK','KR','BR','MX','AR','CL','ZA','IN',
+  'AE','SA','TR','RU','UA','BG','HR','SI','SK','LT','LV','EE','IS','MT','CY','MY','TH','ID','PH','VN','TW','EG','MA',
+]);
 
-  if (!normalizedName || !normalizedEmail || !normalizedAddress) {
-    throw new Error('Shipping details are required');
+const REGION_REQUIRED_COUNTRIES = new Set(['US','CA','AU']);
+
+// Soft phone validation: must contain at least 7 digits after stripping non-digits, max 20.
+const isValidPhone = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 7 && digits.length <= 20;
+};
+
+// Structured shipping validator. Backward-compatible: also accepts legacy single-string address.
+const validateShippingDetails = (input = {}) => {
+  // Legacy 3-arg shape: validateShippingDetails(name, email, address)
+  if (typeof input === 'string') {
+    const [a, b, c] = arguments;
+    input = { customerName: a, customerEmail: b, address: c };
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+  const trim = (v) => String(v == null ? '' : v).trim();
+  const firstName = trim(input.firstName);
+  const lastName  = trim(input.lastName);
+  const customerName = trim(input.customerName) || `${firstName} ${lastName}`.trim();
+  const customerEmail = trim(input.customerEmail || input.email);
+  const phone = trim(input.phone);
+  const addressLine1 = trim(input.addressLine1 || input.address1);
+  const addressLine2 = trim(input.addressLine2 || input.address2);
+  const city = trim(input.city);
+  const region = trim(input.region || input.state);
+  const postalCode = trim(input.postalCode || input.zip);
+  const countryRaw = trim(input.country).toUpperCase();
+  const country = countryRaw.length === 2 ? countryRaw : 'IL';
+
+  // Legacy: a single "address" string was passed
+  const legacyAddress = trim(input.address);
+
+  // Email format
+  if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
     throw new Error('Valid email is required');
   }
 
-  if (!ENGLISH_SHIPPING_TEXT_REGEX.test(normalizedName) || !/[A-Za-z]/.test(normalizedName)) {
+  // Name (combined)
+  if (!customerName) {
+    throw new Error('Full name is required');
+  }
+  if (!ENGLISH_SHIPPING_TEXT_REGEX.test(customerName) || !/[A-Za-z]/.test(customerName)) {
     throw new Error('Shipping name must be in English only');
   }
 
-  if (!ENGLISH_SHIPPING_TEXT_REGEX.test(normalizedAddress) || !/[A-Za-z]/.test(normalizedAddress)) {
-    throw new Error('Shipping address must be in English only');
+  // Country
+  if (!country || !PRINTIFY_SUPPORTED_COUNTRIES.has(country)) {
+    throw new Error('A valid shipping country must be selected');
   }
 
+  // Structured-mode validation (preferred path)
+  const hasStructured = addressLine1 || city || postalCode || phone;
+  if (hasStructured) {
+    if (!addressLine1) throw new Error('Street address is required');
+    if (!city) throw new Error('City is required');
+    if (!postalCode) throw new Error('Postal/ZIP code is required');
+    if (!phone || !isValidPhone(phone)) {
+      throw new Error('A valid phone number is required (carriers may contact you for delivery)');
+    }
+    if (REGION_REQUIRED_COUNTRIES.has(country) && !region) {
+      throw new Error(`State/Region is required for ${country}`);
+    }
+
+    // English-only on address fields (Printify/carriers are not consistent with non-Latin)
+    for (const [label, value] of [['Street address', addressLine1], ['Address line 2', addressLine2], ['City', city], ['State/Region', region]]) {
+      if (value && (!ENGLISH_SHIPPING_TEXT_REGEX.test(value) || !/[A-Za-z0-9]/.test(value))) {
+        throw new Error(`${label} must be in English (Latin) characters only`);
+      }
+    }
+  } else {
+    // Legacy single-string address fallback (transitional — should be removed once frontend ships)
+    if (!legacyAddress) throw new Error('Shipping address is required');
+    if (!ENGLISH_SHIPPING_TEXT_REGEX.test(legacyAddress) || !/[A-Za-z]/.test(legacyAddress)) {
+      throw new Error('Shipping address must be in English only');
+    }
+  }
+
+  // Build a readable single-line address for the legacy "address" column
+  const compactAddress = hasStructured
+    ? [addressLine1, addressLine2, city, region, postalCode, country].filter(Boolean).join(', ')
+    : legacyAddress;
+
   return {
-    customerName: normalizedName,
-    customerEmail: normalizedEmail,
-    address: normalizedAddress,
+    customerName,
+    customerEmail,
+    address: compactAddress,
+    firstName: firstName || (customerName.split(' ')[0] || ''),
+    lastName: lastName || (customerName.split(' ').slice(1).join(' ') || ''),
+    phone,
+    addressLine1,
+    addressLine2,
+    city,
+    region,
+    postalCode,
+    country,
   };
 };
 
@@ -504,8 +582,25 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
     return;
   }
 
+  // Build structured shipping object for Printify from the stored order row.
+  // Falls back to splitting the legacy "address" string for orders created before the structured-shipping migration.
+  const fallbackParts = String(order.address || '').split(',').map((part) => part.trim()).filter(Boolean);
+  const shippingDestination = {
+    customerName: order.customerName || `${order.firstName || ''} ${order.lastName || ''}`.trim(),
+    customerEmail: order.customerEmail,
+    firstName: order.firstName || (String(order.customerName || '').split(' ')[0] || 'Customer'),
+    lastName: order.lastName || (String(order.customerName || '').split(' ').slice(1).join(' ') || 'Customer'),
+    phone: order.phone || '',
+    addressLine1: order.addressLine1 || fallbackParts[0] || '',
+    addressLine2: order.addressLine2 || '',
+    city: order.city || fallbackParts[1] || '',
+    region: order.region || '',
+    postalCode: order.postalCode || '',
+    country: (order.country || 'IL').toUpperCase(),
+  };
+
   try {
-    await printify.sendOrderToProduction(orderId, order.customerName, order.customerEmail, order.address, items);
+    await printify.sendOrderToProduction(orderId, shippingDestination, items);
     await telegram.sendMessage(`🏭 <b>Order #${orderId} sent to production</b>\nThe order was successfully submitted to Printify.`);
     
     // Increment attempts
@@ -1790,13 +1885,32 @@ app.post('/api/contact', async (req, res) => {
 });
 
 // General Order Creation Helper
-const createPendingOrder = async (customerName, customerEmail, address, items, couponCode) => {
-  const normalizedShipping = validateShippingDetails(customerName, customerEmail, address);
+const createPendingOrder = async (shippingInput, items, couponCode) => {
+  const normalizedShipping = validateShippingDetails(shippingInput);
   const validatedItems = await resolveValidatedOrderItems(items);
   const pricing = calculateOrderPricing(validatedItems, couponCode);
   const orderInsert = await dbRunAsync(
-    `INSERT INTO orders (customerName, customerEmail, address, totalAmount, status) VALUES (?, ?, ?, ?, ?)`,
-    [normalizedShipping.customerName, normalizedShipping.customerEmail, normalizedShipping.address, pricing.totalAmount, 'pending_payment']
+    `INSERT INTO orders (
+       customerName, customerEmail, address, totalAmount, status,
+       firstName, lastName, phone,
+       addressLine1, addressLine2, city, region, postalCode, country
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      normalizedShipping.customerName,
+      normalizedShipping.customerEmail,
+      normalizedShipping.address,
+      pricing.totalAmount,
+      'pending_payment',
+      normalizedShipping.firstName,
+      normalizedShipping.lastName,
+      normalizedShipping.phone,
+      normalizedShipping.addressLine1,
+      normalizedShipping.addressLine2,
+      normalizedShipping.city,
+      normalizedShipping.region,
+      normalizedShipping.postalCode,
+      normalizedShipping.country,
+    ]
   );
   const orderId = orderInsert.lastID;
 
@@ -1832,6 +1946,7 @@ app.get('/api/paypal/config', (req, res) => {
 });
 
 app.post('/api/paypal/create-order', async (req, res) => {
+  const body = req.body || {};
   const {
     customerName,
     customerEmail,
@@ -1840,13 +1955,15 @@ app.post('/api/paypal/create-order', async (req, res) => {
     couponCode,
     promoCode,
     currency,
-  } = req.body || {};
+  } = body;
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Cart items are required' });
   }
 
-  if (!customerName || !customerEmail || !address) {
+  // Accept either the new structured shipping shape or the legacy 3-field shape.
+  const hasStructured = body.addressLine1 || body.city || body.postalCode;
+  if (!hasStructured && (!customerName || !customerEmail || !address)) {
     return res.status(400).json({ error: 'Shipping details are required' });
   }
 
@@ -1861,7 +1978,21 @@ app.post('/api/paypal/create-order', async (req, res) => {
       }
     }
 
-    const { orderId, pricing } = await createPendingOrder(customerName, customerEmail, address, items, couponCode);
+    const shippingInput = {
+      customerName,
+      customerEmail,
+      address,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      phone: body.phone,
+      addressLine1: body.addressLine1,
+      addressLine2: body.addressLine2,
+      city: body.city,
+      region: body.region,
+      postalCode: body.postalCode,
+      country: body.country,
+    };
+    const { orderId, pricing } = await createPendingOrder(shippingInput, items, couponCode);
 
     const promoDiscountAmount = validatedLeadPromo
       ? roundCurrency(pricing.totalAmount * LEAD_PROMO_DISCOUNT_RATE)
@@ -2010,14 +2141,29 @@ app.post('/api/paypal/capture-order', async (req, res) => {
 
 // Checkout via Stripe (USD)
 app.post('/api/checkout/stripe', async (req, res) => {
-  const { customerName, customerEmail, address, items, couponCode } = req.body;
+  const body = req.body || {};
+  const { customerName, customerEmail, address, items, couponCode } = body;
 
   if (!hasStripeCheckoutConfig()) {
     return res.status(503).json({ success: false, error: 'Stripe checkout is currently unavailable. Please use PayPal.' });
   }
-  
+
   try {
-    const { orderId, pricing } = await createPendingOrder(customerName, customerEmail, address, items, couponCode);
+    const shippingInput = {
+      customerName,
+      customerEmail,
+      address,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      phone: body.phone,
+      addressLine1: body.addressLine1,
+      addressLine2: body.addressLine2,
+      city: body.city,
+      region: body.region,
+      postalCode: body.postalCode,
+      country: body.country,
+    };
+    const { orderId, pricing } = await createPendingOrder(shippingInput, items, couponCode);
     const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
     const stripeAmountCents = Math.max(50, Math.round((pricing.totalAmount / exchangeRate) * 100));
     
