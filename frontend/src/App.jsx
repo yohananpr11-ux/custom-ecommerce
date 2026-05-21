@@ -1347,8 +1347,18 @@ function MainApp() {
   const [checkoutForm, setCheckoutForm] = useState({
     customerName: '',
     customerEmail: '',
-    address: ''
+    address: '',
+    firstName: '',
+    lastName: '',
+    phone: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    region: '',
+    postalCode: '',
+    country: '',
   })
+  const [shippingCountry, setShippingCountry] = useState('IL')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('All')
   const [activeCoupon, setActiveCoupon] = useState(null)
@@ -1367,7 +1377,7 @@ function MainApp() {
   const [currency, setCurrency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
 
-  // Geo-aware currency: IL visitors see ₪ (ILS), everyone else sees $ (USD)
+  // Geo-aware currency + country defaults
   useEffect(() => {
     fetch(`${API_BASE}/api/geolocation`)
       .then((res) => res.json())
@@ -1377,6 +1387,11 @@ function MainApp() {
         }
         if (data && Number.isFinite(Number(data.exchangeRate)) && Number(data.exchangeRate) > 0) {
           setExchangeRate(Number(data.exchangeRate));
+        }
+        if (data && typeof data.country === 'string' && data.country.length === 2) {
+          const cc = data.country.toUpperCase();
+          setShippingCountry(cc);
+          setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
         }
       })
       .catch(() => { /* fallback to USD default */ });
@@ -1539,9 +1554,26 @@ function MainApp() {
   const isPayPalAvailable = Boolean(checkoutConfig.paypalEnabled && paypalClientId);
   const isStripeAvailable = Boolean(checkoutConfig.stripeEnabled);
   const isPayPlusAvailable = Boolean(checkoutConfig.payplusEnabled);
-  const shippingValidationMessage = !isValidEnglishShippingValue(checkoutForm.customerName, { requireLetter: true })
-    ? t('shipping_name_english_only')
-    : (!isValidEnglishShippingValue(checkoutForm.address, { requireLetter: true }) ? t('shipping_address_english_only') : '');
+  const shippingValidationMessage = (() => {
+    const f = checkoutForm;
+    const namesProvided = (f.firstName || '').trim() || (f.lastName || '').trim();
+    if (namesProvided) {
+      if (!isValidEnglishShippingValue(`${f.firstName} ${f.lastName}`.trim(), { requireLetter: true })) {
+        return t('shipping_name_english_only');
+      }
+      if (f.addressLine1 && !isValidEnglishShippingValue(f.addressLine1, { requireLetter: true })) {
+        return t('shipping_address_english_only');
+      }
+      if (f.city && !isValidEnglishShippingValue(f.city, { requireLetter: true })) {
+        return t('shipping_address_english_only');
+      }
+      return '';
+    }
+    // Legacy fallback (combined name + single-string address)
+    if (!isValidEnglishShippingValue(f.customerName, { requireLetter: true })) return t('shipping_name_english_only');
+    if (!isValidEnglishShippingValue(f.address, { requireLetter: true })) return t('shipping_address_english_only');
+    return '';
+  })();
   const isSelectedPaymentAvailable = paymentMethod === 'paypal'
     ? isPayPalAvailable
     : (paymentMethod === 'stripe' ? isStripeAvailable : isPayPlusAvailable);
@@ -1950,25 +1982,62 @@ function MainApp() {
     && (!item.variantId || Number.isNaN(Number(item.variantId)))
   ));
 
-  const isCheckoutFormValid = checkoutForm.customerName.trim()
-    && checkoutForm.customerEmail.trim()
-    && checkoutForm.address.trim()
-    && !shippingValidationMessage;
+  const REGION_REQUIRED_FRONTEND = new Set(['US', 'CA', 'AU']);
 
-  const buildCheckoutPayload = () => ({
-    customerName: checkoutForm.customerName.trim(),
-    customerEmail: checkoutForm.customerEmail.trim(),
-    address: checkoutForm.address.trim(),
-    items: cart,
-    totalAmount: cartTotal,
-    bundleCount: BUNDLE_ITEM_COUNT,
-    bundlePrice: BUNDLE_ITEM_PRICE,
-    shippingCost: shippingCost,
-    bundleDiscount: bundleDiscount,
-    couponCode: activeCoupon ? activeCoupon.code : null,
-    promoCode: activeLeadPromo ? activeLeadPromo.code : null,
-    currency,
-  });
+  const isCheckoutFormValid = (() => {
+    const f = checkoutForm;
+    const hasNames = f.firstName.trim() && f.lastName.trim();
+    const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.customerEmail.trim());
+    const phoneDigits = String(f.phone || '').replace(/\D/g, '');
+    const validPhone = phoneDigits.length >= 7;
+    const country = String(f.country || '').toUpperCase();
+    const validCountry = country.length === 2;
+    const regionOk = !REGION_REQUIRED_FRONTEND.has(country) || !!f.region.trim();
+    return Boolean(
+      hasNames
+      && validEmail
+      && validPhone
+      && f.addressLine1.trim()
+      && f.city.trim()
+      && f.postalCode.trim()
+      && validCountry
+      && regionOk
+      && !shippingValidationMessage
+    );
+  })();
+
+  const buildCheckoutPayload = () => {
+    const f = checkoutForm;
+    const combinedName = `${f.firstName.trim()} ${f.lastName.trim()}`.trim();
+    const compactAddress = [f.addressLine1, f.addressLine2, f.city, f.region, f.postalCode, (f.country || '').toUpperCase()]
+      .map((p) => String(p || '').trim()).filter(Boolean).join(', ');
+    return {
+      // Legacy fields (kept so older backend code paths still work)
+      customerName: combinedName,
+      customerEmail: f.customerEmail.trim(),
+      address: compactAddress,
+      // Structured shipping (new — what Printify actually uses)
+      firstName: f.firstName.trim(),
+      lastName: f.lastName.trim(),
+      phone: f.phone.trim(),
+      addressLine1: f.addressLine1.trim(),
+      addressLine2: f.addressLine2.trim(),
+      city: f.city.trim(),
+      region: f.region.trim(),
+      postalCode: f.postalCode.trim(),
+      country: (f.country || '').toUpperCase(),
+      // Cart + pricing context
+      items: cart,
+      totalAmount: cartTotal,
+      bundleCount: BUNDLE_ITEM_COUNT,
+      bundlePrice: BUNDLE_ITEM_PRICE,
+      shippingCost: shippingCost,
+      bundleDiscount: bundleDiscount,
+      couponCode: activeCoupon ? activeCoupon.code : null,
+      promoCode: activeLeadPromo ? activeLeadPromo.code : null,
+      currency,
+    };
+  };
 
   const createPayPalOrder = async () => {
     if (hasInvalidVariant) {
@@ -2268,30 +2337,134 @@ function MainApp() {
         <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
           <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1', minWidth: '300px' }}>
             <h3>{t('shipping_details')}</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <input
+                name="firstName"
+                type="text"
+                placeholder="First Name"
+                autoComplete="given-name"
+                required
+                value={checkoutForm.firstName}
+                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, firstName: e.target.value }))}
+              />
+              <input
+                name="lastName"
+                type="text"
+                placeholder="Last Name"
+                autoComplete="family-name"
+                required
+                value={checkoutForm.lastName}
+                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, lastName: e.target.value }))}
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <input
+                name="customerEmail"
+                type="email"
+                placeholder="Email"
+                autoComplete="email"
+                required
+                value={checkoutForm.customerEmail}
+                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, customerEmail: e.target.value }))}
+              />
+              <input
+                name="phone"
+                type="tel"
+                placeholder="Phone (e.g. +972 50 123 4567)"
+                autoComplete="tel"
+                required
+                value={checkoutForm.phone}
+                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, phone: e.target.value }))}
+              />
+            </div>
             <input
-              name="customerName"
+              name="addressLine1"
               type="text"
-              placeholder={t('full_name')}
+              placeholder="Street address"
+              autoComplete="address-line1"
               required
-              value={checkoutForm.customerName}
-              onChange={(e) => setCheckoutForm((prev) => ({ ...prev, customerName: e.target.value }))}
+              value={checkoutForm.addressLine1}
+              onChange={(e) => setCheckoutForm((prev) => ({ ...prev, addressLine1: e.target.value }))}
             />
             <input
-              name="customerEmail"
-              type="email"
-              placeholder={t('email')}
-              required
-              value={checkoutForm.customerEmail}
-              onChange={(e) => setCheckoutForm((prev) => ({ ...prev, customerEmail: e.target.value }))}
-            />
-            <input
-              name="address"
+              name="addressLine2"
               type="text"
-              placeholder={t('address')}
-              required
-              value={checkoutForm.address}
-              onChange={(e) => setCheckoutForm((prev) => ({ ...prev, address: e.target.value }))}
+              placeholder="Apartment, suite, floor (optional)"
+              autoComplete="address-line2"
+              value={checkoutForm.addressLine2}
+              onChange={(e) => setCheckoutForm((prev) => ({ ...prev, addressLine2: e.target.value }))}
             />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <input
+                name="city"
+                type="text"
+                placeholder="City"
+                autoComplete="address-level2"
+                required
+                value={checkoutForm.city}
+                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, city: e.target.value }))}
+              />
+              <input
+                name="region"
+                type="text"
+                placeholder={REGION_REQUIRED_FRONTEND.has(String(checkoutForm.country || '').toUpperCase()) ? 'State / Region' : 'State / Region (optional)'}
+                autoComplete="address-level1"
+                value={checkoutForm.region}
+                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, region: e.target.value }))}
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <input
+                name="postalCode"
+                type="text"
+                placeholder="ZIP / Postal Code"
+                autoComplete="postal-code"
+                required
+                value={checkoutForm.postalCode}
+                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, postalCode: e.target.value }))}
+              />
+              <select
+                name="country"
+                required
+                value={(checkoutForm.country || shippingCountry || 'IL').toUpperCase()}
+                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, country: e.target.value.toUpperCase() }))}
+                style={{ width: '100%' }}
+              >
+                <option value="">— Select country —</option>
+                <option value="IL">Israel</option>
+                <option value="US">United States</option>
+                <option value="GB">United Kingdom</option>
+                <option value="CA">Canada</option>
+                <option value="AU">Australia</option>
+                <option value="DE">Germany</option>
+                <option value="FR">France</option>
+                <option value="IT">Italy</option>
+                <option value="ES">Spain</option>
+                <option value="NL">Netherlands</option>
+                <option value="BE">Belgium</option>
+                <option value="SE">Sweden</option>
+                <option value="NO">Norway</option>
+                <option value="DK">Denmark</option>
+                <option value="FI">Finland</option>
+                <option value="CH">Switzerland</option>
+                <option value="AT">Austria</option>
+                <option value="IE">Ireland</option>
+                <option value="PT">Portugal</option>
+                <option value="PL">Poland</option>
+                <option value="GR">Greece</option>
+                <option value="NZ">New Zealand</option>
+                <option value="JP">Japan</option>
+                <option value="SG">Singapore</option>
+                <option value="HK">Hong Kong</option>
+                <option value="KR">South Korea</option>
+                <option value="BR">Brazil</option>
+                <option value="MX">Mexico</option>
+                <option value="AR">Argentina</option>
+                <option value="ZA">South Africa</option>
+                <option value="AE">United Arab Emirates</option>
+                <option value="IN">India</option>
+              </select>
+            </div>
             {shippingValidationMessage && (
               <p style={{ marginTop: '-6px', marginBottom: '10px', color: '#ff6b6b', fontSize: '0.9rem' }}>
                 {shippingValidationMessage}
