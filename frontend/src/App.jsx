@@ -2583,6 +2583,13 @@ function MainApp() {
               </div>
             )}
 
+            {activeLeadPromo && leadPromoDiscount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#4caf50' }}>
+                <span>{t('promo_code')} ({activeLeadPromo.code})</span>
+                <span>-{curSym}{displayVal(leadPromoDiscount).toFixed(2)}</span>
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: isFreeShipping ? '#4caf50' : '#aaa' }}>
               <span>{t('shipping')} {isFreeShipping && '🎉'}</span>
               <span>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
@@ -2594,9 +2601,56 @@ function MainApp() {
             </div>
 
             <hr style={{ borderColor: '#333', margin: '16px 0' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '20px', marginBottom: '20px' }}>
               <span>{t('total')}</span>
               <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
+            </div>
+
+            {/* Promo code input — same logic as cart drawer (DRP-* lead codes + MENI-* admin coupons) */}
+            <div style={{ padding: '14px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#aaa', marginBottom: '10px' }}>
+                🎟️ {t('promo_code')}?
+              </div>
+              {!(activeLeadPromo || activeCoupon) ? (
+                <>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      value={promoInput}
+                      onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                      placeholder="MENI-XXXX / DRP-XXXX"
+                      className="cart-promo-input"
+                      style={{ flex: 1, minWidth: 0, padding: '10px 12px', background: '#1a1a1a', border: '1px solid #333', borderRadius: '4px', color: '#fff', fontSize: '14px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={applyLeadPromo}
+                      disabled={isApplyingPromo || !promoInput.trim()}
+                      style={{ padding: '10px 18px', background: '#fff', color: '#000', border: 'none', borderRadius: '4px', fontWeight: 700, textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.1em', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      {isApplyingPromo ? '...' : t('promo_apply')}
+                    </button>
+                  </div>
+                  {promoFeedback && (
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: (activeLeadPromo || activeCoupon) ? '#4caf50' : '#ff6b6b' }}>
+                      {promoFeedback}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                  <span style={{ color: '#4caf50' }}>
+                    ✓ {(activeLeadPromo && activeLeadPromo.code) || (activeCoupon && activeCoupon.code)} applied
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveLeadPromo(null); setActiveCoupon(null); setPromoInput(''); setPromoFeedback(''); }}
+                    style={{ background: 'transparent', color: '#aaa', border: '1px solid #444', borderRadius: '4px', padding: '4px 10px', fontSize: '11px', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
