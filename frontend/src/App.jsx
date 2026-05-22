@@ -8,6 +8,7 @@ import './index.css'
 // Shared Components
 import Footer from './components/Footer'
 import CookieConsent from './components/CookieConsent'
+import BackButton from './components/BackButton'
 
 // Compliance & Legal Pages
 import PrivacyPolicy from './pages/PrivacyPolicy'
@@ -284,7 +285,7 @@ const translations = {
     popup_unique_code: "Your unique code",
     popup_copy: "Copy code",
     popup_copied: "Copied!",
-    promo_code: "Promo Code",
+    promo_code: "Coupon Code",
     promo_apply: "Apply",
     promo_applied: "Code applied",
     promo_invalid: "Promo code is invalid or already used",
@@ -1123,6 +1124,9 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         </button>
       </header>
       <div className="container pdp-container">
+        <div style={{ width: '100%', marginBottom: '12px' }}>
+          <BackButton />
+        </div>
         <div className="pdp-images">
           {isMobileViewport ? (
             <div className="pdp-mobile-gallery">
@@ -1886,10 +1890,7 @@ function MainApp() {
     });
     setCartBadgePulse(true);
     setTimeout(() => setCartBadgePulse(false), 360);
-    if (openCart) {
-      openCartDrawer();
-      setTimeout(openCartDrawer, 24);
-    }
+    // Drawer pop-up disabled — user now sees a toast and can click the Cart button to open the full /cart page.
   }
 
   const removeFromCart = (cartId) => {
@@ -2329,11 +2330,203 @@ function MainApp() {
     );
   }
 
+  // ============ ROUTE: CART ============
+  if (currentPath === '/cart') {
+    return (
+      <div className="container" style={{ paddingTop: '24px', paddingBottom: '60px' }}>
+        <BackButton label="Continue Shopping" fallback="/" />
+        <h1 style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.01em', textTransform: 'uppercase', margin: '8px 0 32px' }}>
+          {t('cart')} ({totalItems})
+        </h1>
+
+        {cart.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '80px 20px', color: '#888' }}>
+            <p style={{ fontSize: '18px', marginBottom: '24px' }}>{t('cart_empty')}.</p>
+            <button className="checkout-btn" style={{ maxWidth: '240px' }} onClick={() => navigate('/')}>
+              {t('return_home')}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            {/* LEFT: Items */}
+            <div style={{ flex: '2 1 480px', minWidth: 0 }}>
+              {bundleActive ? (
+                <div className="bundle-banner active" style={{ marginBottom: '20px' }}>{t('bundle_active')}</div>
+              ) : totalItems === 2 ? (
+                <div className="bundle-banner hint" style={{ marginBottom: '20px' }}>{t('bundle_hint')}</div>
+              ) : null}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {cart.map((item) => {
+                  const itemPrice = getCartUnitPrice(item, currency, exchangeRate);
+                  const parsed = splitVariantTitle(item.title);
+                  const selectedColor = item.selectedColor || parsed.color || '';
+                  const selectedSize = normalizeSizeLabel(item.selectedSize || parsed.size || '');
+                  const itemThumbnail = item.imageUrl || (Array.isArray(item.images) && item.images[0]) || null;
+                  return (
+                    <div
+                      key={item.cartId || item.id}
+                      style={{
+                        display: 'flex', gap: '16px', alignItems: 'flex-start',
+                        padding: '16px', background: '#0f0f0f',
+                        border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px',
+                      }}
+                    >
+                      {itemThumbnail && (
+                        <img
+                          src={itemThumbnail}
+                          alt={item.title}
+                          style={{ width: '96px', height: '96px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, background: '#1a1a1a' }}
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <strong style={{ display: 'block', fontSize: '15px', lineHeight: 1.35 }}>{getCartDisplayTitle(item.title, locale)}</strong>
+                        {(selectedColor || selectedSize) && (
+                          <div style={{ fontSize: '11px', color: '#888', marginTop: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                            {selectedColor && <span>{localizeColorName(selectedColor, locale)}</span>}
+                            {selectedColor && selectedSize && <span> · </span>}
+                            {selectedSize && <span>{selectedSize}</span>}
+                          </div>
+                        )}
+                        <div className="cart-qty-controls" style={{ marginTop: '12px' }}>
+                          <button type="button" onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity - 1)}>−</button>
+                          <span>{item.quantity}</span>
+                          <button type="button" onClick={() => updateQuantity(item.cartId || `${item.id}`, item.quantity + 1)}>+</button>
+                          <button type="button" className="remove-btn" onClick={() => removeFromCart(item.cartId || `${item.id}`)}>🗑</button>
+                        </div>
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: '16px', whiteSpace: 'nowrap', minWidth: '80px', textAlign: 'right' }}>
+                        {curSym}{(itemPrice * item.quantity).toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* RIGHT: Summary */}
+            <div style={{ flex: '1 1 320px', position: 'sticky', top: '24px', background: '#0f0f0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '24px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', margin: '0 0 20px', color: '#aaa' }}>
+                {t('order_summary')}
+              </h3>
+
+              {totalItems > 0 && !isFreeShipping && (
+                <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
+                  <p style={{ fontSize: '12px', margin: '0 0 8px', color: '#aaa' }}>{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
+                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, (totalItems / FREE_SHIPPING_THRESHOLD) * 100)}%`, background: '#fff', transition: 'width 0.4s' }} />
+                  </div>
+                </div>
+              )}
+              {isFreeShipping && (
+                <div style={{ marginBottom: '20px', padding: '10px', background: 'rgba(76,175,80,0.1)', border: '1px solid rgba(76,175,80,0.3)', borderRadius: '6px', textAlign: 'center', fontSize: '12px', color: '#4caf50', fontWeight: 600 }}>
+                  🎉 {t('shipping_unlocked')}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', color: '#aaa' }}>
+                <span>{t('subtotal')}</span>
+                <span style={{ color: '#fff' }}>{curSym}{displayVal(baseSubtotal).toFixed(2)}</span>
+              </div>
+
+              {bundleDiscount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', color: '#4caf50' }}>
+                  <span>{t('bundle_deal', { sets: bundleSets })}</span>
+                  <span>-{curSym}{displayVal(bundleDiscount).toFixed(2)}</span>
+                </div>
+              )}
+
+              {couponDiscount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', color: '#4caf50' }}>
+                  <span>{t('coupon_label')} ({activeCoupon.code})</span>
+                  <span>-{curSym}{displayVal(couponDiscount).toFixed(2)}</span>
+                </div>
+              )}
+
+              {activeLeadPromo && leadPromoDiscount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', color: '#4caf50' }}>
+                  <span>{t('promo_code')} ({activeLeadPromo.code})</span>
+                  <span>-{curSym}{displayVal(leadPromoDiscount).toFixed(2)}</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px', color: isFreeShipping ? '#4caf50' : '#aaa' }}>
+                <span>{t('shipping')}</span>
+                <span>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
+              </div>
+
+              <hr style={{ borderColor: 'rgba(255,255,255,0.1)', margin: '16px 0' }} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '22px', marginBottom: '20px' }}>
+                <span>{t('total')}</span>
+                <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
+              </div>
+
+              {/* Coupon entry */}
+              <div style={{ padding: '14px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '16px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#aaa', marginBottom: '10px' }}>
+                  🎟️ {t('promo_code')}?
+                </div>
+                {!(activeLeadPromo || activeCoupon) ? (
+                  <>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        value={promoInput}
+                        onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                        placeholder="MENI-XXXX / DRP-XXXX"
+                        style={{ flex: 1, minWidth: 0, padding: '10px 12px', background: '#1a1a1a', border: '1px solid #333', borderRadius: '4px', color: '#fff', fontSize: '14px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={applyLeadPromo}
+                        disabled={isApplyingPromo || !promoInput.trim()}
+                        style={{ padding: '10px 18px', background: '#fff', color: '#000', border: 'none', borderRadius: '4px', fontWeight: 700, textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.1em', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {isApplyingPromo ? '...' : t('promo_apply')}
+                      </button>
+                    </div>
+                    {promoFeedback && (
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: (activeLeadPromo || activeCoupon) ? '#4caf50' : '#ff6b6b' }}>
+                        {promoFeedback}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                    <span style={{ color: '#4caf50' }}>✓ {(activeLeadPromo && activeLeadPromo.code) || (activeCoupon && activeCoupon.code)} applied</span>
+                    <button
+                      type="button"
+                      onClick={() => { setActiveLeadPromo(null); setActiveCoupon(null); setPromoInput(''); setPromoFeedback(''); }}
+                      style={{ background: 'transparent', color: '#aaa', border: '1px solid #444', borderRadius: '4px', padding: '4px 10px', fontSize: '11px', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button type="button" className="checkout-btn" style={{ width: '100%' }} onClick={proceedToCheckout} disabled={cart.length === 0}>
+                {t('checkout')} →
+              </button>
+
+              <p style={{ fontSize: '11px', color: '#666', textAlign: 'center', marginTop: '12px' }}>
+                Taxes and shipping calculated at checkout
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ============ ROUTE: CHECKOUT ============
   if (currentPath === '/checkout') {
     return (
       <div className="container checkout-page">
-        <h1 style={{ marginTop: '40px' }}>{t('checkout_secure')}</h1>
+        <div style={{ marginTop: '24px' }}><BackButton label="Back to Cart" fallback="/cart" /></div>
+        <h1 style={{ marginTop: '16px' }}>{t('checkout_secure')}</h1>
         <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
           <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1', minWidth: '300px' }}>
             <h3>{t('shipping_details')}</h3>
@@ -2854,7 +3047,7 @@ function MainApp() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={openCartDrawer}>
+          <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={() => navigate('/cart')}>
             <span>🛒 {t('cart')}</span>
             {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
           </button>
@@ -2898,7 +3091,7 @@ function MainApp() {
             curSym={curSym}
             locale={locale}
             cartCount={totalItems}
-            onOpenCart={openCartDrawer}
+            onOpenCart={() => navigate('/cart')}
           />
         } />
         <Route path="/privacy" element={<PrivacyPolicy />} />

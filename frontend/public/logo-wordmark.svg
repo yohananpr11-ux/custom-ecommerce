@@ -1,12 +1,17 @@
 <svg width="800" height="160" viewBox="0 0 800 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Drip Street Shop Wordmark</title>
-  <desc id="desc">Wordmark-only logo for compact horizontal use.</desc>
-  <defs>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#FF6B35" />
-      <stop offset="100%" stop-color="#00F5FF" />
-    </linearGradient>
-  </defs>
-  <text x="20" y="92" fill="#FFFFFF" font-family="'Bebas Neue', 'Impact', sans-serif" font-size="108" letter-spacing="4">DRIP STREET</text>
-  <rect x="20" y="110" width="760" height="8" rx="4" fill="url(#accent)"/>
+  <title id="title">Drip Street</title>
+  <desc id="desc">Wordmark with droplet mark for compact horizontal use.</desc>
+  <g fill="#FFFFFF">
+    <!-- Droplet mark — quietly literal to the brand. Sized to match cap-height of the wordmark. -->
+    <path d="M 60 28 C 60 28, 38 52, 38 76 a 22 22 0 0 0 44 0 C 82 52, 60 28, 60 28 Z" />
+    <!-- Detached drip below the main drop — subtle motion -->
+    <circle cx="60" cy="118" r="5" opacity="0.7" />
+  </g>
+  <!-- Wordmark: two weights play off each other for a streetwear feel without screaming -->
+  <g font-family="'Helvetica Neue', 'Arial Black', Helvetica, Arial, sans-serif" fill="#FFFFFF">
+    <text x="120" y="100" font-weight="900" font-size="84" letter-spacing="2">DRIP</text>
+    <text x="310" y="100" font-weight="300" font-size="84" letter-spacing="6">STREET</text>
+  </g>
+  <!-- Hairline rule under the wordmark — tiny accent, no neon -->
+  <rect x="120" y="118" width="560" height="2" fill="#FFFFFF" opacity="0.55" />
 </svg>
