@@ -1381,16 +1381,21 @@ function MainApp() {
   const [currency, setCurrency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
 
-  // Geo-aware currency + country defaults
+  // Geo-aware currency + country defaults.
+  // The backend gives us the live exchange rate (and a server-side country guess).
+  // We *also* hit ipapi.co directly from the browser, because Render strips most
+  // proxy headers and the server otherwise falls back to the IL default for
+  // every visitor. The browser-side lookup is the source of truth for currency.
   useEffect(() => {
+    // 1) Backend: authoritative for exchange rate, provisional for country.
     fetch(`${API_BASE}/api/geolocation`)
       .then((res) => res.json())
       .then((data) => {
-        if (data && (data.currency === 'ILS' || data.currency === 'USD')) {
-          setCurrency(data.currency);
-        }
         if (data && Number.isFinite(Number(data.exchangeRate)) && Number(data.exchangeRate) > 0) {
           setExchangeRate(Number(data.exchangeRate));
+        }
+        if (data && (data.currency === 'ILS' || data.currency === 'USD')) {
+          setCurrency(data.currency);
         }
         if (data && typeof data.country === 'string' && data.country.length === 2) {
           const cc = data.country.toUpperCase();
@@ -1398,7 +1403,20 @@ function MainApp() {
           setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
         }
       })
-      .catch(() => { /* fallback to USD default */ });
+      .catch(() => { /* keep defaults — ipapi step below will still try */ });
+
+    // 2) Browser-side IP→country lookup. Reliable regardless of backend proxy setup.
+    fetch('https://ipapi.co/json/')
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!data) return;
+        const cc = String(data.country_code || '').toUpperCase();
+        if (cc.length !== 2) return;
+        setCurrency(cc === 'IL' ? 'ILS' : 'USD');
+        setShippingCountry(cc);
+        setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
+      })
+      .catch(() => { /* silent — backend value already applied */ });
   }, []);
 
   const [isWidgetChatOpen, setIsWidgetChatOpen] = useState(false);
