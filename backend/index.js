@@ -950,14 +950,80 @@ app.get('/', (req, res) => {
 });
 
 // Geolocation and config helper
-app.get('/api/geolocation', (req, res) => {
-  const country = String(req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || 'IL').toUpperCase();
+// === Geolocation: edge-header first, then IP→country lookup with cache, then IL default ===
+const GEO_CACHE = new Map(); // ip -> { country, expiresAt }
+const GEO_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+const getClientIpForGeo = (req) => {
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const candidates = [
+    req.headers['cf-connecting-ip'],
+    xff[0],
+    req.headers['x-real-ip'],
+    req.socket && req.socket.remoteAddress,
+    req.ip,
+  ];
+  for (const c of candidates) {
+    if (c && typeof c === 'string' && c.trim()) return c.trim().replace(/^::ffff:/, '');
+  }
+  return null;
+};
+
+const isPrivateIp = (ip) => {
+  if (!ip) return true;
+  if (ip === '::1' || ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('169.254.')) return true;
+  if (ip.startsWith('10.') || ip.startsWith('192.168.')) return true;
+  if (ip.startsWith('172.')) {
+    const second = Number((ip.split('.')[1] || '0'));
+    if (second >= 16 && second <= 31) return true;
+  }
+  // IPv6 private/link-local ranges (loose check)
+  if (/^(fc|fd|fe80)/i.test(ip)) return true;
+  return false;
+};
+
+const lookupCountryFromIp = async (ip) => {
+  if (!ip || isPrivateIp(ip)) return null;
+  const cached = GEO_CACHE.get(ip);
+  if (cached && cached.expiresAt > Date.now()) return cached.country;
+
+  const apiKey = process.env.IPAPI_KEY || '';
+  const url = apiKey
+    ? `https://ipapi.co/${encodeURIComponent(ip)}/country/?key=${encodeURIComponent(apiKey)}`
+    : `https://ipapi.co/${encodeURIComponent(ip)}/country/`;
+  try {
+    const resp = await axios.get(url, { timeout: 3000, validateStatus: () => true, headers: { 'User-Agent': 'dripstreetshop/1.0' } });
+    const country = String(resp.data || '').trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(country)) {
+      GEO_CACHE.set(ip, { country, expiresAt: Date.now() + GEO_CACHE_TTL_MS });
+      return country;
+    }
+  } catch {
+    // swallow — caller falls back to default
+  }
+  return null;
+};
+
+app.get('/api/geolocation', async (req, res) => {
+  // 1) Prefer an explicit edge-injected country header (Vercel, Cloudflare). Still works for any future proxy setup.
+  const headerCountry = String(req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || '').toUpperCase();
+  let country = /^[A-Z]{2}$/.test(headerCountry) ? headerCountry : null;
+
+  // 2) Fall back to IP→country lookup via ipapi.co (cached 24h, free-tier safe)
+  if (!country) {
+    const ip = getClientIpForGeo(req);
+    country = await lookupCountryFromIp(ip);
+  }
+
+  // 3) Final fallback — IL (matches the brand's home market)
+  if (!country) country = 'IL';
+
   const isIsrael = country === 'IL';
   res.json({
     country,
     currency: isIsrael ? 'ILS' : 'USD',
     locale: 'en',
-    exchangeRate: pricingEngine.exchangeRateUSDILS
+    exchangeRate: pricingEngine.exchangeRateUSDILS,
   });
 });
 
