@@ -735,6 +735,43 @@ const registerWebhooksHandler = async (req, res) => {
 
 app.all('/api/admin/register-webhooks', registerWebhooksHandler);
 
+// One-off admin endpoint: tells Telegram to deliver bot updates to OUR /api/webhooks/telegram.
+// Visit once after deploy. Reads TELEGRAM_BOT_TOKEN from env so the token is never typed into a browser bar.
+app.all('/api/admin/register-telegram-webhook', async (req, res) => {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return res.status(400).json({ success: false, error: 'TELEGRAM_BOT_TOKEN is not configured on the server' });
+  }
+  const webhookUrl = `${API_BASE_URL || `https://custom-ecommerce-qp30.onrender.com`}/api/webhooks/telegram`;
+  try {
+    // Read what's currently set so we can show before/after in the response.
+    const before = await axios.get(`https://api.telegram.org/bot${token}/getWebhookInfo`, { timeout: 8000 });
+    const setResp = await axios.post(
+      `https://api.telegram.org/bot${token}/setWebhook`,
+      {
+        url: webhookUrl,
+        allowed_updates: ['message', 'callback_query'],
+        drop_pending_updates: true,
+      },
+      { timeout: 8000 }
+    );
+    const after = await axios.get(`https://api.telegram.org/bot${token}/getWebhookInfo`, { timeout: 8000 });
+    return res.json({
+      success: setResp.data && setResp.data.ok === true,
+      newWebhookUrl: webhookUrl,
+      telegramResponse: setResp.data,
+      before: before.data && before.data.result ? { url: before.data.result.url, pending: before.data.result.pending_update_count } : null,
+      after:  after.data  && after.data.result  ? { url: after.data.result.url,  pending: after.data.result.pending_update_count }  : null,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to set Telegram webhook',
+      details: err.response && err.response.data ? err.response.data : err.message,
+    });
+  }
+});
+
 app.get('/api/admin/test-telegram', async (req, res) => {
   const timestamp = new Date().toISOString();
   const message = `🧪 <b>Telegram Test</b>\n\nServer test message at: ${timestamp}`;
