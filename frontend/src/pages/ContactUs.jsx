@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import LegalPageLayout from '../components/LegalPageLayout';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
@@ -41,7 +41,7 @@ export default function ContactUs() {
       } else {
         throw new Error('Server error');
       }
-    } catch (err) {
+    } catch {
       setStatus('error');
       setFeedbackMsg('We couldn\'t send your message. Please try again or contact support@dripstreet.shop directly.');
     }

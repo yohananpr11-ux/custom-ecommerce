@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { initAnalytics, trackPageView, trackViewItem } from './utils/analytics.js'
 import './index.css'
 
@@ -49,7 +49,6 @@ const translations = {
     hero_title: "DRIP STREET",
     hero_subtitle: "סטריטוור מינימליסטי ליום יום.",
     shop_now: "קנה עכשיו",
-    best_sellers: "הנמכרים ביותר",
     trust_secure: "תשלום מאובטח",
     trust_shipping: "משלוח מהיר",
     trust_returns: "החזרות קלות",
@@ -182,7 +181,6 @@ const translations = {
     hero_title: "DRIP STREET",
     hero_subtitle: "Minimal streetwear built for confidence.",
     shop_now: "Shop Now",
-    best_sellers: "Best Sellers",
     trust_secure: "Secure Payment",
     trust_shipping: "Fast Shipping",
     trust_returns: "Easy Returns",
@@ -663,7 +661,7 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
   );
 }
 
-function PromoDealBadge({ locale, currency, curSym, displayVal }) {
+function PromoDealBadge({ locale, curSym, displayVal }) {
   if (locale === 'he') {
     return (
       <span className="deal-badge" dir="rtl">
@@ -688,7 +686,7 @@ function PromoDealBadge({ locale, currency, curSym, displayVal }) {
 }
 
 // ─── LeadCapturePopup ────────────────────────────────────────────────────────
-function LeadCapturePopup({ t, locale }) {
+function LeadCapturePopup({ t }) {
   const STORAGE_KEY = 'drip_street_lead_dismissed';
   const [visible, setVisible] = useState(false);
   const [email, setEmail] = useState('');
@@ -847,7 +845,7 @@ const REVIEWS_EN = [
 ];
 
 function CustomerReviews({ t, locale }) {
-  const reviews = REVIEWS_EN;
+  const reviews = locale === 'he' ? REVIEWS_HE : REVIEWS_EN;
   return (
     <div className="customer-reviews">
       <h3 className="reviews-section-title">{t('reviews_title')}</h3>
@@ -1596,12 +1594,12 @@ function MainApp() {
     }
   }, [isPayPalAvailable, isPayPlusAvailable, isStripeAvailable, paymentMethod]);
 
-  const openCartDrawer = () => {
+  function openCartDrawer() {
     setIsCartOpen(true);
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => setIsCartOpen(true));
     }
-  };
+  }
 
   const closeCartDrawer = () => {
     setIsCartOpen(false);
@@ -2124,6 +2122,8 @@ function MainApp() {
     }
   }
 
+  // Legacy cart drawer JSX kept for parity while the active drawer is rendered below.
+  // eslint-disable-next-line no-unused-vars
   const cartDrawer = (
     <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) closeCartDrawer(); }}>
       <div className="cart-panel" onClick={(event) => event.stopPropagation()}>
@@ -2713,7 +2713,7 @@ function MainApp() {
                       {product.backImageUrl && (
                         <img loading="lazy" src={product.backImageUrl} alt={`${getProductTitle(product.title, locale)} — back view`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
-                      {isTeeProduct(product) && <PromoDealBadge locale={locale} currency={currency} curSym={curSym} displayVal={displayVal} />}
+                      {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -3247,7 +3247,7 @@ function MainApp() {
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {true && <LeadCapturePopup t={t} locale={locale} />}
+        <LeadCapturePopup t={t} />
       </AnimatePresence>
       <Footer />
       <CookieConsent />
