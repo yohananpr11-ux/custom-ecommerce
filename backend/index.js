@@ -840,7 +840,9 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     }
 
     await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
-    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText: `$${amount.toFixed(2)}` });
+    const isILS = String(session.currency || '').toLowerCase() === 'ils';
+    const amountText = isILS ? `₪${amount.toFixed(2)}` : `$${amount.toFixed(2)}`;
+    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText });
     const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [orderId]);
     const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [orderId]);
     if (paidOrder) {
@@ -2241,17 +2243,18 @@ app.post('/api/checkout/stripe', async (req, res) => {
       country: body.country,
     };
     const { orderId, pricing } = await createPendingOrder(shippingInput, items, couponCode);
-    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
-    const stripeAmountCents = Math.max(50, Math.round((pricing.totalAmount / exchangeRate) * 100));
+    
+    // Process ILS natively in agorot (1 ILS = 100 agorot)
+    const stripeAmountAgorot = Math.max(50, Math.round(pricing.totalAmount * 100));
     
     // Create Stripe Session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
-          currency: 'usd',
+          currency: 'ils',
           product_data: { name: `Drip Street bundle order #${orderId}` },
-          unit_amount: stripeAmountCents,
+          unit_amount: stripeAmountAgorot,
         },
         quantity: 1,
       }],
