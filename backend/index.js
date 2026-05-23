@@ -459,7 +459,7 @@ const resolveValidatedOrderItems = async (items = []) => {
       }
     }
 
-    const resolvedPrice = Number.isFinite(Number(resolvedVariant && resolvedVariant.price))
+    const resolvedPrice = (resolvedVariant && Number.isFinite(Number(resolvedVariant.price)))
       ? Number(resolvedVariant.price)
       : Number(rawItem && rawItem.price);
 

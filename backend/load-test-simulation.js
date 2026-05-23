@@ -80,9 +80,9 @@ async function runBot(botIndex) {
   const trace = [];
 
   const botSessionId = `loadtest-session-${botIndex}-${Date.now()}`;
-  const customerName = `[SIM] ${pick(sampleNames)} #${botIndex}`;
+  const customerName = `SIM ${pick(sampleNames)} ${botIndex}`;
   const customerEmail = `loadtest+bot${botIndex}@example.com`;
-  const address = `${pick(sampleStreets)} [SIM]`;
+  const address = `${pick(sampleStreets)} SIM`;
 
   try {
     const visitStart = Date.now();
@@ -121,35 +121,91 @@ async function runBot(botIndex) {
     const items = buildRandomItems(products);
     const totalAmount = sumTotal(items);
 
-    const checkoutStart = Date.now();
-    const checkoutRes = await client.post('/api/checkout/payplus', {
-      customerName,
-      customerEmail,
-      address,
-      items,
-      totalAmount
-    });
-    trace.push({ step: 'checkout_init', ok: true, ms: Date.now() - checkoutStart });
+    // Fetch active payment config
+    const configRes = await client.get('/api/checkout/config');
+    const config = configRes.data || {};
 
-    if (!checkoutRes.data || !checkoutRes.data.success || !checkoutRes.data.paymentUrl) {
-      throw new Error('Checkout init did not return success/paymentUrl');
-    }
+    let orderId = null;
 
-    const orderId = parseOrderIdFromPaymentUrl(checkoutRes.data.paymentUrl);
-    if (!orderId) {
-      throw new Error('Could not parse orderId from paymentUrl');
-    }
-
-    if (COMPLETE_PAYMENT) {
-      const paymentStart = Date.now();
-      await client.post('/api/webhooks/payplus', {
-        transaction_uid: `sim-tx-${botIndex}-${Date.now()}`,
-        status: 'success',
-        custom_field: String(orderId)
+    if (config.payplusEnabled) {
+      console.log(`Bot #${botIndex} selecting PayPlus checkout...`);
+      const checkoutStart = Date.now();
+      const checkoutRes = await client.post('/api/checkout/payplus', {
+        customerName,
+        customerEmail,
+        address,
+        items,
+        totalAmount
       });
-      trace.push({ step: 'payment_webhook', ok: true, ms: Date.now() - paymentStart, orderId });
+      trace.push({ step: 'checkout_init (payplus)', ok: true, ms: Date.now() - checkoutStart });
+
+      if (!checkoutRes.data || !checkoutRes.data.success || !checkoutRes.data.paymentUrl) {
+        throw new Error('PayPlus checkout did not return success/paymentUrl');
+      }
+
+      orderId = parseOrderIdFromPaymentUrl(checkoutRes.data.paymentUrl);
+      if (!orderId) {
+        throw new Error('Could not parse orderId from PayPlus paymentUrl');
+      }
+
+      if (COMPLETE_PAYMENT) {
+        const paymentStart = Date.now();
+        await client.post('/api/webhooks/payplus', {
+          transaction_uid: `sim-tx-${botIndex}-${Date.now()}`,
+          status: 'success',
+          custom_field: String(orderId)
+        });
+        trace.push({ step: 'payment_webhook (payplus)', ok: true, ms: Date.now() - paymentStart, orderId });
+      }
+    } else if (config.stripeEnabled) {
+      console.log(`Bot #${botIndex} selecting Stripe checkout...`);
+      const checkoutStart = Date.now();
+      const checkoutRes = await client.post('/api/checkout/stripe', {
+        customerName,
+        customerEmail,
+        address,
+        items,
+        totalAmount
+      });
+      trace.push({ step: 'checkout_init (stripe)', ok: true, ms: Date.now() - checkoutStart });
+
+      if (!checkoutRes.data || !checkoutRes.data.success || !checkoutRes.data.paymentUrl) {
+        throw new Error('Stripe checkout did not return success/paymentUrl');
+      }
+
+      orderId = parseOrderIdFromPaymentUrl(checkoutRes.data.paymentUrl);
+      if (COMPLETE_PAYMENT) {
+        trace.push({ step: 'payment_webhook (stripe)', ok: true, ms: 0, orderId, simulated: true });
+      }
+    } else if (config.paypalEnabled) {
+      console.log(`Bot #${botIndex} selecting PayPal checkout...`);
+      const checkoutStart = Date.now();
+      const checkoutRes = await client.post('/api/paypal/create-order', {
+        customerName,
+        customerEmail,
+        address,
+        items,
+        currency: 'ILS',
+        firstName: customerName.split(' ')[0],
+        lastName: customerName.split(' ')[1] || 'Test',
+        phone: '0501234567',
+        addressLine1: 'Dizengoff 45',
+        city: 'Tel Aviv',
+        postalCode: '61000',
+        country: 'IL'
+      });
+      trace.push({ step: 'checkout_init (paypal)', ok: true, ms: Date.now() - checkoutStart });
+
+      if (!checkoutRes.data || !checkoutRes.data.success || !checkoutRes.data.orderID) {
+        throw new Error('PayPal create-order did not return success/orderID');
+      }
+
+      orderId = checkoutRes.data.orderId;
+      if (COMPLETE_PAYMENT) {
+        trace.push({ step: 'payment_webhook (paypal)', ok: true, ms: 0, orderId, simulated: true });
+      }
     } else {
-      trace.push({ step: 'payment_webhook', ok: true, ms: 0, orderId, skipped: true });
+      throw new Error('No active payment methods configured on backend');
     }
 
     return {
