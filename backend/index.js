@@ -1302,6 +1302,48 @@ app.post('/api/admin/set-coupon', (req, res) => {
   res.json({ success: true, message: `Coupon ${code} set to ${discount_pct}% off.` });
 });
 
+// Admin Refresh Prices — force-run the pricing engine to re-apply targetPricesILS
+// to all products in the DB. Use this after changing targetPricesILS in pricing.js
+// to push the new prices live without waiting for an extreme FX swing.
+//
+// Auth: same X-Admin-Secret shared header as set-coupon.
+// Usage: curl -X POST https://.../api/admin/refresh-prices -H "X-Admin-Secret: <secret>"
+app.post('/api/admin/refresh-prices', async (req, res) => {
+  const expected = process.env.DRIP_ADMIN_SECRET;
+  if (!expected) {
+    return res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+  }
+  const provided = req.get('X-Admin-Secret') || '';
+  if (!timingSafeEqualStr(provided, expected)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const beforeRows = await dbAllAsync('SELECT id, title, price FROM products', []);
+    await pricingEngine.runPricingUpdate({ force: true, reason: 'manual_refresh_endpoint' });
+    const afterRows = await dbAllAsync('SELECT id, title, price FROM products', []);
+
+    const changes = afterRows
+      .map((after) => {
+        const before = beforeRows.find((b) => b.id === after.id);
+        const fromPrice = Number(before?.price ?? 0);
+        const toPrice = Number(after.price ?? 0);
+        return { id: after.id, title: after.title, fromPrice, toPrice, changed: Math.abs(fromPrice - toPrice) > 0.01 };
+      })
+      .filter((c) => c.changed);
+
+    return res.json({
+      success: true,
+      totalProducts: afterRows.length,
+      productsChanged: changes.length,
+      changes,
+    });
+  } catch (err) {
+    console.error('refresh-prices failed:', err.message);
+    return res.status(500).json({ error: err.message || 'Refresh prices failed' });
+  }
+});
+
 // Admin Printify Sync
 app.post('/api/admin/printify-sync', async (req, res) => {
   try {
