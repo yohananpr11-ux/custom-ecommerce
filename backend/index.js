@@ -851,8 +851,51 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
   res.json({received: true});
 });
 
-app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
-  const { transaction_uid, status, custom_field } = req.body;
+app.post('/api/webhooks/payplus', express.raw({ type: 'application/json' }), async (req, res) => {
+  const rawBody = req.body ? req.body.toString('utf8') : '';
+  const hash = req.headers['hash'] || req.headers['Hash'];
+  const secretKey = process.env.PAYPLUS_SECRET_KEY;
+
+  if (!secretKey) {
+    console.error('[PayPlus Webhook] PAYPLUS_SECRET_KEY is not configured on the server');
+    return res.status(500).json({ received: false, error: 'PAYPLUS_SECRET_KEY not configured' });
+  }
+
+  if (!hash) {
+    console.warn('[PayPlus Webhook] Missing hash signature header');
+    return res.status(400).json({ received: false, error: 'Missing hash signature' });
+  }
+
+  // Calculate HMAC SHA-256 signature
+  const calculatedHash = crypto
+    .createHmac('sha256', secretKey)
+    .update(rawBody)
+    .digest('base64');
+
+  // Secure timing-safe signature comparison
+  let signaturesMatch = false;
+  try {
+    signaturesMatch = crypto.timingSafeEqual(
+      Buffer.from(calculatedHash, 'base64'),
+      Buffer.from(hash, 'base64')
+    );
+  } catch (e) {
+    // Mismatch in buffer length, signature is invalid
+  }
+
+  if (!signaturesMatch) {
+    console.warn(`[PayPlus Webhook] Signature verification failed. Calculated: ${calculatedHash}, Received: ${hash}`);
+    return res.status(401).json({ received: false, error: 'Signature verification failed' });
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch (e) {
+    return res.status(400).json({ received: false, error: 'Invalid JSON payload' });
+  }
+
+  const { transaction_uid, status, custom_field } = payload;
   const orderId = Number(custom_field); // We pass orderId in custom_field during PayPlus creation
 
   if (!orderId || Number.isNaN(orderId)) {
@@ -1961,7 +2004,7 @@ const createPendingOrder = async (shippingInput, items, couponCode) => {
 app.get('/api/checkout/config', (req, res) => {
   const paypalEnabled = hasPayPalCheckoutConfig();
   const stripeEnabled = hasStripeCheckoutConfig();
-  const payplusEnabled = hasPayPlusCheckoutConfig() && false;
+  const payplusEnabled = hasPayPlusCheckoutConfig() && hasConfiguredValue(process.env.PAYPLUS_PAGE_UID);
 
   return res.json({
     paypalEnabled,
@@ -2229,7 +2272,81 @@ app.post('/api/checkout/stripe', async (req, res) => {
 
 // Checkout via PayPlus/Grow (NIS)
 app.post('/api/checkout/payplus', async (req, res) => {
-  return res.status(503).json({ success: false, error: 'Card checkout is temporarily unavailable. Please use PayPal.' });
+  const body = req.body || {};
+  const { customerName, customerEmail, address, items, couponCode } = body;
+
+  if (!hasPayPlusCheckoutConfig() || !process.env.PAYPLUS_PAGE_UID) {
+    return res.status(503).json({ success: false, error: 'PayPlus checkout is currently unavailable. Please use PayPal.' });
+  }
+
+  try {
+    const shippingInput = {
+      customerName,
+      customerEmail,
+      address,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      phone: body.phone,
+      addressLine1: body.addressLine1,
+      addressLine2: body.addressLine2,
+      city: body.city,
+      region: body.region,
+      postalCode: body.postalCode,
+      country: body.country,
+    };
+    
+    // Create local pending order and calculate pricing in NIS
+    const { orderId, pricing } = await createPendingOrder(shippingInput, items, couponCode);
+
+    // Call PayPlus REST API to generate secure payment page link
+    const payplusPayload = {
+      payment_page_uid: process.env.PAYPLUS_PAGE_UID,
+      amount: pricing.totalAmount, // amount in ILS
+      currency_code: 'ILS',
+      sendEmailApproval: true,
+      sendEmailFailure: false,
+      refURL_success: `${FRONTEND_BASE_URL}/success?order_id=${orderId}`,
+      refURL_failure: `${FRONTEND_BASE_URL}/cart`,
+      custom_field: orderId.toString(),
+      customer: {
+        customer_name: customerName,
+        email: customerEmail,
+        phone: body.phone || '',
+      },
+      items: items.map(item => ({
+        name: item.title,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+    };
+
+    const response = await axios.post(
+      'https://restapi.payplus.co.il/api/v1.0/PaymentPages/generateLink',
+      payplusPayload,
+      {
+        headers: {
+          'accept': 'application/json',
+          'content-type': 'application/json',
+          'api-key': process.env.PAYPLUS_API_KEY,
+          'secret-key': process.env.PAYPLUS_SECRET_KEY,
+        },
+        timeout: 10000,
+      }
+    );
+
+    if (response.data && response.data.results && response.data.results.status === 'success') {
+      const paymentUrl = response.data.data.payment_page_link;
+      res.json({ success: true, paymentUrl });
+    } else {
+      console.error('PayPlus API response failed:', response.data);
+      const errMsg = response.data?.results?.description || 'Failed to generate PayPlus link';
+      res.status(400).json({ error: errMsg });
+    }
+  } catch (err) {
+    console.error('PayPlus checkout initialization error:', err.response?.data || err.message);
+    const statusCode = String(err.message || '').includes('Shipping') || String(err.message || '').includes('Valid email') ? 400 : 500;
+    res.status(statusCode).json({ error: err.message || 'Failed to initialize PayPlus checkout' });
+  }
 });
 
 const extractSessionIdFromText = (text) => {
