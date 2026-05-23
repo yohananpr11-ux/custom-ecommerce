@@ -2504,16 +2504,22 @@ function MainApp() {
             {paymentMethod === 'paypal' ? (
               isPayPalAvailable ? (
                 <>
-                  <div style={{ marginBottom: '12px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '6px' }}>
-                      <span style={{ padding: '3px 8px', background: '#1a1f71', color: '#fff', borderRadius: '3px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif', letterSpacing: '0.5px' }}>VISA</span>
-                      <span style={{ padding: '3px 8px', background: '#eb001b', color: '#fff', borderRadius: '3px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif', letterSpacing: '0.5px' }}>MC</span>
-                      <span style={{ padding: '3px 8px', background: '#006fcf', color: '#fff', borderRadius: '3px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif', letterSpacing: '0.5px' }}>AMEX</span>
-                    </div>
+                  <div style={{ marginBottom: '12px', textAlign: 'center', padding: '12px', background: '#1a1a1a', borderRadius: '8px', border: '1px solid #2a2a2a' }}>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#ddd', lineHeight: '1.6' }}>
+                      {locale === 'he'
+                        ? '🔐 תשלום מאובטח דרך חשבון PayPal. אם אין לך חשבון — יצירת חשבון לוקחת דקה.'
+                        : '🔐 Secure payment via your PayPal account. No account? Sign up takes a minute.'}
+                    </p>
+                    <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: '#888' }}>
+                      {locale === 'he'
+                        ? 'תשלום בכרטיס אשראי ישראלי יחזור בקרוב.'
+                        : 'Israeli credit card checkout returning soon.'}
+                    </p>
                   </div>
-                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card,credit' }}>
+                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card,credit,paylater,venmo' }}>
                   <PayPalButtons
-                    style={{ layout: 'vertical', label: 'checkout' }}
+                    fundingSource="paypal"
+                    style={{ layout: 'horizontal', label: 'checkout', height: 48, shape: 'rect' }}
                     forceReRender={[currency, cartTotal, paypalClientId]}
                     createOrder={async () => {
                       setIsPayPalProcessing(true);
