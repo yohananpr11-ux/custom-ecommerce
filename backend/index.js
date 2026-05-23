@@ -2005,7 +2005,7 @@ const createPendingOrder = async (shippingInput, items, couponCode) => {
 
 app.get('/api/checkout/config', (req, res) => {
   const paypalEnabled = hasPayPalCheckoutConfig();
-  const stripeEnabled = hasStripeCheckoutConfig();
+  const stripeEnabled = hasStripeCheckoutConfig() && false; // TODO: enable once IL merchant account is available
   const payplusEnabled = hasPayPlusCheckoutConfig() && hasConfiguredValue(process.env.PAYPLUS_PAGE_UID);
 
   return res.json({
