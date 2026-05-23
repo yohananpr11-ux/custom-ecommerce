@@ -92,6 +92,7 @@ const translations = {
     shipping_name_english_only: "שם מלא חייב להיות באנגלית בלבד.",
     shipping_address_english_only: "כתובת משלוח חייבת להיות באנגלית בלבד כדי שהמשלוח יגיע נכון.",
     payment_method: "בחר תשלום",
+    payment_card_apple_google: "כרטיס אשראי / Apple Pay / Google Pay",
     payment_card_bit: "כרטיס אשראי / ביט",
     payment_stripe: "כרטיס בינלאומי (Stripe)",
     payment_paypal: "PayPal",
@@ -224,6 +225,7 @@ const translations = {
     shipping_name_english_only: "Full name must be entered in English.",
     shipping_address_english_only: "Shipping address must be entered in English so Printify can deliver correctly.",
     payment_method: "Payment Method",
+    payment_card_apple_google: "Credit Card / Apple Pay / Google Pay",
     payment_card_bit: "Card Payment",
     payment_stripe: "Stripe ($)",
     payment_paypal: "PayPal",
@@ -1336,7 +1338,7 @@ function MainApp() {
     }
   })
   const [isCartOpen, setIsCartOpen] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('paypal')
+  const [paymentMethod, setPaymentMethod] = useState('')
   const [paypalClientId, setPaypalClientId] = useState(import.meta.env.VITE_PAYPAL_CLIENT_ID || '')
   const [checkoutConfig, setCheckoutConfig] = useState({
     paypalEnabled: true,
@@ -1450,8 +1452,6 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
-    setPaymentMethod('paypal');
-
     const visitKey = 'drip_street_visit_notified';
     if (!sessionStorage.getItem(visitKey)) {
       fetch(`${API_BASE}/api/analytics/visit`, {
@@ -1577,6 +1577,13 @@ function MainApp() {
   const isSelectedPaymentAvailable = paymentMethod === 'paypal'
     ? isPayPalAvailable
     : (paymentMethod === 'stripe' ? isStripeAvailable : isPayPlusAvailable);
+
+  useEffect(() => {
+    if (paymentMethod) return;
+    if (isStripeAvailable) setPaymentMethod('stripe');
+    else if (isPayPlusAvailable) setPaymentMethod('payplus');
+    else if (isPayPalAvailable) setPaymentMethod('paypal');
+  }, [isStripeAvailable, isPayPlusAvailable, isPayPalAvailable, paymentMethod]);
 
   useEffect(() => {
     const availableMethods = [];
@@ -2472,23 +2479,25 @@ function MainApp() {
             )}
             
             <h3 style={{ marginTop: '24px' }}>{t('payment_method')}</h3>
-            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-              {isPayPalAvailable && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input type="radio" name="payment" value="paypal" checked={paymentMethod === 'paypal'} onChange={() => setPaymentMethod('paypal')} />
-                  {t('payment_paypal')}
-                </label>
-              )}
-              {isPayPlusAvailable && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
-                  {t('payment_card_bit')}
-                </label>
-              )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
               {isStripeAvailable && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'stripe' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
                   <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
-                  {t('payment_stripe')}
+                  <span style={{ flex: 1 }}>
+                    <div>{t('payment_card_apple_google')}</div>
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                      <span style={{ padding: '2px 6px', background: '#1a1f71', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>VISA</span>
+                      <span style={{ padding: '2px 6px', background: '#eb001b', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>MC</span>
+                      <span style={{ padding: '2px 6px', background: '#000', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>Pay</span>
+                      <span style={{ padding: '2px 6px', background: '#4285f4', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>G Pay</span>
+                    </div>
+                  </span>
+                </label>
+              )}
+              {isPayPalAvailable && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'paypal' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
+                  <input type="radio" name="payment" value="paypal" checked={paymentMethod === 'paypal'} onChange={() => setPaymentMethod('paypal')} />
+                  <span>{t('payment_paypal')}</span>
                 </label>
               )}
             </div>
@@ -2501,11 +2510,8 @@ function MainApp() {
                       <span style={{ padding: '3px 8px', background: '#eb001b', color: '#fff', borderRadius: '3px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif', letterSpacing: '0.5px' }}>MC</span>
                       <span style={{ padding: '3px 8px', background: '#006fcf', color: '#fff', borderRadius: '3px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif', letterSpacing: '0.5px' }}>AMEX</span>
                     </div>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#aaa' }}>
-                      ניתן לשלם בכרטיס אשראי רגיל (אין צורך בחשבון PayPal)
-                    </p>
                   </div>
-                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card' }}>
+                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card,credit' }}>
                   <PayPalButtons
                     style={{ layout: 'vertical', label: 'checkout' }}
                     forceReRender={[currency, cartTotal, paypalClientId]}
