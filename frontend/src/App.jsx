@@ -2494,9 +2494,20 @@ function MainApp() {
             </div>
             {paymentMethod === 'paypal' ? (
               isPayPalAvailable ? (
-                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture' }}>
+                <>
+                  <div style={{ marginBottom: '12px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '6px' }}>
+                      <span style={{ padding: '3px 8px', background: '#1a1f71', color: '#fff', borderRadius: '3px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif', letterSpacing: '0.5px' }}>VISA</span>
+                      <span style={{ padding: '3px 8px', background: '#eb001b', color: '#fff', borderRadius: '3px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif', letterSpacing: '0.5px' }}>MC</span>
+                      <span style={{ padding: '3px 8px', background: '#006fcf', color: '#fff', borderRadius: '3px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif', letterSpacing: '0.5px' }}>AMEX</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#aaa' }}>
+                      ניתן לשלם בכרטיס אשראי רגיל (אין צורך בחשבון PayPal)
+                    </p>
+                  </div>
+                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card' }}>
                   <PayPalButtons
-                    style={{ layout: 'vertical', label: 'paypal' }}
+                    style={{ layout: 'vertical', label: 'checkout' }}
                     forceReRender={[currency, cartTotal, paypalClientId]}
                     createOrder={async () => {
                       setIsPayPalProcessing(true);
@@ -2529,6 +2540,7 @@ function MainApp() {
                     disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
                   />
                 </PayPalScriptProvider>
+                </>
               ) : (
                 <p style={{ color: '#ff6b6b', marginBottom: '16px' }}>PayPal is not configured yet. Please try again in a moment.</p>
               )
