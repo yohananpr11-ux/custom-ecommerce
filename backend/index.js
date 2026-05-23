@@ -1201,15 +1201,49 @@ app.post('/api/promo/validate', async (req, res) => {
 });
 
 // Admin Set Coupon (Triggered by Meni Telegram Webhook)
+const setCouponCallTimestamps = [];
+const SET_COUPON_RATE_LIMIT = 5; // max 5 calls
+const SET_COUPON_RATE_WINDOW_MS = 60 * 1000; // per minute
+
+const timingSafeEqualStr = (a, b) => {
+  const aBuf = Buffer.from(String(a || ''));
+  const bBuf = Buffer.from(String(b || ''));
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+};
+
 app.post('/api/admin/set-coupon', (req, res) => {
+  // Auth: shared secret header. The endpoint mutates the public storefront state,
+  // so it must never be reachable without DRIP_ADMIN_SECRET configured.
+  const expected = process.env.DRIP_ADMIN_SECRET;
+  if (!expected) {
+    return res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+  }
+  const provided = req.get('X-Admin-Secret') || '';
+  if (!timingSafeEqualStr(provided, expected)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // In-memory rate limit (per process). Cheap protection against brute / runaway.
+  const now = Date.now();
+  while (setCouponCallTimestamps.length && now - setCouponCallTimestamps[0] > SET_COUPON_RATE_WINDOW_MS) {
+    setCouponCallTimestamps.shift();
+  }
+  if (setCouponCallTimestamps.length >= SET_COUPON_RATE_LIMIT) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+  setCouponCallTimestamps.push(now);
+
   const { code, discount_pct, duration_hours } = req.body;
   if (!code || !discount_pct) {
     currentActiveCoupon = null; // Clear coupon if empty
+    console.log(`[coupon] cleared by admin at ${new Date(now).toISOString()}`);
     return res.json({ success: true, message: 'Coupon cleared.' });
   }
 
   currentActiveCoupon = { code, discount_pct };
-  
+  console.log(`[coupon] set ${code} ${discount_pct}% for ${duration_hours || 0}h at ${new Date(now).toISOString()}`);
+
   // Clear coupon after duration
   if (duration_hours) {
     setTimeout(() => {
