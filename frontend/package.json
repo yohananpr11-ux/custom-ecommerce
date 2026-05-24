@@ -7,13 +7,16 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "brand:assets": "node build-brand-assets.cjs",
+    "generate:sitemap": "node scripts/generate-sitemap.cjs"
   },
   "dependencies": {
     "@paypal/react-paypal-js": "^9.2.0",
     "framer-motion": "^12.38.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-helmet-async": "^3.0.0",
     "react-router-dom": "^7.15.1"
   },
   "devDependencies": {

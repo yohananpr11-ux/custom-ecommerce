@@ -154,6 +154,28 @@
   --hover-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --skeleton-base: var(--color-shade-80);
   --skeleton-highlight: var(--color-shade-80);
+
+  /* ── Drip Street Brand Holographic System ── */
+  --holo-1: #ff6b35;   /* burnt orange  */
+  --holo-2: #e040a0;   /* hot pink      */
+  --holo-3: #00e5ff;   /* electric cyan */
+  --holo-4: #a855f7;   /* violet        */
+  --holo-gradient: linear-gradient(
+    135deg,
+    var(--holo-1) 0%,
+    var(--holo-2) 30%,
+    var(--holo-3) 60%,
+    var(--holo-4) 100%
+  );
+  --holo-gradient-wide: linear-gradient(
+    135deg,
+    var(--holo-1) 0%,
+    var(--holo-2) 25%,
+    var(--holo-3) 50%,
+    var(--holo-4) 75%,
+    var(--holo-1) 100%
+  );
+  --drip-cursor: url('/brand/drip-mark.png') 16 16, crosshair;
 }
 
 h1,
@@ -255,6 +277,61 @@ body {
   color: var(--text-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+
+/* ── Analog Grain Overlay ── */
+/* SVG feTurbulence noise baked as data-URI; renders as a subtle film grain
+   without any extra network request. opacity 0.025 = invisible on its own
+   but richly textural when blended over the dark background. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+}
+
+/* ── Holographic Text Utility ── */
+/* Usage: add className="holographic-text" to any element.
+   The gradient animates slowly across the text — like liquid chrome. */
+.holographic-text {
+  background: var(--holo-gradient-wide);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: holoShift 8s ease infinite;
+}
+
+@keyframes holoShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ── Holographic Border / Glow Utility ── */
+.holographic-border {
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+}
+.holographic-border::before {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  background: var(--holo-gradient);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.holographic-border:hover::before {
+  opacity: 1;
 }
 
 * {
@@ -299,6 +376,20 @@ a,
   display: flex;
   justify-content: space-between;
   align-items: center;
+  /* ── Glassmorphism Sticky Header ── */
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.70);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+  transition: background 0.3s ease, border-bottom-color 0.3s ease;
+}
+/* Deepen glass when user has scrolled */
+.header.scrolled {
+  background: rgba(0, 0, 0, 0.88);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
 }
 
 .header-leading {
@@ -523,8 +614,38 @@ html[dir="ltr"] .checkout-page input {
 /* Hero Section */
 .hero {
   text-align: center;
-  padding: 100px 0;
+  padding: 120px 0 80px;
   background: linear-gradient(to bottom, var(--color-black-300), var(--bg-color));
+  position: relative;
+  overflow: hidden;
+}
+
+/* Drip-mark background sigil */
+.hero-drip-mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 0;
+}
+.hero-drip-mark img {
+  width: min(60vw, 480px);
+  height: auto;
+  opacity: 0.07;
+  filter: blur(1px);
+  mix-blend-mode: screen;
+  animation: heroMarkBreath 6s ease-in-out infinite;
+}
+@keyframes heroMarkBreath {
+  0%, 100% { transform: scale(1);    opacity: 0.07; }
+  50%       { transform: scale(1.04); opacity: 0.10; }
+}
+
+.hero-content {
+  position: relative;
+  z-index: 1;
 }
 
 .hero h1 {
@@ -581,6 +702,65 @@ html[dir="ltr"] .checkout-page input {
 .hero-cta-secondary:hover {
   background: var(--overlay-white-10);
   transform: translateY(-2px);
+}
+
+/* ── Drip Cursor — only on primary CTA buttons ── */
+/* The drip-mark PNG is 32×32-rendered; hot-spot centred at 16,16.
+   Falls back to a standard pointer so no UX regression on unsupported browsers. */
+.drip-cta {
+  cursor: var(--drip-cursor);
+}
+
+/* ── Product Card Brand Watermark ── */
+.product-card-watermark {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  opacity: 0.04;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  transition: opacity 0.3s ease;
+}
+.product-image-wrapper:hover .product-card-watermark {
+  opacity: 0.10;
+}
+
+/* ── Gooey SVG Filter (defined once, hidden) ── */
+/* Referenced by .drip-spinner via filter: url(#drip-goo) */
+.goo-filter-host {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ── Drip Loading Spinner ── */
+.drip-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 0;
+}
+.drip-spinner-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--holo-gradient);
+  background-size: 300% 300%;
+  animation: holoShift 4s ease infinite, dripBounce 0.9s ease-in-out infinite;
+  filter: url('#drip-goo');
+}
+.drip-spinner-dot:nth-child(2) { animation-delay: 0.15s; }
+.drip-spinner-dot:nth-child(3) { animation-delay: 0.30s; }
+@keyframes dripBounce {
+  0%, 100% { transform: translateY(0)    scaleY(1);    }
+  40%       { transform: translateY(-16px) scaleY(0.85); }
+  60%       { transform: translateY(4px)  scaleY(1.15); }
 }
 
 /* Promo Banner */
