@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { initAnalytics, trackPageView, trackViewItem } from './utils/analytics.js'
 import './index.css'
 
@@ -50,7 +50,6 @@ const translations = {
     hero_title: "DRIP STREET",
     hero_subtitle: "סטריטוור מינימליסטי ליום יום.",
     shop_now: "קנה עכשיו",
-    best_sellers: "הנמכרים ביותר",
     trust_secure: "תשלום מאובטח",
     trust_shipping: "משלוח מהיר",
     trust_returns: "החזרות קלות",
@@ -93,6 +92,7 @@ const translations = {
     shipping_name_english_only: "שם מלא חייב להיות באנגלית בלבד.",
     shipping_address_english_only: "כתובת משלוח חייבת להיות באנגלית בלבד כדי שהמשלוח יגיע נכון.",
     payment_method: "בחר תשלום",
+    payment_card_apple_google: "כרטיס אשראי / Apple Pay / Google Pay",
     payment_card_bit: "כרטיס אשראי / ביט",
     payment_stripe: "כרטיס בינלאומי (Stripe)",
     payment_paypal: "PayPal",
@@ -182,7 +182,6 @@ const translations = {
     hero_title: "DRIP STREET",
     hero_subtitle: "Minimal streetwear built for confidence.",
     shop_now: "Shop Now",
-    best_sellers: "Best Sellers",
     trust_secure: "Secure Payment",
     trust_shipping: "Fast Shipping",
     trust_returns: "Easy Returns",
@@ -225,6 +224,7 @@ const translations = {
     shipping_name_english_only: "Full name must be entered in English.",
     shipping_address_english_only: "Shipping address must be entered in English so Printify can deliver correctly.",
     payment_method: "Payment Method",
+    payment_card_apple_google: "Credit Card / Apple Pay / Google Pay",
     payment_card_bit: "Card Payment",
     payment_stripe: "Stripe ($)",
     payment_paypal: "PayPal",
@@ -662,7 +662,7 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
   );
 }
 
-function PromoDealBadge({ locale, currency, curSym, displayVal }) {
+function PromoDealBadge({ locale, curSym, displayVal }) {
   if (locale === 'he') {
     return (
       <span className="deal-badge" dir="rtl">
@@ -687,7 +687,7 @@ function PromoDealBadge({ locale, currency, curSym, displayVal }) {
 }
 
 // ─── LeadCapturePopup ────────────────────────────────────────────────────────
-function LeadCapturePopup({ t, locale }) {
+function LeadCapturePopup({ t }) {
   const STORAGE_KEY = 'drip_street_lead_dismissed';
   const [visible, setVisible] = useState(false);
   const [email, setEmail] = useState('');
@@ -846,7 +846,7 @@ const REVIEWS_EN = [
 ];
 
 function CustomerReviews({ t, locale }) {
-  const reviews = REVIEWS_EN;
+  const reviews = locale === 'he' ? REVIEWS_HE : REVIEWS_EN;
   return (
     <div className="customer-reviews">
       <h3 className="reviews-section-title">{t('reviews_title')}</h3>
@@ -1340,7 +1340,7 @@ function MainApp() {
     }
   })
   const [isCartOpen, setIsCartOpen] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('paypal')
+  const [paymentMethod, setPaymentMethod] = useState('')
   const [paypalClientId, setPaypalClientId] = useState(import.meta.env.VITE_PAYPAL_CLIENT_ID || '')
   const [checkoutConfig, setCheckoutConfig] = useState({
     paypalEnabled: true,
@@ -1472,8 +1472,6 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
-    setPaymentMethod('paypal');
-
     const visitKey = 'drip_street_visit_notified';
     if (!sessionStorage.getItem(visitKey)) {
       fetch(`${API_BASE}/api/analytics/visit`, {
@@ -1601,6 +1599,13 @@ function MainApp() {
     : (paymentMethod === 'stripe' ? isStripeAvailable : isPayPlusAvailable);
 
   useEffect(() => {
+    if (paymentMethod) return;
+    if (isStripeAvailable) setPaymentMethod('stripe');
+    else if (isPayPlusAvailable) setPaymentMethod('payplus');
+    else if (isPayPalAvailable) setPaymentMethod('paypal');
+  }, [isStripeAvailable, isPayPlusAvailable, isPayPalAvailable, paymentMethod]);
+
+  useEffect(() => {
     const availableMethods = [];
     if (isPayPalAvailable) availableMethods.push('paypal');
     if (isPayPlusAvailable) availableMethods.push('payplus');
@@ -1611,12 +1616,12 @@ function MainApp() {
     }
   }, [isPayPalAvailable, isPayPlusAvailable, isStripeAvailable, paymentMethod]);
 
-  const openCartDrawer = () => {
+  function openCartDrawer() {
     setIsCartOpen(true);
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => setIsCartOpen(true));
     }
-  };
+  }
 
   const closeCartDrawer = () => {
     setIsCartOpen(false);
@@ -2136,6 +2141,8 @@ function MainApp() {
     }
   }
 
+  // Legacy cart drawer JSX kept for parity while the active drawer is rendered below.
+  // eslint-disable-next-line no-unused-vars
   const cartDrawer = (
     <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) closeCartDrawer(); }}>
       <div className="cart-panel" onClick={(event) => event.stopPropagation()}>
@@ -2683,31 +2690,47 @@ function MainApp() {
             )}
             
             <h3 style={{ marginTop: '24px' }}>{t('payment_method')}</h3>
-            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-              {isPayPalAvailable && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input type="radio" name="payment" value="paypal" checked={paymentMethod === 'paypal'} onChange={() => setPaymentMethod('paypal')} />
-                  {t('payment_paypal')}
-                </label>
-              )}
-              {isPayPlusAvailable && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
-                  {t('payment_card_bit')}
-                </label>
-              )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
               {isStripeAvailable && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'stripe' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
                   <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
-                  {t('payment_stripe')}
+                  <span style={{ flex: 1 }}>
+                    <div>{t('payment_card_apple_google')}</div>
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                      <span style={{ padding: '2px 6px', background: '#1a1f71', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>VISA</span>
+                      <span style={{ padding: '2px 6px', background: '#eb001b', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>MC</span>
+                      <span style={{ padding: '2px 6px', background: '#000', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>Pay</span>
+                      <span style={{ padding: '2px 6px', background: '#4285f4', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>G Pay</span>
+                    </div>
+                  </span>
+                </label>
+              )}
+              {isPayPalAvailable && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'paypal' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
+                  <input type="radio" name="payment" value="paypal" checked={paymentMethod === 'paypal'} onChange={() => setPaymentMethod('paypal')} />
+                  <span>{t('payment_paypal')}</span>
                 </label>
               )}
             </div>
             {paymentMethod === 'paypal' ? (
               isPayPalAvailable ? (
-                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture' }}>
+                <>
+                  <div style={{ marginBottom: '12px', textAlign: 'center', padding: '12px', background: '#1a1a1a', borderRadius: '8px', border: '1px solid #2a2a2a' }}>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#ddd', lineHeight: '1.6' }}>
+                      {locale === 'he'
+                        ? '🔐 תשלום מאובטח דרך חשבון PayPal. אם אין לך חשבון — יצירת חשבון לוקחת דקה.'
+                        : '🔐 Secure payment via your PayPal account. No account? Sign up takes a minute.'}
+                    </p>
+                    <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: '#888' }}>
+                      {locale === 'he'
+                        ? 'תשלום בכרטיס אשראי ישראלי יחזור בקרוב.'
+                        : 'Israeli credit card checkout returning soon.'}
+                    </p>
+                  </div>
+                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card,credit,paylater,venmo' }}>
                   <PayPalButtons
-                    style={{ layout: 'vertical', label: 'paypal' }}
+                    fundingSource="paypal"
+                    style={{ layout: 'horizontal', label: 'checkout', height: 48, shape: 'rect' }}
                     forceReRender={[currency, cartTotal, paypalClientId]}
                     createOrder={async () => {
                       setIsPayPalProcessing(true);
@@ -2740,6 +2763,7 @@ function MainApp() {
                     disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
                   />
                 </PayPalScriptProvider>
+                </>
               ) : (
                 <p style={{ color: '#ff6b6b', marginBottom: '16px' }}>PayPal is not configured yet. Please try again in a moment.</p>
               )
@@ -2954,7 +2978,7 @@ function MainApp() {
                       {product.backImageUrl && (
                         <img loading="lazy" src={product.backImageUrl} alt={`${getProductTitle(product.title, locale)} — back view`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
-                      {isTeeProduct(product) && <PromoDealBadge locale={locale} currency={currency} curSym={curSym} displayVal={displayVal} />}
+                      {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -3488,7 +3512,7 @@ function MainApp() {
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {true && <LeadCapturePopup t={t} locale={locale} />}
+        <LeadCapturePopup t={t} />
       </AnimatePresence>
       <Footer />
       <CookieConsent />

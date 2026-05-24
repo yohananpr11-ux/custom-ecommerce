@@ -30,11 +30,15 @@ class PricingEngine {
     this.exchangeRateUSDILS = 3.75; // Fallback
     this.autoExtremeThresholdPct = this.normalizeExtremeThreshold(process.env.AUTO_PRICE_UPDATE_THRESHOLD_PCT); // default 8%
 
-    // Exact target retail prices in ILS (business-critical)
+    // Exact target retail prices in ILS (business-critical).
+    // 2026-05-24: raised across the board after cost audit showed ₪89.90 was
+    // selling at a loss once shipping ($14) + payment fee (~3.5%) were factored
+    // against $16.35 production cost for XL/dark variants. New floor leaves
+    // ~30% gross margin on a single-shirt order and ~40% on a 2-3 shirt cart.
     this.targetPricesILS = {
-      'softstyle':   89.90,   // Gildan 64000 basic tee
-      'jersey':      119.90,  // Bella+Canvas 3001 premium tee
-      'hoodie':      159.90,  // Gildan 18500 hooded sweatshirt
+      'softstyle':   149.90,  // Gildan 64000 basic tee (was 89.90)
+      'jersey':      179.90,  // Bella+Canvas 3001 premium tee (was 119.90)
+      'hoodie':      229.90,  // Gildan 18500 hooded sweatshirt (was 159.90)
       'tank':        null,    // Tank tops: dynamic pricing based on cost (no fixed target)
     };
 

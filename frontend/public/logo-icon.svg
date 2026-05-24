@@ -1,14 +1,11 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Drip Street Shop Icon</title>
-  <desc id="desc">Stylized DS monogram in a rounded square badge.</desc>
-  <defs>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#FF6B35" />
-      <stop offset="100%" stop-color="#00F5FF" />
-    </linearGradient>
-  </defs>
-  <rect x="24" y="24" width="464" height="464" rx="86" fill="#000000"/>
-  <rect x="42" y="42" width="428" height="428" rx="74" fill="none" stroke="url(#accent)" stroke-width="18"/>
-  <path d="M142 352V160H246C294 160 330 190 330 235C330 281 294 312 246 312H190V352H142ZM190 272H241C264 272 282 258 282 235C282 213 264 200 241 200H190V272Z" fill="#FFFFFF"/>
-  <path d="M368 160C323 160 287 188 287 230C287 266 313 290 348 297L368 301C382 304 391 311 391 323C391 338 376 350 355 350C332 350 314 340 305 322L265 343C281 377 315 392 355 392C402 392 438 366 438 322C438 287 416 264 379 257L357 253C344 250 334 244 334 232C334 219 347 208 365 208C384 208 398 217 405 232L444 212C430 181 401 160 368 160Z" fill="#FFFFFF"/>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">DRIP STREET</title>
+  <rect width="512" height="512" fill="#000000"/>
+  <text x="256" y="365"
+        text-anchor="middle"
+        fill="#FFFFFF"
+        font-family="'Inter','Segoe UI','Helvetica Neue','Arial Black',system-ui,sans-serif"
+        font-weight="900"
+        font-size="310"
+        letter-spacing="-18">DS</text>
 </svg>

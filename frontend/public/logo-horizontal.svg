@@ -1,22 +1,10 @@
-<svg width="800" height="220" viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Drip Street Shop Horizontal Logo</title>
-  <desc id="desc">DS icon with DRIP STREET wordmark.</desc>
-  <defs>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#FF6B35" />
-      <stop offset="100%" stop-color="#00F5FF" />
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="800" height="220" rx="26" fill="none"/>
-  <g transform="translate(20,20)">
-    <rect x="0" y="0" width="180" height="180" rx="34" fill="#000000"/>
-    <rect x="8" y="8" width="164" height="164" rx="28" fill="none" stroke="url(#accent)" stroke-width="8"/>
-    <path d="M42 136V46H82C102 46 116 58 116 77C116 97 102 110 82 110H60V136H42ZM60 94H80C88 94 95 88 95 78C95 69 88 63 80 63H60V94Z" fill="#FFFFFF"/>
-    <path d="M140 46C121 46 106 58 106 76C106 91 117 101 132 104L140 106C146 107 149 111 149 116C149 123 143 128 133 128C123 128 116 124 112 117L95 126C102 141 116 148 133 148C153 148 168 137 168 116C168 102 158 92 142 89L133 87C127 86 123 83 123 78C123 72 128 67 136 67C144 67 150 71 153 77L169 69C163 54 150 46 140 46Z" fill="#FFFFFF"/>
-  </g>
-  <g transform="translate(230,58)">
-    <text x="0" y="56" fill="#FFFFFF" font-family="'Bebas Neue', 'Impact', sans-serif" font-size="86" letter-spacing="3">DRIP STREET</text>
-    <rect x="2" y="70" width="540" height="8" rx="4" fill="url(#accent)"/>
-    <text x="2" y="106" fill="#9CA3AF" font-family="'Inter', 'Segoe UI', sans-serif" font-size="24" letter-spacing="2">URBAN STREETWEAR</text>
-  </g>
+<svg width="1200" height="280" viewBox="0 0 1200 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">DRIP STREET</title>
+  <text x="600" y="195"
+        text-anchor="middle"
+        fill="#FFFFFF"
+        font-family="'Inter','Segoe UI','Helvetica Neue','Arial Black',system-ui,sans-serif"
+        font-weight="900"
+        font-size="200"
+        letter-spacing="-6">DRIP STREET</text>
 </svg>

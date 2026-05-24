@@ -459,7 +459,7 @@ const resolveValidatedOrderItems = async (items = []) => {
       }
     }
 
-    const resolvedPrice = Number.isFinite(Number(resolvedVariant && resolvedVariant.price))
+    const resolvedPrice = (resolvedVariant && Number.isFinite(Number(resolvedVariant.price)))
       ? Number(resolvedVariant.price)
       : Number(rawItem && rawItem.price);
 
@@ -877,7 +877,9 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     }
 
     await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
-    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText: `$${amount.toFixed(2)}` });
+    const isILS = String(session.currency || '').toLowerCase() === 'ils';
+    const amountText = isILS ? `₪${amount.toFixed(2)}` : `$${amount.toFixed(2)}`;
+    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText });
     const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [orderId]);
     const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [orderId]);
     if (paidOrder) {
@@ -888,8 +890,51 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
   res.json({received: true});
 });
 
-app.post('/api/webhooks/payplus', express.json(), async (req, res) => {
-  const { transaction_uid, status, custom_field } = req.body;
+app.post('/api/webhooks/payplus', express.raw({ type: 'application/json' }), async (req, res) => {
+  const rawBody = req.body ? req.body.toString('utf8') : '';
+  const hash = req.headers['hash'] || req.headers['Hash'];
+  const secretKey = process.env.PAYPLUS_SECRET_KEY;
+
+  if (!secretKey) {
+    console.error('[PayPlus Webhook] PAYPLUS_SECRET_KEY is not configured on the server');
+    return res.status(500).json({ received: false, error: 'PAYPLUS_SECRET_KEY not configured' });
+  }
+
+  if (!hash) {
+    console.warn('[PayPlus Webhook] Missing hash signature header');
+    return res.status(400).json({ received: false, error: 'Missing hash signature' });
+  }
+
+  // Calculate HMAC SHA-256 signature
+  const calculatedHash = crypto
+    .createHmac('sha256', secretKey)
+    .update(rawBody)
+    .digest('base64');
+
+  // Secure timing-safe signature comparison
+  let signaturesMatch = false;
+  try {
+    signaturesMatch = crypto.timingSafeEqual(
+      Buffer.from(calculatedHash, 'base64'),
+      Buffer.from(hash, 'base64')
+    );
+  } catch (e) {
+    // Mismatch in buffer length, signature is invalid
+  }
+
+  if (!signaturesMatch) {
+    console.warn(`[PayPlus Webhook] Signature verification failed. Calculated: ${calculatedHash}, Received: ${hash}`);
+    return res.status(401).json({ received: false, error: 'Signature verification failed' });
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch (e) {
+    return res.status(400).json({ received: false, error: 'Invalid JSON payload' });
+  }
+
+  const { transaction_uid, status, custom_field } = payload;
   const orderId = Number(custom_field); // We pass orderId in custom_field during PayPlus creation
 
   if (!orderId || Number.isNaN(orderId)) {
@@ -1304,15 +1349,49 @@ app.post('/api/promo/validate', async (req, res) => {
 });
 
 // Admin Set Coupon (Triggered by Meni Telegram Webhook)
+const setCouponCallTimestamps = [];
+const SET_COUPON_RATE_LIMIT = 5; // max 5 calls
+const SET_COUPON_RATE_WINDOW_MS = 60 * 1000; // per minute
+
+const timingSafeEqualStr = (a, b) => {
+  const aBuf = Buffer.from(String(a || ''));
+  const bBuf = Buffer.from(String(b || ''));
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+};
+
 app.post('/api/admin/set-coupon', (req, res) => {
+  // Auth: shared secret header. The endpoint mutates the public storefront state,
+  // so it must never be reachable without DRIP_ADMIN_SECRET configured.
+  const expected = process.env.DRIP_ADMIN_SECRET;
+  if (!expected) {
+    return res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+  }
+  const provided = req.get('X-Admin-Secret') || '';
+  if (!timingSafeEqualStr(provided, expected)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // In-memory rate limit (per process). Cheap protection against brute / runaway.
+  const now = Date.now();
+  while (setCouponCallTimestamps.length && now - setCouponCallTimestamps[0] > SET_COUPON_RATE_WINDOW_MS) {
+    setCouponCallTimestamps.shift();
+  }
+  if (setCouponCallTimestamps.length >= SET_COUPON_RATE_LIMIT) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+  setCouponCallTimestamps.push(now);
+
   const { code, discount_pct, duration_hours } = req.body;
   if (!code || !discount_pct) {
     currentActiveCoupon = null; // Clear coupon if empty
+    console.log(`[coupon] cleared by admin at ${new Date(now).toISOString()}`);
     return res.json({ success: true, message: 'Coupon cleared.' });
   }
 
   currentActiveCoupon = { code, discount_pct };
-  
+  console.log(`[coupon] set ${code} ${discount_pct}% for ${duration_hours || 0}h at ${new Date(now).toISOString()}`);
+
   // Clear coupon after duration
   if (duration_hours) {
     setTimeout(() => {
@@ -1324,6 +1403,48 @@ app.post('/api/admin/set-coupon', (req, res) => {
   }
 
   res.json({ success: true, message: `Coupon ${code} set to ${discount_pct}% off.` });
+});
+
+// Admin Refresh Prices — force-run the pricing engine to re-apply targetPricesILS
+// to all products in the DB. Use this after changing targetPricesILS in pricing.js
+// to push the new prices live without waiting for an extreme FX swing.
+//
+// Auth: same X-Admin-Secret shared header as set-coupon.
+// Usage: curl -X POST https://.../api/admin/refresh-prices -H "X-Admin-Secret: <secret>"
+app.post('/api/admin/refresh-prices', async (req, res) => {
+  const expected = process.env.DRIP_ADMIN_SECRET;
+  if (!expected) {
+    return res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+  }
+  const provided = req.get('X-Admin-Secret') || '';
+  if (!timingSafeEqualStr(provided, expected)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const beforeRows = await dbAllAsync('SELECT id, title, price FROM products', []);
+    await pricingEngine.runPricingUpdate({ force: true, reason: 'manual_refresh_endpoint' });
+    const afterRows = await dbAllAsync('SELECT id, title, price FROM products', []);
+
+    const changes = afterRows
+      .map((after) => {
+        const before = beforeRows.find((b) => b.id === after.id);
+        const fromPrice = Number(before?.price ?? 0);
+        const toPrice = Number(after.price ?? 0);
+        return { id: after.id, title: after.title, fromPrice, toPrice, changed: Math.abs(fromPrice - toPrice) > 0.01 };
+      })
+      .filter((c) => c.changed);
+
+    return res.json({
+      success: true,
+      totalProducts: afterRows.length,
+      productsChanged: changes.length,
+      changes,
+    });
+  } catch (err) {
+    console.error('refresh-prices failed:', err.message);
+    return res.status(500).json({ error: err.message || 'Refresh prices failed' });
+  }
 });
 
 // Admin Printify Sync
@@ -2029,8 +2150,8 @@ const createPendingOrder = async (shippingInput, items, couponCode) => {
 
 app.get('/api/checkout/config', (req, res) => {
   const paypalEnabled = hasPayPalCheckoutConfig();
-  const stripeEnabled = hasStripeCheckoutConfig();
-  const payplusEnabled = hasPayPlusCheckoutConfig() && false;
+  const stripeEnabled = hasStripeCheckoutConfig() && false; // TODO: enable once IL merchant account is available
+  const payplusEnabled = hasPayPlusCheckoutConfig() && hasConfiguredValue(process.env.PAYPLUS_PAGE_UID);
 
   return res.json({
     paypalEnabled,
@@ -2267,17 +2388,18 @@ app.post('/api/checkout/stripe', async (req, res) => {
       country: body.country,
     };
     const { orderId, pricing } = await createPendingOrder(shippingInput, items, couponCode);
-    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
-    const stripeAmountCents = Math.max(50, Math.round((pricing.totalAmount / exchangeRate) * 100));
+    
+    // Process ILS natively in agorot (1 ILS = 100 agorot)
+    const stripeAmountAgorot = Math.max(50, Math.round(pricing.totalAmount * 100));
     
     // Create Stripe Session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
-          currency: 'usd',
+          currency: 'ils',
           product_data: { name: `Drip Street bundle order #${orderId}` },
-          unit_amount: stripeAmountCents,
+          unit_amount: stripeAmountAgorot,
         },
         quantity: 1,
       }],
@@ -2298,7 +2420,81 @@ app.post('/api/checkout/stripe', async (req, res) => {
 
 // Checkout via PayPlus/Grow (NIS)
 app.post('/api/checkout/payplus', async (req, res) => {
-  return res.status(503).json({ success: false, error: 'Card checkout is temporarily unavailable. Please use PayPal.' });
+  const body = req.body || {};
+  const { customerName, customerEmail, address, items, couponCode } = body;
+
+  if (!hasPayPlusCheckoutConfig() || !process.env.PAYPLUS_PAGE_UID) {
+    return res.status(503).json({ success: false, error: 'PayPlus checkout is currently unavailable. Please use PayPal.' });
+  }
+
+  try {
+    const shippingInput = {
+      customerName,
+      customerEmail,
+      address,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      phone: body.phone,
+      addressLine1: body.addressLine1,
+      addressLine2: body.addressLine2,
+      city: body.city,
+      region: body.region,
+      postalCode: body.postalCode,
+      country: body.country,
+    };
+    
+    // Create local pending order and calculate pricing in NIS
+    const { orderId, pricing } = await createPendingOrder(shippingInput, items, couponCode);
+
+    // Call PayPlus REST API to generate secure payment page link
+    const payplusPayload = {
+      payment_page_uid: process.env.PAYPLUS_PAGE_UID,
+      amount: pricing.totalAmount, // amount in ILS
+      currency_code: 'ILS',
+      sendEmailApproval: true,
+      sendEmailFailure: false,
+      refURL_success: `${FRONTEND_BASE_URL}/success?order_id=${orderId}`,
+      refURL_failure: `${FRONTEND_BASE_URL}/cart`,
+      custom_field: orderId.toString(),
+      customer: {
+        customer_name: customerName,
+        email: customerEmail,
+        phone: body.phone || '',
+      },
+      items: items.map(item => ({
+        name: item.title,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+    };
+
+    const response = await axios.post(
+      'https://restapi.payplus.co.il/api/v1.0/PaymentPages/generateLink',
+      payplusPayload,
+      {
+        headers: {
+          'accept': 'application/json',
+          'content-type': 'application/json',
+          'api-key': process.env.PAYPLUS_API_KEY,
+          'secret-key': process.env.PAYPLUS_SECRET_KEY,
+        },
+        timeout: 10000,
+      }
+    );
+
+    if (response.data && response.data.results && response.data.results.status === 'success') {
+      const paymentUrl = response.data.data.payment_page_link;
+      res.json({ success: true, paymentUrl });
+    } else {
+      console.error('PayPlus API response failed:', response.data);
+      const errMsg = response.data?.results?.description || 'Failed to generate PayPlus link';
+      res.status(400).json({ error: errMsg });
+    }
+  } catch (err) {
+    console.error('PayPlus checkout initialization error:', err.response?.data || err.message);
+    const statusCode = String(err.message || '').includes('Shipping') || String(err.message || '').includes('Valid email') ? 400 : 500;
+    res.status(statusCode).json({ error: err.message || 'Failed to initialize PayPlus checkout' });
+  }
 });
 
 const extractSessionIdFromText = (text) => {

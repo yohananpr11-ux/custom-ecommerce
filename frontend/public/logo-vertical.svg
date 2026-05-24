@@ -1,18 +1,17 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Drip Street Shop Vertical Logo</title>
-  <desc id="desc">DS icon above DRIP STREET stacked wordmark.</desc>
-  <defs>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#FF6B35" />
-      <stop offset="100%" stop-color="#00F5FF" />
-    </linearGradient>
-  </defs>
-  <g transform="translate(96,32)">
-    <rect x="0" y="0" width="320" height="320" rx="60" fill="#000000"/>
-    <rect x="10" y="10" width="300" height="300" rx="52" fill="none" stroke="url(#accent)" stroke-width="12"/>
-    <path d="M78 242V84H148C183 84 208 106 208 139C208 173 183 196 148 196H112V242H78ZM112 168H145C160 168 172 157 172 140C172 124 160 113 145 113H112V168Z" fill="#FFFFFF"/>
-    <path d="M252 84C220 84 194 104 194 134C194 160 212 176 237 181L252 184C262 186 268 192 268 200C268 211 257 220 242 220C226 220 213 213 207 201L179 214C190 240 213 253 242 253C275 253 301 234 301 200C301 174 286 158 260 153L245 150C236 148 229 143 229 135C229 126 238 118 250 118C262 118 272 124 276 134L304 121C294 96 274 84 252 84Z" fill="#FFFFFF"/>
-  </g>
-  <text x="256" y="408" text-anchor="middle" fill="#FFFFFF" font-family="'Bebas Neue', 'Impact', sans-serif" font-size="78" letter-spacing="3">DRIP STREET</text>
-  <rect x="96" y="428" width="320" height="8" rx="4" fill="url(#accent)"/>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">DRIP STREET</title>
+  <text x="256" y="240"
+        text-anchor="middle"
+        fill="#FFFFFF"
+        font-family="'Inter','Segoe UI','Helvetica Neue','Arial Black',system-ui,sans-serif"
+        font-weight="900"
+        font-size="156"
+        letter-spacing="-4">DRIP</text>
+  <text x="256" y="400"
+        text-anchor="middle"
+        fill="#FFFFFF"
+        font-family="'Inter','Segoe UI','Helvetica Neue','Arial Black',system-ui,sans-serif"
+        font-weight="900"
+        font-size="156"
+        letter-spacing="-4">STREET</text>
 </svg>
