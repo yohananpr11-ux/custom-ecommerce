@@ -1117,7 +1117,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   return (
     <>
       <header className="header container">
-        <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
+        <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/brand/drip-mark.png" alt="" aria-hidden="true" className="brand-mark" style={{ height: '42px', width: '42px', objectFit: 'contain', display: 'block' }} /><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
         <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={onOpenCart}>
           <span>🛒 {t('cart')}</span>
           {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
@@ -1380,6 +1380,14 @@ function MainApp() {
   const [locale] = useState('en')
   const [currency, setCurrency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
+  const [isHeaderScrolled, setIsHeaderScrolled] = useState(false)
+
+  // Glass header deepens after first scroll
+  useEffect(() => {
+    const onScroll = () => setIsHeaderScrolled(window.scrollY > 10);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Geo-aware currency + country defaults.
   // The backend gives us the live exchange rate (and a server-side country guess).
@@ -2905,16 +2913,19 @@ function MainApp() {
       )}
 
       <section className="hero">
-        <div className="container">
-          <motion.h1 initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>{t('hero_title')}</motion.h1>
+        <div className="hero-drip-mark" aria-hidden="true">
+          <img src="/brand/drip-mark.png" alt="" draggable="false" />
+        </div>
+        <div className="container hero-content">
+          <motion.h1 className="holographic-text" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>{t('hero_title')}</motion.h1>
           <motion.p initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
             {t('hero_subtitle')}
           </motion.p>
           <motion.div className="hero-cta-group" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
-            <button className="hero-cta-primary" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
+            <button className="hero-cta-primary drip-cta" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
               {t('shop_now')}
             </button>
-            <button className="hero-cta-secondary" onClick={() => { setActiveCategory('Shirts'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
+            <button className="hero-cta-secondary drip-cta" onClick={() => { setActiveCategory('Shirts'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
               {t('best_sellers')}
             </button>
           </motion.div>
@@ -2946,15 +2957,22 @@ function MainApp() {
         <motion.div layout className="products-grid">
           <AnimatePresence>
             {isLoading ? (
-              Array.from({length: 4}).map((_, i) => (
-                <div key={`skel-${i}`} className="product-card skeleton-card">
-                  <div className="skeleton skeleton-image"></div>
-                  <div style={{ marginTop: '16px' }}>
-                    <div className="skeleton skeleton-text"></div>
-                    <div className="skeleton skeleton-text" style={{ width: '40%' }}></div>
-                  </div>
+              <>
+                <div className="drip-spinner" style={{ gridColumn: '1 / -1' }}>
+                  <div className="drip-spinner-dot" />
+                  <div className="drip-spinner-dot" />
+                  <div className="drip-spinner-dot" />
                 </div>
-              ))
+                {Array.from({length: 4}).map((_, i) => (
+                  <div key={`skel-${i}`} className="product-card skeleton-card">
+                    <div className="skeleton skeleton-image"></div>
+                    <div style={{ marginTop: '16px' }}>
+                      <div className="skeleton skeleton-text"></div>
+                      <div className="skeleton skeleton-text" style={{ width: '40%' }}></div>
+                    </div>
+                  </div>
+                ))}
+              </>
             ) : (
               filteredProducts.map((product, productIndex) => {
                 const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
@@ -2979,6 +2997,7 @@ function MainApp() {
                         <img loading="lazy" src={product.backImageUrl} alt={`${getProductTitle(product.title, locale)} — back view`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
                       {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
+                      <img src="/brand/drip-mark.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -3064,19 +3083,29 @@ function MainApp() {
 
   return (
     <>
+      {/* Hidden SVG host providing the gooey filter referenced by .drip-spinner-dot */}
+      <svg className="goo-filter-host" aria-hidden="true" focusable="false">
+        <defs>
+          <filter id="drip-goo">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+            <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -10" result="goo" />
+            <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+          </filter>
+        </defs>
+      </svg>
       <div className="announcement-bar">
         {t('announcement')}
       </div>
       <script>{`document.documentElement.dir = 'ltr'; document.documentElement.lang = 'en';`}</script>
 
-      <header className="header container storefront-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="header-leading">
           <button className="nav-toggle" type="button" aria-label="Open navigation" onClick={openMobileNav}>
             <span />
             <span />
             <span />
           </button>
-          <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
+          <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/brand/drip-mark.png" alt="" aria-hidden="true" className="brand-mark" style={{ height: '42px', width: '42px', objectFit: 'contain', display: 'block' }} /><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
         </div>
         <div className="search-bar">
           <input 
@@ -3099,7 +3128,10 @@ function MainApp() {
       <div className={`side-nav-overlay ${isMobileNavOpen ? 'open' : ''}`} onClick={closeMobileNav}>
         <aside className="side-nav-drawer" onClick={(event) => event.stopPropagation()}>
           <div className="side-nav-header">
-            <strong>{t('logo')}</strong>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+              <img src="/brand/drip-mark.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
+              <strong>{t('logo')}</strong>
+            </span>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
           </div>
           <div className="side-nav-links">

@@ -154,6 +154,15 @@
   --hover-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --skeleton-base: var(--color-shade-80);
   --skeleton-highlight: var(--color-shade-80);
+
+  /* ── Drip Street Brand Holographic System ── */
+  --holo-1: #ff6b35;
+  --holo-2: #e040a0;
+  --holo-3: #00e5ff;
+  --holo-4: #a855f7;
+  --holo-gradient: linear-gradient(135deg, var(--holo-1) 0%, var(--holo-2) 30%, var(--holo-3) 60%, var(--holo-4) 100%);
+  --holo-gradient-wide: linear-gradient(135deg, var(--holo-1) 0%, var(--holo-2) 25%, var(--holo-3) 50%, var(--holo-4) 75%, var(--holo-1) 100%);
+  --drip-cursor: url('/brand/drip-mark.png') 16 16, crosshair;
 }
 
 h1,
@@ -255,6 +264,35 @@ body {
   color: var(--text-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+
+/* ── Analog Grain Overlay (SVG noise as data-URI, no extra HTTP) ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+}
+
+/* ── Holographic Text Utility ── */
+.holographic-text {
+  background: var(--holo-gradient-wide);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: holoShift 8s ease infinite;
+}
+@keyframes holoShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 * {
@@ -292,13 +330,24 @@ a,
   padding: 0 20px;
 }
 
-/* Header */
+/* Header — Glassmorphic Sticky */
 .header {
   padding: 24px 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.70);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  transition: background 0.3s ease, border-bottom-color 0.3s ease;
+}
+.header.scrolled {
+  background: rgba(0, 0, 0, 0.88);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
 }
 
 .header-leading {
@@ -523,8 +572,37 @@ html[dir="ltr"] .checkout-page input {
 /* Hero Section */
 .hero {
   text-align: center;
-  padding: 100px 0;
+  padding: 120px 0 80px;
   background: linear-gradient(to bottom, var(--color-black-300), var(--bg-color));
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle holographic D sigil breathing behind the hero copy */
+.hero-drip-mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 0;
+}
+.hero-drip-mark img {
+  width: min(60vw, 480px);
+  height: auto;
+  opacity: 0.07;
+  filter: blur(1px);
+  mix-blend-mode: screen;
+  animation: heroMarkBreath 6s ease-in-out infinite;
+}
+@keyframes heroMarkBreath {
+  0%, 100% { transform: scale(1);    opacity: 0.07; }
+  50%      { transform: scale(1.04); opacity: 0.10; }
+}
+.hero-content {
+  position: relative;
+  z-index: 1;
 }
 
 .hero h1 {
@@ -3175,4 +3253,64 @@ button,
   text-decoration: line-through;
   margin-inline-end: 8px;
   font-size: 14px;
+}
+
+/* ─────────────────────────────────────────────────────
+   Drip Street Brand Effects — bottom-of-file utilities
+   ───────────────────────────────────────────────────── */
+
+/* Drip cursor only on primary CTA buttons (Shop now, Add to cart). */
+.drip-cta {
+  cursor: var(--drip-cursor);
+}
+
+/* Product card brand watermark — barely visible until hover. */
+.product-card-watermark {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  opacity: 0.04;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  transition: opacity 0.3s ease;
+}
+.product-image-wrapper:hover .product-card-watermark {
+  opacity: 0.10;
+}
+
+/* Hidden SVG host for the gooey filter (referenced by .drip-spinner-dot). */
+.goo-filter-host {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Drip loading spinner — 3 gooey dots that drip & bounce */
+.drip-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 0;
+}
+.drip-spinner-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--holo-gradient);
+  background-size: 300% 300%;
+  animation: holoShift 4s ease infinite, dripBounce 0.9s ease-in-out infinite;
+  filter: url('#drip-goo');
+}
+.drip-spinner-dot:nth-child(2) { animation-delay: 0.15s; }
+.drip-spinner-dot:nth-child(3) { animation-delay: 0.30s; }
+@keyframes dripBounce {
+  0%, 100% { transform: translateY(0)    scaleY(1);    }
+  40%      { transform: translateY(-16px) scaleY(0.85); }
+  60%      { transform: translateY(4px)  scaleY(1.15); }
 }
