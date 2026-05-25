@@ -151,15 +151,23 @@ async function syncProductToStorefront(job) {
 
     // 5. Trigger Frontend Sitemap Rebuild
     console.log(`📡 [DB Sync] Launching frontend sitemap generator rebuild script...`);
-    const sitemapScriptPath = path.resolve(__dirname, '../../../frontend/scripts/generate-sitemap.js');
+    const frontendScriptsDir = path.resolve(__dirname, '../../../frontend/scripts');
+    const sitemapScriptPath = [
+      path.join(frontendScriptsDir, 'generate-sitemap.js'),
+      path.join(frontendScriptsDir, 'generate-sitemap.cjs')
+    ].find((candidate) => fs.existsSync(candidate));
 
-    exec(`node ${sitemapScriptPath}`, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`⚠️ [DB Sync] Sitemap rebuild command failed:`, error.message);
-      } else {
-        console.log(`✅ [DB Sync] Sitemap successfully rebuilt:\n`, stdout);
-      }
-    });
+    if (sitemapScriptPath) {
+      exec(`node "${sitemapScriptPath}"`, (error, stdout) => {
+        if (error) {
+          console.error(`⚠️ [DB Sync] Sitemap rebuild command failed:`, error.message);
+        } else {
+          console.log(`✅ [DB Sync] Sitemap successfully rebuilt:\n`, stdout);
+        }
+      });
+    } else {
+      console.warn('⚠️ [DB Sync] No sitemap generator script found (expected generate-sitemap.js or generate-sitemap.cjs).');
+    }
 
     // 6. Alert User on Telegram
     if (telegramUserId) {

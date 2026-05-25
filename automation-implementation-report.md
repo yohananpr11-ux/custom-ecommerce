@@ -94,7 +94,7 @@ curl -X POST "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook" 
 ### Step 3: Configure `.env`
 Update your `./backend/.env` with the corresponding secrets:
 ```env
-TELEGRAM_BOT_TOKEN=8704445231:AAGbAd66s1eSAg5MruyYxPQzJFyNkDk0EjY
+TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
 TELEGRAM_WEBHOOK_SECRET=YOUR_TELEGRAM_WEBHOOK_SECRET
 PRINTIFY_API_KEY=YOUR_PRINTIFY_API_KEY
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
@@ -111,11 +111,11 @@ Navigate to your **Render Dashboard** ➔ **Web Service Settings** ➔ **Environ
 
 | Key | Description | Example / Recommendations |
 | :--- | :--- | :--- |
-| `TELEGRAM_BOT_TOKEN` | Your live Telegram Bot token from BotFather | `8704445231:AAGb...` |
+| `TELEGRAM_BOT_TOKEN` | Your live Telegram Bot token from BotFather | `YOUR_TELEGRAM_BOT_TOKEN` |
 | `TELEGRAM_WEBHOOK_SECRET` | A complex high-entropy secret string to validate requests | `drip_webhook_sec_8xL9p2...` |
-| `PRINTIFY_API_KEY` | Printify personal access token from Printify Settings | `prtf_...` |
-| `OPENAI_API_KEY` | OpenAI secret API key (with gpt-4o access) | `sk-proj-...` |
-| `ANTHROPIC_API_KEY` | Anthropic secret API key (Claude 3.5 fallback, optional) | `sk-ant-...` |
+| `PRINTIFY_API_KEY` | Printify personal access token from Printify Settings | `YOUR_PRINTIFY_API_KEY` |
+| `OPENAI_API_KEY` | OpenAI secret API key (with gpt-4o access) | `YOUR_OPENAI_API_KEY` |
+| `ANTHROPIC_API_KEY` | Anthropic secret API key (Claude 3.5 fallback, optional) | `YOUR_ANTHROPIC_API_KEY` |
 
 ### Step 2: Set the Production Webhook
 Execute the curl command using your live Render external URL:

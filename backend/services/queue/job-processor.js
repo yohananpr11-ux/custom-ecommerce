@@ -20,8 +20,33 @@ const dbRunAsync = (query, params = []) => new Promise((resolve, reject) => {
 // A simple in-memory set to prevent double-processing in the same node process
 const activeJobLocks = new Set();
 
+async function recoverStuckJobs() {
+  try {
+    const result = await dbRunAsync(
+      `UPDATE automation_jobs
+       SET status = CASE
+         WHEN status = 'processing_vision' THEN 'received'
+         WHEN status = 'processing_printify' THEN 'analyzed'
+         WHEN status = 'processing_sync' THEN 'printify_created'
+         ELSE status
+       END,
+       updatedAt = CURRENT_TIMESTAMP
+       WHERE status IN ('processing_vision', 'processing_printify', 'processing_sync')
+         AND datetime(updatedAt) <= datetime('now', '-20 minutes')`
+    );
+
+    if (result && result.changes > 0) {
+      console.warn(`♻️ [Queue Job Processor] Recovered ${result.changes} stale processing job(s) back to queue states.`);
+    }
+  } catch (err) {
+    console.error('⚠️ [Queue Job Processor] Failed to recover stale jobs:', err.message);
+  }
+}
+
 async function pollAndProcessJobs() {
   try {
+    await recoverStuckJobs();
+
     // 1. Fetch pending automation jobs
     const pendingJobs = await dbAllAsync(
       `SELECT * FROM automation_jobs WHERE status IN ('received', 'analyzed', 'printify_created') ORDER BY id ASC`

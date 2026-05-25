@@ -41,6 +41,10 @@ async function processPrintifyJob(job) {
   try {
     const hasRealPrintify = PRINTIFY_API_KEY && PRINTIFY_API_KEY !== 'YOUR_PRINTIFY_API_KEY' && PRINTIFY_API_KEY !== 'YOUR_PRINTIFY_TOKEN';
 
+    if (hasRealPrintify && (!PRINTIFY_SHOP_ID || PRINTIFY_SHOP_ID === 'YOUR_PRINTIFY_SHOP_ID')) {
+      throw new Error('PRINTIFY_SHOP_ID is not configured. Please set it in backend/.env before running real Printify sync.');
+    }
+
     let printifyProductId = null;
     let mockupUrls = [];
 
