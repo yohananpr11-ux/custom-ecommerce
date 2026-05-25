@@ -1151,13 +1151,9 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         <meta name="twitter:image" content={absoluteImageUrl} />
         <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>
       </Helmet>
-      <header className="header container">
-        <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/brand/drip-mark.png" alt="" aria-hidden="true" className="brand-mark" style={{ height: '42px', width: '42px', objectFit: 'contain', display: 'block' }} /><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
-        <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={onOpenCart}>
-          <span>🛒 {t('cart')}</span>
-          {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
-        </button>
-      </header>
+      {/* Header removed — the MainApp's sticky storefront-header (with drip-mark
+         lockup, search, and cart) is already visible on this route. Rendering
+         a second header here caused a visible duplicate "DRIP STREET" bar. */}
       <div className="container pdp-container">
         <div style={{ width: '100%', marginBottom: '12px' }}>
           <BackButton />
