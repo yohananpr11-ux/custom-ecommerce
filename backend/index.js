@@ -2005,6 +2005,10 @@ app.post('/api/contact', async (req, res) => {
   res.json({ success: true, message: 'Message sent to Meni.' });
 });
 
+// Automation Telegram Webhook Endpoint
+const telegramBot = require('./services/ingest/telegram-bot');
+app.post('/api/automation/telegram-webhook', telegramBot.handleWebhook);
+
 // General Order Creation Helper
 const createPendingOrder = async (shippingInput, items, couponCode) => {
   const normalizedShipping = validateShippingDetails(shippingInput);
@@ -2712,6 +2716,9 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
 
 // Start background cron jobs
 pricingEngine.start();
+
+const jobProcessor = require('./services/queue/job-processor');
+jobProcessor.startQueue();
 
 app.listen(PORT, () => {
   console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
