@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { Helmet } from 'react-helmet-async'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom'
@@ -1114,8 +1115,42 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
   const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / 3.75)) : product.price;
 
+  const absoluteImageUrl = activeImages[0]
+    ? (activeImages[0].startsWith('http') ? activeImages[0] : `https://dripstreetshop.com${activeImages[0]}`)
+    : 'https://dripstreetshop.com/brand/generated/og-image.png';
+
+  const jsonLd = {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    "name": getProductTitle(product.title, locale),
+    "image": activeImages.map(img => img.startsWith('http') ? img : `https://dripstreetshop.com${img}`),
+    "description": getLocalizedProductDescription(product, locale),
+    "offers": {
+      "@type": "Offer",
+      "url": `https://dripstreetshop.com/product/${product.id}`,
+      "priceCurrency": currency,
+      "price": Number(displayPrice.toFixed(2)),
+      "availability": isOutOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock"
+    }
+  };
+
   return (
     <>
+      <Helmet>
+        <title>{`${getProductTitle(product.title, locale)} | Drip Street`}</title>
+        <meta name="description" content={getLocalizedProductDescription(product, locale)} />
+        <link rel="canonical" href={`https://dripstreetshop.com/product/${product.id}`} />
+        <meta property="og:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <meta property="og:description" content={getLocalizedProductDescription(product, locale)} />
+        <meta property="og:url" content={`https://dripstreetshop.com/product/${product.id}`} />
+        <meta property="og:type" content="product" />
+        <meta property="og:image" content={absoluteImageUrl} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <meta name="twitter:description" content={getLocalizedProductDescription(product, locale)} />
+        <meta name="twitter:image" content={absoluteImageUrl} />
+        <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>
+      </Helmet>
       <header className="header container">
         <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/brand/drip-mark.png" alt="" aria-hidden="true" className="brand-mark" style={{ height: '42px', width: '42px', objectFit: 'contain', display: 'block' }} /><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
         <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={onOpenCart}>
@@ -1651,9 +1686,7 @@ function MainApp() {
   useEffect(() => {
     document.documentElement.dir = 'ltr';
     document.documentElement.lang = 'en';
-    document.title = t('seo_title');
-    const metaDesc = document.querySelector('meta[name="description"]');
-    if (metaDesc) metaDesc.setAttribute('content', t('seo_description'));
+    // Title + description are now managed by react-helmet-async per-route.
   }, []);
 
   const categories = useMemo(() => buildDynamicCategories(products), [products])
@@ -2348,18 +2381,31 @@ function MainApp() {
   // ============ ROUTE: SUCCESS ============
   if (currentPath === '/success') {
     return (
-      <div className="container" style={{ textAlign: 'center', padding: '100px 20px' }}>
-        <motion.h1 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          style={{ fontSize: '48px', marginBottom: '24px' }}>{t('success_title')}</motion.h1>
-        <p style={{ fontSize: '20px', color: '#888', marginBottom: '32px' }}>
-          {t('success_desc')}
-        </p>
-        <button className="checkout-btn" style={{ maxWidth: '250px' }} onClick={() => navigate('/')}>
-          {t('return_home')}
-        </button>
-      </div>
+      <>
+        <Helmet>
+          <title>Order Confirmed | Drip Street</title>
+          <meta name="description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
+          <link rel="canonical" href="https://dripstreetshop.com/success" />
+          <meta property="og:title" content="Order Confirmed | Drip Street" />
+          <meta property="og:description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
+          <meta property="og:url" content="https://dripstreetshop.com/success" />
+          <meta property="og:image" content="https://dripstreetshop.com/brand/generated/og-image.png" />
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="twitter:image" content="https://dripstreetshop.com/brand/generated/og-image.png" />
+        </Helmet>
+        <div className="container" style={{ textAlign: 'center', padding: '100px 20px' }}>
+          <motion.h1
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            style={{ fontSize: '48px', marginBottom: '24px' }}>{t('success_title')}</motion.h1>
+          <p style={{ fontSize: '20px', color: '#888', marginBottom: '32px' }}>
+            {t('success_desc')}
+          </p>
+          <button className="checkout-btn" style={{ maxWidth: '250px' }} onClick={() => navigate('/')}>
+            {t('return_home')}
+          </button>
+        </div>
+      </>
     );
   }
 
@@ -2557,8 +2603,20 @@ function MainApp() {
   // ============ ROUTE: CHECKOUT ============
   if (currentPath === '/checkout') {
     return (
-      <div className="container checkout-page">
-        <div style={{ marginTop: '24px' }}><BackButton label="Back to Cart" fallback="/cart" /></div>
+      <>
+        <Helmet>
+          <title>Secure Checkout | Drip Street</title>
+          <meta name="description" content="Complete your order securely at Drip Street checkout." />
+          <link rel="canonical" href="https://dripstreetshop.com/checkout" />
+          <meta property="og:title" content="Secure Checkout | Drip Street" />
+          <meta property="og:description" content="Complete your order securely at Drip Street checkout." />
+          <meta property="og:url" content="https://dripstreetshop.com/checkout" />
+          <meta property="og:image" content="https://dripstreetshop.com/brand/generated/og-image.png" />
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="twitter:image" content="https://dripstreetshop.com/brand/generated/og-image.png" />
+        </Helmet>
+        <div className="container checkout-page">
+          <div style={{ marginTop: '24px' }}><BackButton label="Back to Cart" fallback="/cart" /></div>
         <h1 style={{ marginTop: '16px' }}>{t('checkout_secure')}</h1>
         <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
           <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1', minWidth: '300px' }}>
@@ -2898,6 +2956,7 @@ function MainApp() {
           </div>
         </div>
       </div>
+      </>
     );
   }
 
