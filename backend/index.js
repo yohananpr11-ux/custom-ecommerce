@@ -7,6 +7,7 @@ const db = require('./db');
 const telegram = require('./services/telegram');
 const pricingEngine = require('./services/pricing');
 const printify = require('./services/printify');
+const designPipeline = require('./services/design-pipeline');
 const meniChat = require('./services/meni');
 const emailService = require('./services/emailService');
 
@@ -1445,6 +1446,186 @@ app.post('/api/admin/refresh-prices', async (req, res) => {
     console.error('refresh-prices failed:', err.message);
     return res.status(500).json({ error: err.message || 'Refresh prices failed' });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Admin Design Pipeline — Human-in-the-Loop product creation via Printify.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Flow:
+//   1. MENI_CORE (Telegram bot) POSTs an image to /api/admin/design/create-draft
+//      → backend uploads to Printify, creates draft, polls until mockup ready,
+//        stores a row in design_jobs, returns { jobId, mockupUrl, ... }.
+//   2. Bot sends the mockup to the human via Telegram with [✅ Publish] / [❌ Reject].
+//   3. On approval:  POST /api/admin/design/:jobId/publish
+//      → backend tells Printify to publish + mirrors the product into our
+//        local DB so it appears on the storefront and in the sitemap.
+//   4. On rejection: POST /api/admin/design/:jobId/reject
+//      → backend asks Printify to delete the draft, marks job as rejected.
+//
+// Auth: same DRIP_ADMIN_SECRET header as the other admin endpoints.
+
+// Tee draft requests carry ~5–10MB of base64 image. Apply a generous limit
+// just for this one route so the global 100kb json parser isn't an issue.
+const designJsonParser = express.json({ limit: '15mb' });
+
+const requireAdminAuth = (req, res) => {
+  const expected = process.env.DRIP_ADMIN_SECRET;
+  if (!expected) {
+    res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+    return false;
+  }
+  const provided = req.get('X-Admin-Secret') || '';
+  if (!timingSafeEqualStr(provided, expected)) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+};
+
+app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
+
+  const { imageBase64, filename, title, requestedBy } = req.body || {};
+  if (!imageBase64 || typeof imageBase64 !== 'string') {
+    return res.status(400).json({ error: 'imageBase64 (string) is required.' });
+  }
+  // Strip data URL prefix if the caller forgot (data:image/png;base64,...).
+  const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',', 2)[1] : imageBase64;
+
+  try {
+    const draft = await designPipeline.createDraftFromImage({
+      imageBase64: cleanBase64,
+      filename,
+      title,
+    });
+
+    const insert = await dbRunAsync(
+      `INSERT INTO design_jobs
+        (printifyProductId, blueprintId, printProviderId, productType, title, priceILS,
+         mockupUrl, sourceImageRef, status, requestedBy)
+       VALUES (?, ?, ?, 'tee', ?, ?, ?, ?, 'awaiting_approval', ?)`,
+      [
+        draft.printifyProductId,
+        draft.blueprintId,
+        draft.printProviderId,
+        draft.title,
+        draft.priceILS,
+        draft.mockupUrl,
+        filename || null,
+        requestedBy || null,
+      ]
+    );
+
+    await telegram
+      .sendMessage(`🎨 <b>Design draft #${insert.lastID}</b> created (awaiting your approval in MENI).\n${draft.title}`)
+      .catch(() => null);
+
+    return res.json({
+      success: true,
+      jobId: insert.lastID,
+      printifyProductId: draft.printifyProductId,
+      mockupUrl: draft.mockupUrl,
+      title: draft.title,
+      priceILS: draft.priceILS,
+    });
+  } catch (err) {
+    const upstream = err.response?.data || err.message;
+    console.error('design/create-draft failed:', upstream);
+    return res.status(502).json({
+      success: false,
+      error: typeof upstream === 'string' ? upstream : (err.message || 'Printify draft creation failed'),
+    });
+  }
+});
+
+app.post('/api/admin/design/:jobId/publish', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
+
+  const jobId = Number(req.params.jobId);
+  if (!Number.isFinite(jobId)) return res.status(400).json({ error: 'jobId must be numeric.' });
+
+  const job = await dbGetAsync(`SELECT * FROM design_jobs WHERE id = ?`, [jobId]);
+  if (!job) return res.status(404).json({ error: 'design job not found' });
+  if (job.status !== 'awaiting_approval') {
+    return res.status(409).json({ error: `job is already in status '${job.status}', not awaiting_approval.` });
+  }
+
+  try {
+    await designPipeline.publishDraft(job.printifyProductId);
+
+    // Mirror to our local catalog so the storefront + sitemap pick it up immediately.
+    const productInsert = await dbRunAsync(
+      `INSERT INTO products (title, description, price, imageUrl, stock, type, printifyId)
+       VALUES (?, ?, ?, ?, 999, 'printify', ?)`,
+      [
+        job.title,
+        `${job.title} — Drip Street drop. Premium minimal streetwear.`,
+        job.priceILS,
+        job.mockupUrl,
+        job.printifyProductId,
+      ]
+    );
+
+    await dbRunAsync(
+      `UPDATE design_jobs
+         SET status = 'published', decidedAt = CURRENT_TIMESTAMP, publishedProductId = ?
+       WHERE id = ?`,
+      [productInsert.lastID, jobId]
+    );
+
+    await telegram
+      .sendMessage(`✅ <b>Design #${jobId} published</b>\n${job.title}\nLive at /product/${productInsert.lastID}`)
+      .catch(() => null);
+
+    return res.json({
+      success: true,
+      jobId,
+      productId: productInsert.lastID,
+      publicUrl: `https://dripstreetshop.com/product/${productInsert.lastID}`,
+    });
+  } catch (err) {
+    const upstream = err.response?.data || err.message;
+    console.error(`design/publish failed for job ${jobId}:`, upstream);
+    await dbRunAsync(`UPDATE design_jobs SET lastError = ? WHERE id = ?`,
+      [String(upstream).slice(0, 500), jobId]).catch(() => null);
+    return res.status(502).json({
+      success: false,
+      error: typeof upstream === 'string' ? upstream : (err.message || 'Publish failed'),
+    });
+  }
+});
+
+app.post('/api/admin/design/:jobId/reject', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
+
+  const jobId = Number(req.params.jobId);
+  if (!Number.isFinite(jobId)) return res.status(400).json({ error: 'jobId must be numeric.' });
+
+  const job = await dbGetAsync(`SELECT * FROM design_jobs WHERE id = ?`, [jobId]);
+  if (!job) return res.status(404).json({ error: 'design job not found' });
+  if (job.status !== 'awaiting_approval') {
+    return res.status(409).json({ error: `job is already in status '${job.status}', not awaiting_approval.` });
+  }
+
+  try {
+    await designPipeline.deleteDraft(job.printifyProductId);
+  } catch (err) {
+    // Even if Printify delete failed, we still mark the job rejected locally —
+    // a stranded draft on Printify side is harmless and cleanable manually.
+    console.warn(`design/reject: Printify delete failed for job ${jobId}:`, err.message);
+  }
+
+  await dbRunAsync(
+    `UPDATE design_jobs SET status = 'rejected', decidedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+    [jobId]
+  );
+
+  await telegram
+    .sendMessage(`❌ Design #${jobId} rejected and removed from Printify.`)
+    .catch(() => null);
+
+  return res.json({ success: true, jobId, status: 'rejected' });
 });
 
 // Admin Printify Sync

@@ -136,6 +136,29 @@ db.serialize(() => {
     )
   `);
 
+  // Design jobs — Human-in-the-Loop product creation pipeline.
+  // Lifecycle: awaiting_approval → (published | rejected)
+  // Created by /api/admin/design/create-draft, mutated by publish/reject endpoints.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS design_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      printifyProductId TEXT NOT NULL,
+      blueprintId INTEGER NOT NULL,
+      printProviderId INTEGER NOT NULL,
+      productType TEXT NOT NULL DEFAULT 'tee',
+      title TEXT,
+      priceILS REAL NOT NULL,
+      mockupUrl TEXT,
+      sourceImageRef TEXT,
+      status TEXT NOT NULL DEFAULT 'awaiting_approval',
+      requestedBy TEXT,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      decidedAt DATETIME,
+      publishedProductId INTEGER,
+      lastError TEXT
+    )
+  `);
+
 });
 
 // Helper to safely add column if not exists — returns a Promise
