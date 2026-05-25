@@ -69,11 +69,36 @@ function validateSitemap(content) {
     `sitemap.xml contains non-absolute URLs: ${nonAbsolute.join(', ')}`);
 }
 
+function validatePrerender() {
+  const distProductDir = path.join(root, 'dist', 'product');
+  if (!fs.existsSync(distProductDir)) {
+    console.warn('  (prerender check skipped — dist/product/ not built yet; run npm run build first)');
+    return;
+  }
+  const subdirs = fs.readdirSync(distProductDir)
+    .filter((d) => fs.statSync(path.join(distProductDir, d)).isDirectory());
+  assert(subdirs.length > 0,
+    'dist/product/ exists but is empty. The prerender step did not produce any pages.');
+  // Sanity-check the first prerendered page.
+  const sampleDir = path.join(distProductDir, subdirs[0], 'index.html');
+  assert(fs.existsSync(sampleDir),
+    `Expected ${sampleDir} to exist but it does not.`);
+  const sampleHtml = fs.readFileSync(sampleDir, 'utf8');
+  assert(sampleHtml.includes('application/ld+json'),
+    `dist/product/${subdirs[0]}/index.html is missing JSON-LD <script>.`);
+  assert(sampleHtml.includes('"@type":"Product"') || sampleHtml.includes('"@type": "Product"'),
+    `dist/product/${subdirs[0]}/index.html JSON-LD does not declare @type=Product.`);
+  assert(/<meta\s+property="og:type"\s+content="product"/i.test(sampleHtml),
+    `dist/product/${subdirs[0]}/index.html is missing og:type=product.`);
+  console.log(`  prerender check: ${subdirs.length} product page(s) prerendered.`);
+}
+
 function run() {
   validateIndexHtml(read(files.indexHtml));
   validateAppJsx(read(files.appJsx));
   validateRobots(read(files.robots));
   validateSitemap(read(files.sitemap));
+  validatePrerender();
   console.log('SEO validation passed.');
 }
 
