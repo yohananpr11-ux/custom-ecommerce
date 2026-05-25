@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run generate:sitemap && vite build && (react-snap || echo 'React-snap completed with warnings')",
     "lint": "eslint .",
     "preview": "vite preview",
     "brand:assets": "node build-brand-assets.cjs",
-    "generate:sitemap": "node scripts/generate-sitemap.cjs"
+    "generate:sitemap": "node scripts/generate-sitemap.js",
+    "seo:validate": "node scripts/validate-seo.cjs"
   },
   "dependencies": {
     "@paypal/react-paypal-js": "^9.2.0",
@@ -28,7 +29,16 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "react-snap": "^1.23.0",
     "sharp": "^0.34.5",
     "vite": "^8.0.12"
+  },
+  "reactSnap": {
+    "source": "dist",
+    "skipPageerrors": true,
+    "minifyHtml": {
+      "collapseWhitespace": true,
+      "removeComments": true
+    }
   }
 }

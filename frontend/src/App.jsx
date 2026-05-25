@@ -9,6 +9,7 @@ import './index.css'
 // Shared Components
 import Footer from './components/Footer'
 import CookieConsent from './components/CookieConsent'
+import HeadTags from './components/HeadTags'
 
 // Compliance & Legal Pages
 import PrivacyPolicy from './pages/PrivacyPolicy'
@@ -1136,22 +1137,18 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   return (
     <>
       {product && (
-        <Helmet>
-          <title>{`${getProductTitle(product.title, locale)} | Drip Street`}</title>
-          <meta name="description" content={getLocalizedProductDescription(product, locale)} />
-          <meta property="og:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
-          <meta property="og:description" content={getLocalizedProductDescription(product, locale)} />
-          <meta property="og:url" content={`https://dripstreetshop.com/product/${product.id}`} />
+        <HeadTags
+          title={`${getProductTitle(product.title, locale)} | Drip Street`}
+          description={getLocalizedProductDescription(product, locale)}
+          url={`https://dripstreetshop.com/product/${product.id}`}
+          image={absoluteImageUrl}
+        >
+          <link rel="canonical" href={`https://dripstreetshop.com/product/${product.id}`} />
           <meta property="og:type" content="product" />
-          <meta property="og:image" content={absoluteImageUrl} />
-          <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
-          <meta name="twitter:description" content={getLocalizedProductDescription(product, locale)} />
-          <meta name="twitter:image" content={absoluteImageUrl} />
           <script type="application/ld+json">
             {JSON.stringify(jsonLd)}
           </script>
-        </Helmet>
+        </HeadTags>
       )}
       <header className="header container">
         <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
@@ -2365,15 +2362,14 @@ function MainApp() {
   if (currentPath === '/success') {
     return (
       <>
-        <Helmet>
-          <title>Order Confirmed | Drip Street</title>
-          <meta name="description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
-          <meta property="og:title" content="Order Confirmed | Drip Street" />
-          <meta property="og:description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
-          <meta property="og:url" content="https://dripstreetshop.com/success" />
-          <meta property="og:image" content="https://dripstreetshop.com/brand/hero-full.png" />
-          <meta name="twitter:card" content="summary_large_image" />
-        </Helmet>
+        <HeadTags
+          title="Order Confirmed | Drip Street"
+          description="Thank you for your order! Your payment was successful and we are processing your shipment."
+          url="https://dripstreetshop.com/success"
+          image="https://dripstreetshop.com/brand/hero-full.png"
+        >
+          <link rel="canonical" href="https://dripstreetshop.com/success" />
+        </HeadTags>
         <div className="container" style={{ textAlign: 'center', padding: '100px 20px' }}>
           <motion.h1 
             initial={{ scale: 0.8, opacity: 0 }}
@@ -2394,15 +2390,14 @@ function MainApp() {
   if (currentPath === '/checkout') {
     return (
       <>
-        <Helmet>
-          <title>Secure Checkout | Drip Street</title>
-          <meta name="description" content="Complete your order securely at Drip Street checkout." />
-          <meta property="og:title" content="Secure Checkout | Drip Street" />
-          <meta property="og:description" content="Complete your order securely at Drip Street checkout." />
-          <meta property="og:url" content="https://dripstreetshop.com/checkout" />
-          <meta property="og:image" content="https://dripstreetshop.com/brand/hero-full.png" />
-          <meta name="twitter:card" content="summary_large_image" />
-        </Helmet>
+        <HeadTags
+          title="Secure Checkout | Drip Street"
+          description="Complete your order securely at Drip Street checkout."
+          url="https://dripstreetshop.com/checkout"
+          image="https://dripstreetshop.com/brand/hero-full.png"
+        >
+          <link rel="canonical" href="https://dripstreetshop.com/checkout" />
+        </HeadTags>
         <div className="container checkout-page">
         <h1 style={{ marginTop: '40px' }}>{t('checkout_secure')}</h1>
         <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
@@ -2924,19 +2919,14 @@ function MainApp() {
 
   return (
     <>
-      <Helmet>
-        <title>{meta.title}</title>
-        <meta name="description" content={meta.description} />
-        <meta property="og:title" content={meta.title} />
-        <meta property="og:description" content={meta.description} />
-        <meta property="og:url" content={meta.url} />
-        <meta property="og:type" content="website" />
-        <meta property="og:image" content="https://dripstreetshop.com/brand/hero-full.png" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={meta.title} />
-        <meta name="twitter:description" content={meta.description} />
-        <meta name="twitter:image" content="https://dripstreetshop.com/brand/hero-full.png" />
-      </Helmet>
+      <HeadTags
+        title={meta.title}
+        description={meta.description}
+        url={meta.url}
+        image="https://dripstreetshop.com/brand/hero-full.png"
+      >
+        <link rel="canonical" href={meta.url} />
+      </HeadTags>
       {/* SVG goo filter — invisible, used by .drip-spinner */}
       <svg className="goo-filter-host" aria-hidden="true" focusable="false">
         <defs>
