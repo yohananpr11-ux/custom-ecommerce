@@ -24,7 +24,7 @@ const axios = require('axios');
 
 const BASE_URL = 'https://api.printify.com/v1';
 const MOCKUP_POLL_INTERVAL_MS = 4000;
-const MOCKUP_TIMEOUT_MS       = 90000; // 90s — Printify usually generates in 30-60s
+const MOCKUP_TIMEOUT_MS       = 180000; // 180s — Printify usually generates in 30-60s but occasionally takes >90s under load
 
 // Tee pricing rule (must match pricing.js targetPricesILS.softstyle = 149.90)
 const TEE_PRICE_ILS = 149.90;
