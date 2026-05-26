@@ -8,6 +8,7 @@ const telegram = require('./services/telegram');
 const pricingEngine = require('./services/pricing');
 const printify = require('./services/printify');
 const designPipeline = require('./services/design-pipeline');
+const mockupPipeline = require('./services/mockups');
 const meniChat = require('./services/meni');
 const emailService = require('./services/emailService');
 
@@ -378,6 +379,17 @@ const dbRunAsync = (query, params = []) => new Promise((resolve, reject) => {
     resolve({ lastID: this.lastID, changes: this.changes });
   });
 });
+
+const upsertDesignJobImageAsync = ({ designJobId, view, url, isCustomMockup }) => dbRunAsync(
+  `INSERT INTO product_images (design_job_id, product_variant_id, view, url, is_custom_mockup, createdAt, updatedAt)
+   VALUES (?, NULL, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+   ON CONFLICT(design_job_id, view)
+   DO UPDATE SET
+     url = excluded.url,
+     is_custom_mockup = excluded.is_custom_mockup,
+     updatedAt = CURRENT_TIMESTAMP`,
+  [designJobId, view, url, isCustomMockup ? 1 : 0]
+);
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LEAD_PROMO_DISCOUNT_RATE = 0.10;
@@ -790,6 +802,16 @@ app.get('/api/admin/test-telegram', async (req, res) => {
 });
 
 app.post('/api/analytics/visit', express.json(), async (req, res) => {
+  // Env-var presence snapshot — logged on every failure path so Render logs
+  // make root cause obvious without ever leaking secret values.
+  const envSnapshot = () => ({
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN
+      ? `set(len=${process.env.TELEGRAM_BOT_TOKEN.length})`
+      : 'MISSING',
+    TELEGRAM_OWNER_CHAT_ID: process.env.TELEGRAM_OWNER_CHAT_ID ? 'set' : 'MISSING',
+    TELEGRAM_ALLOWED_USER_IDS: process.env.TELEGRAM_ALLOWED_USER_IDS ? 'set' : 'MISSING',
+  });
+
   try {
     const { sessionId, path, locale, currency, source } = req.body || {};
     const ip = getClientIp(req);
@@ -814,13 +836,40 @@ app.post('/api/analytics/visit', express.json(), async (req, res) => {
         + `<b>IP:</b> ${ip}\n`
         + `<b>UA:</b> ${ua}`;
 
-      const telegramResult = await telegram.sendMessage(msg);
+      let telegramResult;
+      try {
+        telegramResult = await telegram.sendMessage(msg);
+      } catch (tgErr) {
+        // sendMessage already catches axios errors and returns a structured
+        // result, so reaching here means something unexpected (e.g. token
+        // resolution threw). Log full context for Render logs.
+        console.error('[analytics/visit] telegram.sendMessage threw:', {
+          message: tgErr && tgErr.message,
+          stack: tgErr && tgErr.stack && tgErr.stack.split('\n').slice(0, 8).join('\n'),
+          env: envSnapshot(),
+        });
+        return res.status(500).json({
+          success: false,
+          deduped: false,
+          error: 'Telegram delivery threw',
+          detail: tgErr && tgErr.message,
+          env: envSnapshot(),
+        });
+      }
+
       if (!telegramResult || !telegramResult.ok) {
+        console.error('[analytics/visit] telegram delivery failed:', {
+          telegram: telegramResult,
+          env: envSnapshot(),
+          path: path || '/',
+          ip,
+        });
         return res.status(500).json({
           success: false,
           deduped: false,
           error: 'Visit event received but Telegram delivery failed',
-          telegram: telegramResult || { ok: false, reason: 'unknown_error' }
+          telegram: telegramResult || { ok: false, reason: 'unknown_error' },
+          env: envSnapshot(),
         });
       }
 
@@ -829,7 +878,20 @@ app.post('/api/analytics/visit', express.json(), async (req, res) => {
 
     return res.json({ success: true, deduped: true, telegram: { ok: true, skipped: true, reason: 'deduped' } });
   } catch (err) {
-    return res.status(500).json({ success: false, error: 'Visit analytics failed' });
+    // Previous behavior swallowed the error with a generic 500 and no log,
+    // making Render logs useless. Now surface the full error + env state so
+    // the cause is visible both in logs AND in the response body.
+    console.error('[analytics/visit] unhandled exception:', {
+      message: err && err.message,
+      stack: err && err.stack && err.stack.split('\n').slice(0, 10).join('\n'),
+      env: envSnapshot(),
+    });
+    return res.status(500).json({
+      success: false,
+      error: 'Visit analytics failed',
+      detail: err && err.message,
+      env: envSnapshot(),
+    });
   }
 });
 
@@ -1510,14 +1572,45 @@ app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) =>
       return res.status(503).json({ error: 'PRINTIFY_SHOP_ID not configured on server' });
     }
 
-    stage = 'printify-create-draft';
-    const draft = await designPipeline.createDraftFromImage({
+    stage = 'parallel-pipelines';
+    const printifyDraftPromise = designPipeline.createDraftFromImage({
       imageBase64: cleanBase64,
       filename,
       title,
       placement: cleanPlacement,
     });
 
+    const customMockupPromise = mockupPipeline.createApprovalMockup({
+      imageBase64: cleanBase64,
+      filename,
+      title,
+      placement: cleanPlacement,
+    });
+
+    const [printifyResult, customMockupResult] = await Promise.allSettled([
+      printifyDraftPromise,
+      customMockupPromise,
+    ]);
+
+    if (printifyResult.status !== 'fulfilled') {
+      stage = 'printify-create-draft';
+      throw printifyResult.reason;
+    }
+
+    const draft = printifyResult.value;
+    const customMockup = customMockupResult.status === 'fulfilled' ? customMockupResult.value : null;
+
+    if (customMockupResult.status === 'rejected') {
+      console.error('[MOCKUP_PIPELINE] Falling back to Printify mockup URL.', {
+        error: customMockupResult.reason?.message || String(customMockupResult.reason || 'Unknown mockup failure'),
+        placement: cleanPlacement,
+      });
+    }
+
+    const chosenMockupUrl = customMockup?.url || draft.mockupUrl;
+    const isCustomMockup = Boolean(customMockup?.url);
+
+    stage = 'db-insert-design-job';
     const insert = await dbRunAsync(
       `INSERT INTO design_jobs
         (printifyProductId, blueprintId, printProviderId, productType, title, priceILS,
@@ -1529,11 +1622,19 @@ app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) =>
         draft.printProviderId,
         draft.title,
         draft.priceILS,
-        draft.mockupUrl,
+        chosenMockupUrl,
         filename || null,
         requestedBy || null,
       ]
     );
+
+    stage = 'db-upsert-product-image';
+    await upsertDesignJobImageAsync({
+      designJobId: insert.lastID,
+      view: cleanPlacement,
+      url: chosenMockupUrl,
+      isCustomMockup,
+    });
 
     await telegram
       .sendMessage(`🎨 <b>Design draft #${insert.lastID}</b> created (awaiting your approval in MENI).\n${draft.title}`)
@@ -1543,7 +1644,9 @@ app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) =>
       success: true,
       jobId: insert.lastID,
       printifyProductId: draft.printifyProductId,
-      mockupUrl: draft.mockupUrl,
+      mockupUrl: chosenMockupUrl,
+      printifyMockupUrl: draft.mockupUrl,
+      mockupSource: isCustomMockup ? 'cloudinary' : 'printify',
       title: draft.title,
       priceILS: draft.priceILS,
       placement: draft.placement,
