@@ -1495,11 +1495,12 @@ app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) =>
     if (!requireAdminAuth(req, res)) return;
 
     stage = 'validate-body';
-    const { imageBase64, filename, title, requestedBy } = req.body || {};
+    const { imageBase64, filename, title, requestedBy, placement } = req.body || {};
     if (!imageBase64 || typeof imageBase64 !== 'string') {
       return res.status(400).json({ error: 'imageBase64 (string) is required.' });
     }
     const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',', 2)[1] : imageBase64;
+    const cleanPlacement = (placement === 'back') ? 'back' : 'front';
 
     stage = 'env-precheck';
     if (!process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_API_TOKEN === 'YOUR_PRINTIFY_TOKEN') {
@@ -1514,6 +1515,7 @@ app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) =>
       imageBase64: cleanBase64,
       filename,
       title,
+      placement: cleanPlacement,
     });
 
     const insert = await dbRunAsync(
@@ -1544,6 +1546,9 @@ app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) =>
       mockupUrl: draft.mockupUrl,
       title: draft.title,
       priceILS: draft.priceILS,
+      placement: draft.placement,
+      variantCount: draft.variantCount,
+      hasNeckLabel: draft.hasNeckLabel,
     });
   } catch (err) {
     // Print everything we know about the failure so smoke tests can diagnose.
