@@ -227,17 +227,39 @@ const createDraftProduct = async ({
     const res = await client.post(`/shops/${shopId}/products.json`, payload);
     return res.data;
   } catch (err) {
-    // If the provider doesn't expose neck_label, Printify returns a 400 about
-    // unknown placeholder position. Retry once without the neck label.
-    const message = String(err?.response?.data?.message || err?.message || '');
-    if (neckLabelImageId && /neck_label|placeholder|position/i.test(message)) {
-      console.warn(`[design] neck_label not accepted by provider, retrying without: ${message}`);
+    // Printify rejects unsupported placeholders with a 4xx (seen as 400 and 422
+    // in the wild) and the offending text can live under `message`, `error`,
+    // `errors`, or the raw body. Stringify the whole payload so the fallback
+    // triggers regardless of which key Printify used this time.
+    const status = err?.response?.status;
+    const data   = err?.response?.data;
+    const haystack = [
+      data?.message,
+      data?.error,
+      typeof data?.errors === 'string' ? data.errors : JSON.stringify(data?.errors || ''),
+      err?.message,
+      (() => { try { return JSON.stringify(data); } catch { return ''; } })(),
+    ].filter(Boolean).join(' | ');
+
+    const isNeckLabelIssue = /neck[_\s-]?label/i.test(haystack);
+    const isPlaceholderIssue = /placeholder|position|invalid/i.test(haystack);
+    const isRetryableStatus = status === 400 || status === 422;
+
+    if (neckLabelImageId && isRetryableStatus && (isNeckLabelIssue || isPlaceholderIssue)) {
+      console.warn(`[design] neck_label rejected by Printify (status=${status}), retrying without it: ${haystack}`);
       const fallbackPayload = {
         ...payload,
         print_areas: [{ variant_ids: variantIds, placeholders: [customerPlaceholder] }],
       };
-      const res = await client.post(`/shops/${shopId}/products.json`, fallbackPayload);
-      return res.data;
+      try {
+        const res = await client.post(`/shops/${shopId}/products.json`, fallbackPayload);
+        return res.data;
+      } catch (retryErr) {
+        const retryStatus = retryErr?.response?.status;
+        const retryBody   = retryErr?.response?.data;
+        console.error(`[design] fallback (no neck_label) also failed: status=${retryStatus}`, retryBody);
+        throw retryErr;
+      }
     }
     throw err;
   }
