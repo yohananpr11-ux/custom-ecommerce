@@ -1025,7 +1025,10 @@ app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res
   }
 });
 
-app.use(express.json());
+// 5MB limit (default is 100KB) — high enough for /api/admin/design/create-draft
+// which carries a base64-encoded image, low enough that any single body still
+// fits comfortably in memory on the Render Free plan.
+app.use(express.json({ limit: '5mb' }));
 
 // Pulse Check Route
 app.get('/', (req, res) => {
