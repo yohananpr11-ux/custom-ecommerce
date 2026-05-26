@@ -1487,16 +1487,29 @@ const requireAdminAuth = (req, res) => {
 };
 
 app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) => {
-  if (!requireAdminAuth(req, res)) return;
-
-  const { imageBase64, filename, title, requestedBy } = req.body || {};
-  if (!imageBase64 || typeof imageBase64 !== 'string') {
-    return res.status(400).json({ error: 'imageBase64 (string) is required.' });
-  }
-  // Strip data URL prefix if the caller forgot (data:image/png;base64,...).
-  const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',', 2)[1] : imageBase64;
-
+  // Wrap THE ENTIRE handler so absolutely nothing can escape to the global
+  // error middleware as a generic "Internal Server Error". For an admin-only
+  // endpoint, leaking err.message + the stage we got to is the right tradeoff.
+  let stage = 'init';
   try {
+    if (!requireAdminAuth(req, res)) return;
+
+    stage = 'validate-body';
+    const { imageBase64, filename, title, requestedBy } = req.body || {};
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return res.status(400).json({ error: 'imageBase64 (string) is required.' });
+    }
+    const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',', 2)[1] : imageBase64;
+
+    stage = 'env-precheck';
+    if (!process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_API_TOKEN === 'YOUR_PRINTIFY_TOKEN') {
+      return res.status(503).json({ error: 'PRINTIFY_API_TOKEN not configured on server' });
+    }
+    if (!process.env.PRINTIFY_SHOP_ID) {
+      return res.status(503).json({ error: 'PRINTIFY_SHOP_ID not configured on server' });
+    }
+
+    stage = 'printify-create-draft';
     const draft = await designPipeline.createDraftFromImage({
       imageBase64: cleanBase64,
       filename,
@@ -1533,11 +1546,18 @@ app.post('/api/admin/design/create-draft', designJsonParser, async (req, res) =>
       priceILS: draft.priceILS,
     });
   } catch (err) {
-    const upstream = err.response?.data || err.message;
-    console.error('design/create-draft failed:', upstream);
+    // Print everything we know about the failure so smoke tests can diagnose.
+    const upstream = err.response?.data;
+    const upstreamStr = upstream
+      ? (typeof upstream === 'string' ? upstream : JSON.stringify(upstream))
+      : null;
+    console.error(`design/create-draft failed at stage='${stage}':`, err.message, upstream || '');
+    if (err.stack) console.error(err.stack.split('\n').slice(0, 5).join('\n'));
     return res.status(502).json({
       success: false,
-      error: typeof upstream === 'string' ? upstream : (err.message || 'Printify draft creation failed'),
+      stage,
+      error: err.message || 'Printify draft creation failed',
+      upstream: upstreamStr || undefined,
     });
   }
 });
