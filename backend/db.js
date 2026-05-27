@@ -159,6 +159,23 @@ db.serialize(() => {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS product_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      design_job_id INTEGER,
+      product_variant_id INTEGER,
+      view TEXT NOT NULL,
+      url TEXT NOT NULL,
+      is_custom_mockup INTEGER DEFAULT 0,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (design_job_id) REFERENCES design_jobs(id),
+      FOREIGN KEY (product_variant_id) REFERENCES product_variants(id),
+      UNIQUE(design_job_id, view),
+      UNIQUE(product_variant_id, view)
+    )
+  `);
+
 });
 
 // Helper to safely add column if not exists — returns a Promise
@@ -208,6 +225,8 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('orders', 'region', 'TEXT'),
     addColumnIfMissing('orders', 'postalCode', 'TEXT'),
     addColumnIfMissing('orders', 'country', 'TEXT'),
+    // design_jobs
+    addColumnIfMissing('design_jobs', 'lastError', 'TEXT'),
     // product_variants
     addColumnIfMissing('product_variants', 'imageUrl', 'TEXT'),
     addColumnIfMissing('product_variants', 'stockQty', 'INTEGER'),
@@ -233,6 +252,8 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_unsubscribed_emailSent ON leads(unsubscribed, emailSent, emailAttempts)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_orders_emailSent_status ON orders(status, emailSent, emailAttempts)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_product_images_design_job_view ON product_images(design_job_id, view)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_product_images_variant_view ON product_images(product_variant_id, view)`);
 })().catch((err) => {
   console.error('Schema migration block failed:', err.message);
 });
