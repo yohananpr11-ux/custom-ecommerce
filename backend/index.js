@@ -1727,6 +1727,37 @@ app.post('/api/admin/design/:jobId/publish', async (req, res) => {
   }
 });
 
+// Update the title of a draft design job that is still awaiting approval.
+// Used by MENI's Telegram flow when Groq suggests 3 names and the human
+// picks one before publishing. Only touches our local design_jobs row —
+// the storefront product name on publish reads from this column, so the
+// chosen title propagates to dripstreetshop.com. We deliberately do NOT
+// sync the new title back to Printify (their dashboard product name is
+// invisible to customers and is not worth a second API round trip).
+app.patch('/api/admin/design/:jobId/title', express.json(), async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
+
+  const jobId = Number(req.params.jobId);
+  if (!Number.isFinite(jobId)) return res.status(400).json({ error: 'jobId must be numeric.' });
+
+  const rawTitle = req.body?.title;
+  if (typeof rawTitle !== 'string' || !rawTitle.trim()) {
+    return res.status(400).json({ error: 'title (non-empty string) is required.' });
+  }
+  const title = rawTitle.trim().slice(0, 120);
+
+  const job = await dbGetAsync(`SELECT * FROM design_jobs WHERE id = ?`, [jobId]);
+  if (!job) return res.status(404).json({ error: 'design job not found' });
+  if (job.status !== 'awaiting_approval') {
+    return res.status(409).json({
+      error: `job is in status '${job.status}', not awaiting_approval — title can no longer be edited.`,
+    });
+  }
+
+  await dbRunAsync(`UPDATE design_jobs SET title = ? WHERE id = ?`, [title, jobId]);
+  return res.json({ success: true, jobId, title });
+});
+
 app.post('/api/admin/design/:jobId/reject', async (req, res) => {
   if (!requireAdminAuth(req, res)) return;
 
