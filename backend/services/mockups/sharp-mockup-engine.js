@@ -42,11 +42,28 @@ function normalizePlacement(placement) {
   };
 }
 
+// Layer sources can be a Buffer, a local file path, or a remote URL
+// (e.g. a Cloudinary-hosted template referenced via MOCKUP_TEMPLATE_* env vars
+// in production). Remote URLs are downloaded once per composite call — Sharp
+// itself only accepts Buffers/paths, so we materialize URLs into Buffers here.
+// Relies on Node 18+ global `fetch` (Render's Node 20 runtime satisfies this).
 async function resolveInputBuffer(input, label) {
   if (!input) return null;
   if (Buffer.isBuffer(input)) return input;
-  if (typeof input === 'string') return fs.readFile(input);
-  throw new Error(`${label} must be a Buffer or file path.`);
+  if (typeof input === 'string') {
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+      const response = await fetch(input);
+      if (!response.ok) {
+        throw new Error(
+          `${label}: failed to fetch remote layer (${response.status} ${response.statusText}) — ${input}`
+        );
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    }
+    return fs.readFile(input);
+  }
+  throw new Error(`${label} must be a Buffer, URL, or file path.`);
 }
 
 async function normalizeLayer(layer, outputSize, label) {
