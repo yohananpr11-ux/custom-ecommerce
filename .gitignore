@@ -15,3 +15,7 @@ backend/*.db-wal
 backend/*.db-shm
 *.db-wal
 *.db-shm
+
+# Placeholder mockup assets used only for local pipeline smoke tests —
+# production uses the Cloudinary URLs in MOCKUP_TEMPLATE_* env vars.
+backend/mockup-assets-dummy/
