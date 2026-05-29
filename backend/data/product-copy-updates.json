@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "notes": [
+      "Keys can be Printify product IDs (recommended) or exact current product titles.",
+      "For each product, provide the new premium title and full description.",
+      "Description template hints: Style + Fit + Color + Scene + Frictionless closing CTA."
+    ],
+    "descriptionTemplate": {
+      "style": "Streetwear vibe and core aesthetic in 1-2 lines.",
+      "fit": "Fit guidance (oversized/regular/true-to-size) and feel.",
+      "color": "Color story and pairing notes.",
+      "scene": "Where/when to wear it (day-night, city, gym, travel).",
+      "closing": "Low-friction close with confidence and urgency.",
+      "example": "Built for clean daily rotation. Relaxed fit with premium comfort. Designed in jet black to pair with cargos, denim, or shorts. From coffee runs to late-night city moves. Add to cart now and lock your size before it sells out."
+    }
+  },
+  "PRODUCT_ID_OR_EXACT_CURRENT_TITLE_1": {
+    "title": "[HERO] Midnight Drift Tee",
+    "description": "[STYLE] ... [FIT] ... [COLOR] ... [SCENE] ... [CLOSING] ..."
+  },
+  "PRODUCT_ID_OR_EXACT_CURRENT_TITLE_2": {
+    "title": "[BEST SELLER] Iron Lotus Oversized Tee",
+    "description": "[STYLE] ... [FIT] ... [COLOR] ... [SCENE] ... [CLOSING] ..."
+  }
+}

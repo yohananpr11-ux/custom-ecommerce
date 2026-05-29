@@ -11,6 +11,8 @@ const designPipeline = require('./services/design-pipeline');
 const mockupPipeline = require('./services/mockups');
 const meniChat = require('./services/meni');
 const emailService = require('./services/emailService');
+const marketingWebhooksRouter = require('./routes/marketing-webhooks');
+const adminReportsRouter = require('./routes/admin-reports');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -1091,6 +1093,8 @@ app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res
 // which carries a base64-encoded image, low enough that any single body still
 // fits comfortably in memory on the Render Free plan.
 app.use(express.json({ limit: '5mb' }));
+app.use('/api/marketing', marketingWebhooksRouter);
+app.use('/api/admin', adminReportsRouter);
 
 // Pulse Check Route
 app.get('/', (req, res) => {

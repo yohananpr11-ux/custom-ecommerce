@@ -182,3 +182,8 @@
     border-right-color: var(--border);
   }
 }
+
+/* Legacy stylesheet fallback hook for CRO updates; active styles are in index.css. */
+.phase2-cro-fallback {
+  --phase2-accent: #ff6b35;
+}

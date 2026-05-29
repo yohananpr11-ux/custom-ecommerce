@@ -1272,6 +1272,20 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
               {t('buy_now')}
             </button>
 
+            <div className="purchase-signal-card">
+              <strong>Material & Fit</strong>
+              <ul>
+                <li>Premium Heavyweight Cotton</li>
+                <li>Soft interior with clean exterior finish</li>
+                <li>Relaxed silhouette for everyday layering</li>
+              </ul>
+            </div>
+
+            <div className="shipping-trust-strip">
+              <span>Tracked shipping worldwide</span>
+              <span>Easy 14-day returns</span>
+            </div>
+
             <div className="trust-badges">
               <div className="trust-badge-item">
                 <div className="trust-badge-icon">🔒</div>
@@ -2956,6 +2970,13 @@ function MainApp() {
     );
   }
 
+  const bestSellerProducts = useMemo(() => {
+    const inStockProducts = products.filter((product) => Number(product.stock ?? 1) !== 0);
+    const shirtCandidates = inStockProducts.filter((product) => deriveProductCategory(product) === 'Shirts');
+    const source = shirtCandidates.length >= 4 ? shirtCandidates : inStockProducts;
+    return source.slice(0, 4);
+  }, [products]);
+
   const homeContent = (
     <>
       {activeCoupon && (
@@ -2972,20 +2993,60 @@ function MainApp() {
           <img src="/brand/drip-mark.png" alt="" draggable="false" />
         </div>
         <div className="container hero-content">
-          <motion.h1 className="holographic-text" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>{t('hero_title')}</motion.h1>
-          <motion.p initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-            {t('hero_subtitle')}
+          <motion.span className="hero-eyebrow" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+            DRIP STREET SIGNATURE DROP
+          </motion.span>
+          <motion.h1 className="holographic-text hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+            Premium Streetwear. Zero Guesswork Fit.
+          </motion.h1>
+          <motion.p className="hero-vibe-subtitle" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
+            Heavyweight essentials engineered for daily city movement, late-night edge, and effortless rotation.
           </motion.p>
+          <motion.ul className="hero-bullets" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
+            <li>Premium heavyweight cotton that keeps its shape.</li>
+            <li>Relaxed street fit with clean shoulder structure.</li>
+            <li>High-definition print that stays sharp wash after wash.</li>
+            <li>Built for day-to-night outfits without overthinking it.</li>
+          </motion.ul>
           <motion.div className="hero-cta-group" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
             <button className="hero-cta-primary drip-cta" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              {t('shop_now')}
+              Shop The Drop
             </button>
             <button className="hero-cta-secondary drip-cta" onClick={() => { setActiveCategory('Shirts'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              {t('best_sellers')}
+              Explore Best Sellers
             </button>
           </motion.div>
         </div>
       </section>
+
+      {!isLoading && bestSellerProducts.length > 0 && (
+        <section className="best-sellers-section container">
+          <div className="best-sellers-head">
+            <h2>Best Sellers</h2>
+            <p>Most-loved pieces customers keep reordering for fit, quality, and everyday styling.</p>
+          </div>
+          <div className="best-sellers-grid">
+            {bestSellerProducts.map((product) => {
+              const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+              return (
+                <article key={`bestseller-${product.id}`} className="best-seller-card">
+                  <button type="button" className="best-seller-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
+                    <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
+                  </button>
+                  <div className="best-seller-content">
+                    <h3>{getProductTitle(product.title, locale)}</h3>
+                    <span>{curSym}{displayPrice.toFixed(2)}</span>
+                    <div className="best-seller-actions">
+                      <button type="button" className="quick-add-btn" onClick={() => openQuickAdd(product)}>Quick Add</button>
+                      <button type="button" className="best-seller-link-btn" onClick={() => navigate(`/product/${product.id}`)}>View Product</button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <main className="container">
         <div className="categories-nav">
@@ -3069,6 +3130,22 @@ function MainApp() {
                         <button className="add-to-cart" aria-label={`${t('add_to_cart')} ${getProductTitle(product.title, locale)}`} onClick={() => openQuickAdd(product)}>
                           {t('add_to_cart')}
                         </button>
+                        <div className="product-card-signals" aria-label="Material and shipping highlights">
+                          <div className="product-card-signal-block">
+                            <strong>Material & Fit</strong>
+                            <ul>
+                              <li>Premium Heavyweight Cotton</li>
+                              <li>Relaxed Street Fit</li>
+                            </ul>
+                          </div>
+                          <div className="product-card-signal-block">
+                            <strong>Shipping & Returns</strong>
+                            <ul>
+                              <li>Tracked Shipping</li>
+                              <li>Easy 14-Day Returns</li>
+                            </ul>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -3344,6 +3421,17 @@ function MainApp() {
                   <div className="quick-config-actions">
                     <button type="button" className="quick-config-secondary" onClick={closeQuickAdd}>{t('continue_shopping')}</button>
                     <button type="button" className="quick-config-primary" onClick={submitQuickAdd}>{t('add_selected_to_cart')}</button>
+                  </div>
+
+                  <div className="quick-config-trust">
+                    <div>
+                      <strong>Material & Fit</strong>
+                      <span>Premium Heavyweight Cotton · Relaxed Street Fit</span>
+                    </div>
+                    <div>
+                      <strong>Shipping & Returns</strong>
+                      <span>Tracked Delivery · Easy 14-Day Returns</span>
+                    </div>
                   </div>
                 </>
               )}
