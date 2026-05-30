@@ -20,10 +20,53 @@ import ContactUs from './pages/ContactUs'
 import AboutUs from './pages/AboutUs'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
+const MARKETING_ABANDONED_INTAKE_URL = `${API_BASE}/api/marketing/intake/abandoned-cart`;
+const MARKETING_WELCOME_INTAKE_URL = `${API_BASE}/api/marketing/intake/welcome-flow`;
+const ABANDONED_CART_TIMEOUT_MS = Number(import.meta.env.VITE_ABANDONED_CART_DELAY_MS || (12 * 60 * 1000));
+const ABANDONED_CART_FINGERPRINT_KEY = 'drip_street_abandoned_cart_fingerprint_v1';
+const CHECKOUT_COMPLETED_KEY = 'drip_street_checkout_completed_v1';
 const SHIPPING_COST = 29.90;
 const FREE_SHIPPING_THRESHOLD = 5;
 const BUNDLE_ITEM_PRICE = 229;
 const BUNDLE_ITEM_COUNT = 3;
+const JEWELRY_UPSELL_MOCK = [
+  {
+    id: 'jewel-urban-chain',
+    title: 'Urban Chain Necklace',
+    subtitle: 'Stainless steel streetwear layering essential',
+    price: 89,
+    imageUrl: '/brand/drip-mark.png',
+  },
+  {
+    id: 'jewel-statement-ring',
+    title: 'Statement Signet Ring',
+    subtitle: 'Mirror-polish finish with daily-wear comfort',
+    price: 74,
+    imageUrl: '/brand/drip-mark.png',
+  },
+  {
+    id: 'jewel-twin-bracelet',
+    title: 'Twin Link Bracelet',
+    subtitle: 'Adjustable fit for stacked street looks',
+    price: 68,
+    imageUrl: '/brand/drip-mark.png',
+  },
+];
+
+const isLikelyValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim().toLowerCase());
+
+const normalizeMarketingItems = (items = []) => {
+  if (!Array.isArray(items)) return [];
+
+  return items.slice(0, 20).map((item, index) => ({
+    id: item?.id ?? item?.productId ?? null,
+    title: String(item?.title || item?.name || `Item ${index + 1}`).trim(),
+    quantity: Math.max(1, Number(item?.quantity) || 1),
+    price: Number(item?.price) || 0,
+    selectedColor: item?.selectedColor || null,
+    selectedSize: item?.selectedSize || null,
+  }));
+};
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
@@ -687,9 +730,41 @@ function PromoDealBadge({ locale, curSym, displayVal }) {
   );
 }
 
+function CartUpsellRail({ items, onQuickAdd, curSym, displayVal }) {
+  if (!items.length) return null;
+
+  return (
+    <section className="cart-upsell-rail" aria-label="Frequently bought together">
+      <div className="cart-upsell-head">
+        <h4>Frequently Bought Together</h4>
+        <p>Early access mockup for jewelry upsells to lift average order value.</p>
+      </div>
+      <div className="cart-upsell-grid">
+        {items.map((item) => (
+          <article key={item.id} className="cart-upsell-card">
+            <div className="cart-upsell-image-wrap">
+              <img src={item.imageUrl} alt={item.title} loading="lazy" />
+            </div>
+            <div className="cart-upsell-content">
+              <strong>{item.title}</strong>
+              <span>{item.subtitle}</span>
+              <div className="cart-upsell-meta">
+                <b>{curSym}{displayVal(item.price).toFixed(2)}</b>
+                <button type="button" onClick={() => onQuickAdd(item)}>Add</button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ─── LeadCapturePopup ────────────────────────────────────────────────────────
-function LeadCapturePopup({ t }) {
-  const STORAGE_KEY = 'drip_street_lead_dismissed';
+function LeadCapturePopup({ t, currentPath }) {
+  const STORAGE_KEY = 'drip_street_lead_dismissed_at';
+  const SESSION_KEY = 'drip_street_lead_popup_seen_session';
+  const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const [visible, setVisible] = useState(false);
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -699,20 +774,61 @@ function LeadCapturePopup({ t }) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (localStorage.getItem(STORAGE_KEY)) return;
-    const timer = setTimeout(() => setVisible(true), 5000);
-    const handleMouseOut = (e) => {
-      if (e.clientY <= 0 && !localStorage.getItem(STORAGE_KEY)) setVisible(true);
+    if (currentPath !== '/') return undefined;
+
+    if (sessionStorage.getItem(SESSION_KEY) === '1') return undefined;
+
+    const dismissedAt = Number(localStorage.getItem(STORAGE_KEY) || 0);
+    if (dismissedAt && (Date.now() - dismissedAt) < DISMISS_TTL_MS) {
+      return undefined;
+    }
+
+    let dwellReady = false;
+    let scrollReady = false;
+
+    const maybeOpen = () => {
+      if (visible) return;
+      if (dwellReady && scrollReady) {
+        setVisible(true);
+        sessionStorage.setItem(SESSION_KEY, '1');
+      }
     };
+
+    const dwellTimer = setTimeout(() => {
+      dwellReady = true;
+      maybeOpen();
+    }, 18000);
+
+    const handleScroll = () => {
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      if (maxScroll <= 0) return;
+      const progress = window.scrollY / maxScroll;
+      if (progress >= 0.35) {
+        scrollReady = true;
+        maybeOpen();
+      }
+    };
+
+    const handleMouseOut = (e) => {
+      if (e.clientY <= 0 && dwellReady) {
+        scrollReady = true;
+        maybeOpen();
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
     document.addEventListener('mouseleave', handleMouseOut);
+
     return () => {
-      clearTimeout(timer);
+      clearTimeout(dwellTimer);
+      window.removeEventListener('scroll', handleScroll);
       document.removeEventListener('mouseleave', handleMouseOut);
     };
-  }, []);
+  }, [currentPath, visible]);
 
   const dismiss = () => {
-    localStorage.setItem(STORAGE_KEY, '1');
+    localStorage.setItem(STORAGE_KEY, String(Date.now()));
+    sessionStorage.setItem(SESSION_KEY, '1');
     setVisible(false);
   };
 
@@ -725,11 +841,23 @@ function LeadCapturePopup({ t }) {
     setCopied(false);
     setIsSubmitting(true);
 
-    fetch(`${API_BASE}/api/leads`, {
+    fetch(MARKETING_WELCOME_INTAKE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: normalizedEmail,
+        locale: 'en',
+        source: 'storefront-popup',
+        website: '',
+        company: '',
+      })
+    })
+      .catch(() => null)
+      .then(() => fetch(`${API_BASE}/api/leads`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: normalizedEmail })
-    })
+    }))
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -1486,10 +1614,118 @@ function MainApp() {
   const [chatStatus, setChatStatus] = useState('bot'); // bot or escalated
   const [toast, setToast] = useState({ visible: false, message: '' });
   const [cartBadgePulse, setCartBadgePulse] = useState(false);
+  const abandonedCartTimeoutRef = useRef(null);
+  const abandonedCartSentRef = useRef(false);
+  const lastAbandonedDispatchRef = useRef(0);
 
   const showToast = (message) => {
     if (!message) return;
     setToast({ visible: true, message });
+  };
+
+  const hasCheckoutContact = useMemo(() => {
+    const email = String(checkoutForm.customerEmail || '').trim();
+    const phoneDigits = String(checkoutForm.phone || '').replace(/\D/g, '');
+    return isLikelyValidEmail(email) || phoneDigits.length >= 7;
+  }, [checkoutForm.customerEmail, checkoutForm.phone]);
+
+  const abandonedCartPayload = useMemo(() => {
+    if (!cart.length || !hasCheckoutContact) return null;
+    return {
+      sessionId: chatSessionId,
+      customerEmail: String(checkoutForm.customerEmail || '').trim().toLowerCase(),
+      customerPhone: String(checkoutForm.phone || '').trim(),
+      currency,
+      locale,
+      totalValue: Number(Number(cartTotal || 0).toFixed(2)),
+      items: normalizeMarketingItems(cart),
+      website: '',
+      company: '',
+    };
+  }, [cart, hasCheckoutContact, chatSessionId, checkoutForm.customerEmail, checkoutForm.phone, currency, locale, cartTotal]);
+
+  const abandonedCartFingerprint = useMemo(() => {
+    if (!abandonedCartPayload) return '';
+    const itemCount = abandonedCartPayload.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+    return [
+      abandonedCartPayload.sessionId,
+      abandonedCartPayload.customerEmail,
+      abandonedCartPayload.customerPhone,
+      itemCount,
+      abandonedCartPayload.totalValue,
+      abandonedCartPayload.currency,
+    ].join('::');
+  }, [abandonedCartPayload]);
+
+  const hasCheckoutBeenCompleted = () => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem(CHECKOUT_COMPLETED_KEY) === '1';
+  };
+
+  const markAbandonedCartSent = () => {
+    abandonedCartSentRef.current = true;
+    if (typeof window === 'undefined' || !abandonedCartFingerprint) return;
+    sessionStorage.setItem(ABANDONED_CART_FINGERPRINT_KEY, abandonedCartFingerprint);
+  };
+
+  const canDispatchAbandonedCart = () => {
+    if (!abandonedCartPayload || !abandonedCartFingerprint) return false;
+    if (currentPath !== '/checkout') return false;
+    if (abandonedCartSentRef.current) return false;
+    if (hasCheckoutBeenCompleted()) return false;
+
+    if (typeof window !== 'undefined') {
+      const existingFingerprint = sessionStorage.getItem(ABANDONED_CART_FINGERPRINT_KEY);
+      if (existingFingerprint && existingFingerprint === abandonedCartFingerprint) {
+        return false;
+      }
+    }
+
+    const nowTs = Date.now();
+    if (nowTs - lastAbandonedDispatchRef.current < 15000) {
+      return false;
+    }
+
+    return true;
+  };
+
+  const dispatchAbandonedCart = async (triggerReason, preferBeacon = false) => {
+    if (!canDispatchAbandonedCart()) return;
+    lastAbandonedDispatchRef.current = Date.now();
+
+    const payload = {
+      ...abandonedCartPayload,
+      triggerReason,
+      sentAt: new Date().toISOString(),
+    };
+
+    if (preferBeacon && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      try {
+        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        const queued = navigator.sendBeacon(MARKETING_ABANDONED_INTAKE_URL, blob);
+        if (queued) {
+          markAbandonedCartSent();
+          return;
+        }
+      } catch {
+        // Fall through to fetch keepalive.
+      }
+    }
+
+    try {
+      const response = await fetch(MARKETING_ABANDONED_INTAKE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+
+      if (response.ok) {
+        markAbandonedCartSent();
+      }
+    } catch (err) {
+      console.warn('Abandoned cart dispatch failed:', err);
+    }
   };
 
   useEffect(() => {
@@ -1497,6 +1733,88 @@ function MainApp() {
     const timer = setTimeout(() => setToast({ visible: false, message: '' }), 3200);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    abandonedCartSentRef.current = false;
+  }, [abandonedCartFingerprint]);
+
+  useEffect(() => {
+    if (abandonedCartTimeoutRef.current) {
+      clearTimeout(abandonedCartTimeoutRef.current);
+      abandonedCartTimeoutRef.current = null;
+    }
+
+    if (currentPath !== '/checkout' || !abandonedCartPayload || hasCheckoutBeenCompleted()) {
+      return undefined;
+    }
+
+    abandonedCartTimeoutRef.current = setTimeout(() => {
+      dispatchAbandonedCart('checkout-timeout');
+    }, ABANDONED_CART_TIMEOUT_MS);
+
+    return () => {
+      if (abandonedCartTimeoutRef.current) {
+        clearTimeout(abandonedCartTimeoutRef.current);
+        abandonedCartTimeoutRef.current = null;
+      }
+    };
+  }, [currentPath, abandonedCartPayload, abandonedCartFingerprint]);
+
+  useEffect(() => {
+    if (currentPath !== '/checkout' || !abandonedCartPayload || hasCheckoutBeenCompleted()) {
+      return undefined;
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        dispatchAbandonedCart('tab-hidden', true);
+      }
+    };
+
+    const handlePageHide = () => {
+      dispatchAbandonedCart('page-hide', true);
+    };
+
+    const handleBeforeUnload = () => {
+      dispatchAbandonedCart('before-unload', true);
+    };
+
+    const handleMouseExitIntent = (event) => {
+      if (!event.relatedTarget && event.clientY <= 0) {
+        dispatchAbandonedCart('exit-intent');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('mouseout', handleMouseExitIntent);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('mouseout', handleMouseExitIntent);
+    };
+  }, [currentPath, abandonedCartPayload, abandonedCartFingerprint]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (currentPath === '/success') {
+      sessionStorage.setItem(CHECKOUT_COMPLETED_KEY, '1');
+      abandonedCartSentRef.current = true;
+      if (abandonedCartTimeoutRef.current) {
+        clearTimeout(abandonedCartTimeoutRef.current);
+        abandonedCartTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (cart.length > 0) {
+      sessionStorage.removeItem(CHECKOUT_COMPLETED_KEY);
+    }
+  }, [currentPath, cart.length]);
 
   useEffect(() => {
     const handleUnhandledRejection = (event) => {
@@ -1713,6 +2031,11 @@ function MainApp() {
     () => getRecommendationProducts(products, cart, quickAddProduct?.id || null),
     [products, cart, quickAddProduct]
   )
+
+  const jewelryUpsellCandidates = useMemo(() => {
+    const cartIds = new Set(cart.map((item) => String(item.id || item.cartId || '')));
+    return JEWELRY_UPSELL_MOCK.filter((item) => !cartIds.has(String(item.id))).slice(0, 3);
+  }, [cart]);
 
   const quickAddAvailableSizes = useMemo(() => {
     if (!quickAddProduct || !quickAddColor) return [];
@@ -1966,6 +2289,23 @@ function MainApp() {
     setTimeout(() => setCartBadgePulse(false), 360);
     // Drawer pop-up disabled — user now sees a toast and can click the Cart button to open the full /cart page.
   }
+
+  const addUpsellToCart = (upsellItem) => {
+    if (!upsellItem) return;
+
+    addToCart({
+      id: upsellItem.id,
+      cartId: String(upsellItem.id),
+      title: upsellItem.title,
+      price: Number(upsellItem.price) || 0,
+      imageUrl: upsellItem.imageUrl,
+      quantity: 1,
+      stock: 1,
+      type: 'upsell-mock',
+    }, { openCart: false, quantity: 1 });
+
+    showToast(`${upsellItem.title} added to cart`);
+  };
 
   const removeFromCart = (cartId) => {
     setCart((prevCart) => prevCart.filter(item => (item.cartId || `${item.id}`) !== cartId))
@@ -2281,6 +2621,13 @@ function MainApp() {
               </div>
             </div>
           )}
+
+          <CartUpsellRail
+            items={jewelryUpsellCandidates}
+            onQuickAdd={addUpsellToCart}
+            curSym={curSym}
+            displayVal={displayVal}
+          />
         </div>
 
         <div className="cart-footer">
@@ -2850,6 +3197,12 @@ function MainApp() {
           
           <div style={{ flex: '1', minWidth: '300px', backgroundColor: '#111', padding: '24px', borderRadius: '12px', height: 'fit-content' }}>
             <h3>{t('order_summary')}</h3>
+            <CartUpsellRail
+              items={jewelryUpsellCandidates}
+              onQuickAdd={addUpsellToCart}
+              curSym={curSym}
+              displayVal={displayVal}
+            />
             <div className="checkout-review-card">
               <h4>{t('review_title')}</h4>
               <p>{t('review_subtitle')}</p>
@@ -3687,7 +4040,7 @@ function MainApp() {
         )}
       </AnimatePresence>
       <AnimatePresence>
-        <LeadCapturePopup t={t} />
+        <LeadCapturePopup t={t} currentPath={currentPath} />
       </AnimatePresence>
       <Footer />
       <CookieConsent />
