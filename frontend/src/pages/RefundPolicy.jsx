@@ -10,16 +10,16 @@ export default function RefundPolicy() {
             ⚡ TL;DR Summary
           </h3>
           <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6' }}>
-            Because Drip Street products are custom printed on demand upon receipt of your order, we do not accept returns or exchanges for incorrect sizes or changed minds. However, we offer a **14-day replacement/refund warranty** for any manufacturing defects, print blemishes, or items damaged during transit.
+            Because Drip Street products are custom printed on demand upon receipt of your order, we do not accept returns or exchanges for incorrect sizes or changed minds. However, we offer a **30-day replacement/refund warranty** for any manufacturing defects, print blemishes, or items damaged during transit.
           </p>
         </section>
 
         <section>
           <h2 style={{ color: 'var(--color-white)', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>
-            1. 14-Day Manufacturing Warranty
+            1. 30-Day Manufacturing Warranty
           </h2>
           <p style={{ margin: 0 }}>
-            If your garment arrives with a defect (such as misaligned prints, ink stains, torn fabric, or stitching issues), please notify us within **14 days** of the delivery date. We will coordinate a free replacement or complete refund immediately. You do not need to ship the defective item back to us.
+            If your garment arrives with a defect (such as misaligned prints, ink stains, torn fabric, or stitching issues), please notify us within **30 days** of the delivery date. We will coordinate a free replacement or complete refund immediately. You do not need to ship the defective item back to us.
           </p>
         </section>
 
