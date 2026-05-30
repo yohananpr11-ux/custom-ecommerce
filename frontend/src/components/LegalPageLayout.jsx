@@ -1,9 +1,8 @@
-import React, { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import BackButton from './BackButton';
 
 export default function LegalPageLayout({ title, children, breadcrumb = 'Legal' }) {
-  const navigate = useNavigate();
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
     document.title = `${title} - Drip Street Shop`;

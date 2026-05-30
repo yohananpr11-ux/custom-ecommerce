@@ -777,42 +777,35 @@ function LeadCapturePopup({ t, currentPath }) {
     if (currentPath !== '/') return undefined;
 
     if (sessionStorage.getItem(SESSION_KEY) === '1') return undefined;
+    if (localStorage.getItem('drip_street_lead_code')) return undefined;
 
     const dismissedAt = Number(localStorage.getItem(STORAGE_KEY) || 0);
     if (dismissedAt && (Date.now() - dismissedAt) < DISMISS_TTL_MS) {
       return undefined;
     }
 
-    let dwellReady = false;
-    let scrollReady = false;
-
-    const maybeOpen = () => {
+    const openPopup = () => {
       if (visible) return;
-      if (dwellReady && scrollReady) {
-        setVisible(true);
-        sessionStorage.setItem(SESSION_KEY, '1');
-      }
+      setVisible(true);
+      sessionStorage.setItem(SESSION_KEY, '1');
     };
 
     const dwellTimer = setTimeout(() => {
-      dwellReady = true;
-      maybeOpen();
-    }, 18000);
+      openPopup();
+    }, 6000);
 
     const handleScroll = () => {
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
       if (maxScroll <= 0) return;
       const progress = window.scrollY / maxScroll;
       if (progress >= 0.35) {
-        scrollReady = true;
-        maybeOpen();
+        openPopup();
       }
     };
 
     const handleMouseOut = (e) => {
-      if (e.clientY <= 0 && dwellReady) {
-        scrollReady = true;
-        maybeOpen();
+      if (e.clientY <= 5) {
+        openPopup();
       }
     };
 
@@ -995,8 +988,7 @@ function CustomerReviews({ t, locale }) {
   );
 }
 
-function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale, cartCount, onOpenCart }) {
-  const navigate = useNavigate();
+function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
@@ -1637,11 +1629,41 @@ function MainApp() {
     setToast({ visible: true, message });
   };
 
+  function openCartDrawer() {
+    setIsCartOpen(true);
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => setIsCartOpen(true));
+    }
+  }
+
   const hasCheckoutContact = useMemo(() => {
     const email = String(checkoutForm.customerEmail || '').trim();
     const phoneDigits = String(checkoutForm.phone || '').replace(/\D/g, '');
     return isLikelyValidEmail(email) || phoneDigits.length >= 7;
   }, [checkoutForm.customerEmail, checkoutForm.phone]);
+
+  // Keep pricing values above effects/memos that depend on cartTotal.
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const bundlePricing = calculateBundlePricing(cart);
+  const baseSubtotal = bundlePricing.baseSubtotal;
+  const bundleSets = bundlePricing.bundleSets;
+  const bundleDiscount = bundlePricing.bundleDiscount;
+  const bundleActive = bundleSets > 0;
+
+  const shirtsInCart = expandCartUnits(cart).length;
+  const bundleRemainder = shirtsInCart % 3;
+  const shirtsToNextBundle = bundleRemainder > 0 ? 3 - bundleRemainder : 0;
+  const bundleProgressPercent = bundleRemainder > 0 ? (bundleRemainder / 3) * 100 : 0;
+
+  const couponDiscount = activeCoupon ? (baseSubtotal - bundleDiscount) * (activeCoupon.discount_pct / 100) : 0;
+
+  const isFreeShipping = totalItems >= FREE_SHIPPING_THRESHOLD;
+  const shippingCost = isFreeShipping ? 0 : (totalItems > 0 ? SHIPPING_COST : 0);
+  const itemsToFreeShipping = FREE_SHIPPING_THRESHOLD - totalItems;
+  const subtotalAfterDiscounts = Math.max(0, bundlePricing.subtotalAfterDiscounts - couponDiscount);
+  const leadPromoDiscount = activeLeadPromo ? subtotalAfterDiscounts * 0.10 : 0;
+  const subtotalAfterLeadPromo = Math.max(0, subtotalAfterDiscounts - leadPromoDiscount);
+  const cartTotal = subtotalAfterLeadPromo + shippingCost;
 
   const abandonedCartPayload = useMemo(() => {
     if (!cart.length || !hasCheckoutContact) return null;
@@ -2001,13 +2023,6 @@ function MainApp() {
     }
   }, [isPayPalAvailable, isPayPlusAvailable, isStripeAvailable, paymentMethod]);
 
-  function openCartDrawer() {
-    setIsCartOpen(true);
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => setIsCartOpen(true));
-    }
-  }
-
   const closeCartDrawer = () => {
     setIsCartOpen(false);
     if (location.pathname === '/cart') {
@@ -2283,7 +2298,7 @@ function MainApp() {
   };
 
   const addToCart = (product, options = {}) => {
-    const { openCart = true, onAdded, quantity = 1 } = options;
+    const { onAdded, quantity = 1 } = options;
     const incrementBy = Math.max(1, Number(quantity) || 1);
     const cartId = product.cartId || `${product.id}`;
     setCart((prevCart) => {
@@ -2373,25 +2388,6 @@ function MainApp() {
     if (newQty <= 0) return removeFromCart(cartId);
     setCart((prevCart) => prevCart.map(item => ((item.cartId || `${item.id}`) === cartId ? { ...item, quantity: newQty } : item)))
   }
-
-  // ============ PRICING LOGIC ============
-  
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const bundlePricing = calculateBundlePricing(cart);
-  const baseSubtotal = bundlePricing.baseSubtotal;
-  const bundleSets = bundlePricing.bundleSets;
-  const bundleDiscount = bundlePricing.bundleDiscount;
-  const bundleActive = bundleSets > 0;
-  
-  const couponDiscount = activeCoupon ? (baseSubtotal - bundleDiscount) * (activeCoupon.discount_pct / 100) : 0;
-  
-  const isFreeShipping = totalItems >= FREE_SHIPPING_THRESHOLD;
-  const shippingCost = isFreeShipping ? 0 : (totalItems > 0 ? SHIPPING_COST : 0);
-  const itemsToFreeShipping = FREE_SHIPPING_THRESHOLD - totalItems;
-  const subtotalAfterDiscounts = Math.max(0, bundlePricing.subtotalAfterDiscounts - couponDiscount);
-  const leadPromoDiscount = activeLeadPromo ? subtotalAfterDiscounts * 0.10 : 0;
-  const subtotalAfterLeadPromo = Math.max(0, subtotalAfterDiscounts - leadPromoDiscount);
-  const cartTotal = subtotalAfterLeadPromo + shippingCost;
 
   // ============ NAVIGATION ============
 
@@ -3011,6 +3007,11 @@ function MainApp() {
                 onChange={(e) => setCheckoutForm((prev) => ({ ...prev, lastName: e.target.value }))}
               />
             </div>
+            {locale === 'he' && (
+              <p style={{ marginTop: '-4px', marginBottom: '12px', fontSize: '11px', color: '#888', textAlign: 'right' }}>
+                יש להקליד שם באותיות באנגלית בלבד (לדוגמה: Israel Israeli)
+              </p>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <input
                 name="customerEmail"
@@ -3040,6 +3041,11 @@ function MainApp() {
               value={checkoutForm.addressLine1}
               onChange={(e) => setCheckoutForm((prev) => ({ ...prev, addressLine1: e.target.value }))}
             />
+            {locale === 'he' && (
+              <p style={{ marginTop: '-4px', marginBottom: '12px', fontSize: '11px', color: '#888', textAlign: 'right' }}>
+                יש להקליד כתובת באנגלית בלבד (לדוגמה: Herzl St 42)
+              </p>
+            )}
             <input
               name="addressLine2"
               type="text"
@@ -3067,6 +3073,11 @@ function MainApp() {
                 onChange={(e) => setCheckoutForm((prev) => ({ ...prev, region: e.target.value }))}
               />
             </div>
+            {locale === 'he' && (
+              <p style={{ marginTop: '-4px', marginBottom: '12px', fontSize: '11px', color: '#888', textAlign: 'right' }}>
+                יש להקליד עיר באנגלית בלבד (לדוגמה: Tel Aviv)
+              </p>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <input
                 name="postalCode"
@@ -3336,12 +3347,12 @@ function MainApp() {
     );
   }
 
-  const bestSellerProducts = useMemo(() => {
+  const bestSellerProducts = (() => {
     const inStockProducts = products.filter((product) => Number(product.stock ?? 1) !== 0);
     const shirtCandidates = inStockProducts.filter((product) => deriveProductCategory(product) === 'Shirts');
     const source = shirtCandidates.length >= 4 ? shirtCandidates : inStockProducts;
     return source.slice(0, 4);
-  }, [products]);
+  })();
 
   const homeContent = (
     <>
@@ -3922,6 +3933,32 @@ function MainApp() {
           </div>
 
           <div className="cart-footer">
+            {shirtsInCart > 0 && (
+              <div className="bundle-progress cart-footer-progress" style={{ marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px' }}>
+                {shirtsToNextBundle === 0 ? (
+                  <p className="shipping-unlocked" style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: '0 0 4px 0', fontWeight: '600' }}>
+                    {locale === 'he' ? '🎉 מבצע חולצות (3 ב-229 ₪) פעיל בסל!' : '🎉 3-shirt bundle deal active!'}
+                  </p>
+                ) : (
+                  <>
+                    <p className="shipping-hint" style={{ fontSize: '13px', margin: '0 0 8px 0', color: '#999' }}>
+                      {locale === 'he'
+                        ? `הוסף עוד ${shirtsToNextBundle} ${shirtsToNextBundle === 1 ? 'חולצה' : 'חולצות'} לקבלת מבצע 3 ב-229 ₪ (חיסכון של 40 ₪!)`
+                        : `Add ${shirtsToNextBundle} more T-shirt${shirtsToNextBundle > 1 ? 's' : ''} to get 3 for 229 ₪ (Save 40 ₪!)`}
+                    </p>
+                    <div className="progress-bar-bg" style={{ height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '999px', overflow: 'hidden' }}>
+                      <motion.div 
+                        className="progress-bar-fill"
+                        style={{ background: 'rgba(255,255,255,0.4)', height: '100%' }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${bundleProgressPercent}%` }}
+                        transition={{ duration: 0.4 }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             {totalItems > 0 && (
               <div className="shipping-progress cart-footer-progress">
                 {isFreeShipping ? (
