@@ -1066,6 +1066,12 @@ app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res
     
     // Events that indicate inventory/product changes
     if (type && (type.includes('product') || type.includes('variant') || type.includes('inventory'))) {
+      const printifySyncEnabled = isPrintifySyncEnabled();
+      if (!printifySyncEnabled) {
+        console.log(`⏭️ [Printify Webhook] Sync disabled for this environment. Ignoring event: ${type}`);
+        return res.status(200).json({ received: true, event: type, skipped: true });
+      }
+
       console.log(`🔄 [Printify Webhook] Triggering auto-sync for event: ${type}`);
       
       // Queue the sync async (don't block the response)
@@ -1174,7 +1180,7 @@ app.get('/api/geolocation', async (req, res) => {
   res.json({
     country,
     currency: isIsrael ? 'ILS' : 'USD',
-    locale: 'en',
+    locale: isIsrael ? 'he' : 'en',
     exchangeRate: pricingEngine.exchangeRateUSDILS,
   });
 });

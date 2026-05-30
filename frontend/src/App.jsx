@@ -1550,10 +1550,16 @@ function MainApp() {
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
-  const [locale] = useState('en')
+  const [locale, setLocale] = useState(() => localStorage.getItem('drip_street_locale') || 'en');
   const [currency, setCurrency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
   const [isHeaderScrolled, setIsHeaderScrolled] = useState(false)
+
+  const toggleLocale = () => {
+    const nextLocale = locale === 'he' ? 'en' : 'he';
+    setLocale(nextLocale);
+    localStorage.setItem('drip_street_locale', nextLocale);
+  };
 
   // Glass header deepens after first scroll
   useEffect(() => {
@@ -1583,6 +1589,10 @@ function MainApp() {
           setShippingCountry(cc);
           setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
         }
+        // Set locale dynamically on first visit if no manual choice is stored
+        if (data && (data.locale === 'he' || data.locale === 'en') && !localStorage.getItem('drip_street_locale')) {
+          setLocale(data.locale);
+        }
       })
       .catch(() => { /* keep defaults — ipapi step below will still try */ });
 
@@ -1596,6 +1606,10 @@ function MainApp() {
         setCurrency(cc === 'IL' ? 'ILS' : 'USD');
         setShippingCountry(cc);
         setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
+        // Fallback locale dynamic set if no manual override
+        if (!localStorage.getItem('drip_street_locale')) {
+          setLocale(cc === 'IL' ? 'he' : 'en');
+        }
       })
       .catch(() => { /* silent — backend value already applied */ });
   }, []);
@@ -2012,10 +2026,9 @@ function MainApp() {
   }, [cart])
 
   useEffect(() => {
-    document.documentElement.dir = 'ltr';
-    document.documentElement.lang = 'en';
-    // Title + description are now managed by react-helmet-async per-route.
-  }, []);
+    document.documentElement.dir = locale === 'he' ? 'rtl' : 'ltr';
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   const categories = useMemo(() => buildDynamicCategories(products), [products])
 
@@ -3578,10 +3591,9 @@ function MainApp() {
           </filter>
         </defs>
       </svg>
-      <div className="announcement-bar">
+        <div className="announcement-bar">
         {t('announcement')}
       </div>
-      <script>{`document.documentElement.dir = 'ltr'; document.documentElement.lang = 'en';`}</script>
 
       <header className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="header-leading">
@@ -3603,6 +3615,9 @@ function MainApp() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button className="lang-toggle-btn hide-on-mobile" onClick={toggleLocale}>
+            {locale === 'he' ? 'EN' : 'עב'}
+          </button>
           <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={() => navigate('/cart')}>
             <span>🛒 {t('cart')}</span>
             {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
@@ -3633,6 +3648,11 @@ function MainApp() {
                 {cat === 'All' ? t('all') : cat === 'New Arrivals' ? t('new_arrivals') : cat === 'Hoodies' ? t('hoodies') : cat === 'Shirts' ? t('tshirts') : cat === 'Tank Tops' ? t('tank_tops') : cat}
               </button>
             ))}
+            <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button type="button" className="side-nav-link" onClick={() => { toggleLocale(); closeMobileNav(); }} style={{ textAlign: locale === 'he' ? 'right' : 'left', display: 'flex', alignItems: 'center', gap: '8px', color: '#888' }}>
+                🌐 {locale === 'he' ? 'English (EN)' : 'עברית (HE)'}
+              </button>
+            </div>
           </div>
         </aside>
       </div>

@@ -3747,3 +3747,29 @@ button,
   40%      { transform: translateY(-16px) scaleY(0.85); }
   60%      { transform: translateY(4px)  scaleY(1.15); }
 }
+
+/* Language Switcher Styling */
+.lang-toggle-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.lang-toggle-btn:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+@media (max-width: 768px) {
+  .hide-on-mobile {
+    display: none !important;
+  }
+}

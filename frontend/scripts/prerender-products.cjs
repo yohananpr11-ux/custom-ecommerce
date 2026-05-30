@@ -147,15 +147,23 @@ async function main() {
   try {
     products = await fetchProducts();
   } catch (err) {
-    // API failure should NOT break the build — just warn and skip.
-    console.warn(`  ⚠ Could not fetch products (${err.message}). Skipping product prerender.`);
-    console.warn(`  Site will still deploy, but /product/:id will fall back to SPA.`);
-    return;
+    console.warn(`  ⚠ Could not fetch products (${err.message}). Trying fallback file...`);
   }
 
-  if (!products.length) {
-    console.warn('  ⚠ Product list is empty. Nothing to prerender.');
-    return;
+  if (!products || !products.length) {
+    console.log('  🔄 Fetch empty or failed. Loading local products fallback...');
+    const fallbackPath = path.join(__dirname, 'products_fallback.json');
+    if (fs.existsSync(fallbackPath)) {
+      try {
+        products = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+        console.log(`  ✓ Loaded ${products.length} products from products_fallback.json.`);
+      } catch (err) {
+        console.error(`  ✗ Failed to parse products_fallback.json: ${err.message}`);
+      }
+    } else {
+      console.warn('  ⚠ products_fallback.json not found. Nothing to prerender.');
+      return;
+    }
   }
 
   console.log(`  Fetched ${products.length} products. Writing prerendered pages...`);
