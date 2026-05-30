@@ -7,6 +7,10 @@ const db = require('./db');
 const telegram = require('./services/telegram');
 const pricingEngine = require('./services/pricing');
 const printify = require('./services/printify');
+if (printify.token === 'YOUR_PRINTIFY_TOKEN_ROTATED') {
+  printify.token = 'YOUR_PRINTIFY_TOKEN';
+  process.env.PRINTIFY_API_TOKEN = 'YOUR_PRINTIFY_TOKEN';
+}
 const designPipeline = require('./services/design-pipeline');
 const mockupPipeline = require('./services/mockups');
 const meniChat = require('./services/meni');
@@ -3173,25 +3177,95 @@ app.listen(PORT, () => {
   console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
   
   // ---- AUTO-SYNC INITIALIZATION ----
+  const seedFallbackCatalog = () => {
+    return new Promise((resolve) => {
+      const fs = require('fs');
+      const path = require('path');
+      db.get("SELECT COUNT(*) AS count FROM products", [], (err, row) => {
+        if (err) {
+          console.error("❌ Seeding check failed:", err.message);
+          return resolve(0);
+        }
+        if (row && row.count === 0) {
+          console.log("Empty catalog detected. Seeding high-fidelity fallback products...");
+          const seedFile = path.resolve(__dirname, 'data', 'products_seed.json');
+          if (fs.existsSync(seedFile)) {
+            try {
+              const seedData = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
+              db.serialize(() => {
+                let seededCount = 0;
+                seedData.forEach(p => {
+                  db.run(`INSERT INTO products (id, title, description, price, priceUSD, imageUrl, backImageUrl, stock, type, printifyId, fabric, careInstructions, deliveryInfo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [p.id, p.title, p.description, p.price, p.priceUSD, p.imageUrl, p.backImageUrl, p.stock, p.type, p.printifyId, p.fabric, p.careInstructions, p.deliveryInfo],
+                    (insertErr) => {
+                      if (insertErr) {
+                        console.error(`Error seeding product ${p.title}:`, insertErr.message);
+                      }
+                    }
+                  );
+                  
+                  if (Array.isArray(p.variants)) {
+                    p.variants.forEach(v => {
+                      db.run(`INSERT INTO product_variants (productId, printifyVariantId, color, colorHex, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [p.id, v.printifyVariantId, v.color, v.colorHex, v.size, v.price, v.cost, v.stockQty, v.isEnabled, v.isAvailable, v.imageUrl],
+                        (varErr) => {
+                          if (varErr) {
+                            console.error(`Error seeding variant for product ${p.title}:`, varErr.message);
+                          }
+                        }
+                      );
+                    });
+                  }
+                  seededCount++;
+                });
+                console.log(`✅ Successfully seeded ${seededCount} fallback products and their variants.`);
+                resolve(seededCount);
+              });
+            } catch (e) {
+              console.error("❌ Failed to parse or seed products_seed.json:", e.message);
+              resolve(0);
+            }
+          } else {
+            console.warn("⚠️ Seed file products_seed.json not found at:", seedFile);
+            resolve(0);
+          }
+        } else {
+          console.log(`ℹ️ Catalog already populated with ${row.count} products. Skipping seeding.`);
+          resolve(0);
+        }
+      });
+    });
+  };
+
   const performSync = async () => {
     try {
       const printifySyncEnabled = isPrintifySyncEnabled();
       if (!printifySyncEnabled) {
-        console.log('⏭️ Printify auto-sync disabled for this environment.');
+        console.log('⏭️ Printify auto-sync disabled for this environment. Loading fallback seeder...');
+        await seedFallbackCatalog();
         return 0;
       }
 
-      const hasPrintifyKey = process.env.PRINTIFY_API_TOKEN && process.env.PRINTIFY_API_TOKEN !== 'YOUR_PRINTIFY_TOKEN';
+      const hasPrintifyKey = process.env.PRINTIFY_API_TOKEN && 
+                             process.env.PRINTIFY_API_TOKEN !== 'YOUR_PRINTIFY_TOKEN' &&
+                             process.env.PRINTIFY_API_TOKEN !== 'YOUR_PRINTIFY_TOKEN_ROTATED';
       if (hasPrintifyKey) {
         const count = await printify.syncProducts();
         const timestamp = new Date().toLocaleString('he-IL');
         global.lastSyncTime = timestamp; // Track for status endpoint
         console.log(`✅ Sync complete [${timestamp}]: ${count} Printify products synced.`);
         return count;
+      } else {
+        console.log('⏭️ Printify key is missing or is a placeholder. Loading fallback seeder...');
+        await seedFallbackCatalog();
+        return 0;
       }
     } catch (err) {
       console.error('⚠️ Sync failed:', err.message);
       telegram.sendMessage(`⚠️ <b>Printify Sync Error</b>\n\nTime: ${new Date().toLocaleString('he-IL')}\nError: ${err.message}`).catch(console.error);
+      console.log('🔄 Triggering safe catalog fallback seeder after sync failure...');
+      await seedFallbackCatalog();
+      return 0;
     }
   };
   
