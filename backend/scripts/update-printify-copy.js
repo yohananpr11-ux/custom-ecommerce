@@ -82,7 +82,7 @@ function getClient(token) {
 async function fetchAllProducts(client, shopId) {
   const products = [];
   let page = 1;
-  const limit = 100;
+  const limit = 50;
 
   while (true) {
     const response = await client.get(`/shops/${shopId}/products.json`, {
@@ -134,6 +134,23 @@ async function updateProductCopy(client, shopId, productId, title, description) 
   });
 }
 
+function writeFailureLog(failures) {
+  if (!Array.isArray(failures) || failures.length === 0) return null;
+
+  const logsDir = path.resolve(process.cwd(), 'logs');
+  fs.mkdirSync(logsDir, { recursive: true });
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const outputPath = path.join(logsDir, `printify-fails-${timestamp}.json`);
+  const payload = {
+    generated_at: new Date().toISOString(),
+    failures,
+  };
+
+  fs.writeFileSync(outputPath, JSON.stringify(payload, null, 2));
+  return outputPath;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
 
@@ -171,6 +188,7 @@ async function main() {
   let success = 0;
   let failed = 0;
   let skipped = 0;
+  const failureLogs = [];
 
   for (const entry of entries) {
     const target = resolveTarget(entry, index);
@@ -197,11 +215,28 @@ async function main() {
     } catch (error) {
       failed += 1;
       const status = error.response?.status || 'NO_STATUS';
-      const details = typeof error.response?.data === 'string'
-        ? error.response.data.slice(0, 300)
-        : JSON.stringify(error.response?.data || {}).slice(0, 300);
+      const fullDetails = typeof error.response?.data === 'string'
+        ? error.response.data
+        : JSON.stringify(error.response?.data || {});
+      const shortDetails = fullDetails.length > 300 ? `${fullDetails.slice(0, 300)}...` : fullDetails;
 
-      console.log(`[COPY_SYNC][FAIL] ${productId} (${status}) key="${entry.key}" :: ${details}`);
+      failureLogs.push({
+        key: entry.key,
+        product_id: productId,
+        status,
+        request: {
+          title: entry.title,
+          description: entry.description,
+        },
+        response: {
+          headers: error.response?.headers || {},
+          data: error.response?.data || null,
+        },
+        message: error.message,
+        logged_at: new Date().toISOString(),
+      });
+
+      console.log(`[COPY_SYNC][FAIL] ${productId} (${status}) key="${entry.key}" :: ${shortDetails}`);
     }
   }
 
@@ -212,6 +247,11 @@ async function main() {
   console.log(`[COPY_SYNC] Success: ${success}`);
   console.log(`[COPY_SYNC] Failed: ${failed}`);
   console.log(`[COPY_SYNC] Skipped (no match): ${skipped}`);
+
+  const failureLogPath = writeFailureLog(failureLogs);
+  if (failureLogPath) {
+    console.log(`[COPY_SYNC] Failure log: ${failureLogPath}`);
+  }
 
   if (failed > 0) {
     process.exitCode = 1;
