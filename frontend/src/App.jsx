@@ -1004,7 +1004,10 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   useEffect(() => {
     window.scrollTo(0, 0);
     fetch(`${API_BASE}/api/products/${productId}`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Product not found or failed to load');
+        return res.json();
+      })
       .then(data => {
         // Build imagesByColor mapping from variants and images
         if (data.variants && data.images) {
@@ -1204,7 +1207,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       </div>
     );
   }
-  if (!product) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>{t('product_not_found')}</div>;
+  if (!product || product.error || !product.title) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>{t('product_not_found')}</div>;
 
   const handleAdd = (mode = 'cart') => {
     let variantId = null;
