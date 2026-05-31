@@ -136,8 +136,7 @@ async function sendOrder(orderId, shippingDestination, items) {
   const token = await getCJAccessToken();
   // Map products to CJ Dropshipping expected schema
   const products = items.map(item => {
-    // Utilize the test SKU "CJLX222053101AZ" as instructed for testing
-    const sku = item.sku || 'CJLX222053101AZ';
+    const sku = item.sku || item.printifyVariantId || item.printifyProductId || 'CJLX222053101AZ';
     return {
       sku: sku,
       quantity: Number(item.quantity) || 1,
