@@ -3318,7 +3318,7 @@ app.post('/api/test/simulate-dropship-fulfillment', async (req, res) => {
     const mockCountry = req.body.country || 'US';
 
     // Seed/retrieve the jewelry product
-    const product = await dbGetAsync(`SELECT * FROM products WHERE supplier_id = 'dropship' LIMIT 1`);
+    const product = await dbGetAsync(`SELECT * FROM products WHERE supplier_id = 'dropship' ORDER BY id DESC LIMIT 1`);
     if (!product) {
       return res.status(400).json({ error: 'No dropship jewelry product found. Please run the seed script first.' });
     }
