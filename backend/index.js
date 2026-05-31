@@ -3335,8 +3335,8 @@ app.post('/api/test/simulate-dropship-fulfillment', async (req, res) => {
       `INSERT INTO orders (
         customerName, customerEmail, address, status,
         firstName, lastName, phone, addressLine1, addressLine2, city, region, postalCode, country,
-        totalAmount, shippingCost
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        totalAmount
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         mockName,
         mockEmail,
@@ -3351,8 +3351,7 @@ app.post('/api/test/simulate-dropship-fulfillment', async (req, res) => {
         mockState,
         mockZip,
         mockCountry,
-        product.price,
-        0
+        product.price
       ]
     );
 
