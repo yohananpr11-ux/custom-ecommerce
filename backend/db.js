@@ -210,6 +210,8 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('products', 'careInstructions', 'TEXT'),
     addColumnIfMissing('products', 'deliveryInfo', 'TEXT'),
     addColumnIfMissing('products', 'priceUSD', 'REAL'),
+    // Phase 3: Multi-Vendor — supplier routing
+    addColumnIfMissing('products', 'supplier_id', "TEXT NOT NULL DEFAULT 'printify'"),
     // orders
     addColumnIfMissing('orders', 'promoCode', 'TEXT'),
     addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0'),
@@ -234,6 +236,10 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('order_items', 'variantId', 'INTEGER'),
     addColumnIfMissing('order_items', 'selectedColor', 'TEXT'),
     addColumnIfMissing('order_items', 'selectedSize', 'TEXT'),
+    // Phase 3: Multi-Vendor — per-item supplier snapshot + fulfillment tracking
+    addColumnIfMissing('order_items', 'supplier_id',        'TEXT'),
+    addColumnIfMissing('order_items', 'fulfillment_status', "TEXT DEFAULT 'pending'"),
+    addColumnIfMissing('order_items', 'fulfillment_ref',    'TEXT'),
     // leads
     addColumnIfMissing('leads', 'emailSent', 'INTEGER DEFAULT 0'),
     addColumnIfMissing('leads', 'emailAttempts', 'INTEGER DEFAULT 0'),
@@ -254,6 +260,9 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
   db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_product_images_design_job_view ON product_images(design_job_id, view)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_product_images_variant_view ON product_images(product_variant_id, view)`);
+  // Phase 3: Multi-Vendor indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_supplier ON order_items(supplier_id, fulfillment_status)`);
 })().catch((err) => {
   console.error('Schema migration block failed:', err.message);
 });

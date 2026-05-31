@@ -17,6 +17,8 @@ const meniChat = require('./services/meni');
 const emailService = require('./services/emailService');
 const marketingWebhooksRouter = require('./routes/marketing-webhooks');
 const adminReportsRouter = require('./routes/admin-reports');
+// Phase 3: Multi-Vendor fulfillment router
+const fulfillment = require('./services/fulfillment');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -449,7 +451,7 @@ const resolveValidatedOrderItems = async (items = []) => {
       throw new Error('Each order item must include a valid product id');
     }
 
-    const product = await dbGetAsync(`SELECT id, title, price, printifyId FROM products WHERE id = ?`, [productId]);
+    const product = await dbGetAsync(`SELECT id, title, price, priceUSD, printifyId, supplier_id FROM products WHERE id = ?`, [productId]);
     if (!product) {
       throw new Error(`Product ${productId} was not found`);
     }
@@ -493,6 +495,8 @@ const resolveValidatedOrderItems = async (items = []) => {
       variantId: resolvedVariant ? resolvedVariant.id : null,
       printifyProductId: product.printifyId || null,
       printifyVariantId: resolvedVariant ? resolvedVariant.printifyVariantId : null,
+      // Phase 3: snapshot supplier_id at order-creation time
+      supplier_id: product.supplier_id || 'printify',
     });
   }
 
@@ -556,7 +560,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   if (!order) return;
 
   const items = await dbAllAsync(
-    `SELECT oi.*, p.title, p.printifyId AS printifyProductId, pv.printifyVariantId
+    `SELECT oi.*, p.title, p.supplier_id, p.printifyId AS printifyProductId, pv.printifyVariantId
      FROM order_items oi
      LEFT JOIN products p ON p.id = oi.productId
      LEFT JOIN product_variants pv ON pv.id = oi.variantId
@@ -619,9 +623,9 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   };
 
   try {
-    await printify.sendOrderToProduction(orderId, shippingDestination, items);
-    await telegram.sendMessage(`🏭 <b>Order #${orderId} sent to production</b>\nThe order was successfully submitted to Printify.`);
-    
+    // Phase 3: Multi-Vendor — route items to the correct supplier(s)
+    await fulfillment.routeOrderToSupplier(orderId, shippingDestination, items);
+
     // Increment attempts
     await dbRunAsync(`UPDATE orders SET emailAttempts = COALESCE(emailAttempts, 0) + 1 WHERE id = ?`, [orderId]).catch(() => null);
 
@@ -638,7 +642,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
       }
     }).catch((e) => console.error(`[email] failed to send order confirmation email for #${orderId}:`, e.message));
   } catch (pErr) {
-    await telegram.sendMessage(`🚨 <b>Production submission failed</b>\nOrder #${orderId} was paid but failed to submit to Printify.`);
+    await telegram.sendMessage(`🚨 <b>Production submission failed</b>\nOrder #${orderId} was paid but fulfillment routing failed: ${pErr.message.slice(0, 200)}`);
   }
 };
 

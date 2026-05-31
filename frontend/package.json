@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/prerender-products.cjs",
+    "build": "vite build && node scripts/prerender-products.cjs && node scripts/validate-seo.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "brand:assets": "node build-brand-assets.cjs",

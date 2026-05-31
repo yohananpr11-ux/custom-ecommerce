@@ -2544,6 +2544,46 @@ function MainApp() {
     }
   }
 
+  // ── Abandoned Cart capture ───────────────────────────────────────────────
+  // Fires on email input blur: validates email, builds a lightweight cart
+  // fingerprint, and POSTs to /api/carts/abandoned in the background.
+  // Fully fire-and-forget — errors are silently swallowed to never disrupt UX.
+  const handleEmailBlur = () => {
+    const email = (checkoutForm.customerEmail || '').trim();
+    // Basic email format guard
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return;
+    // No point saving an empty cart
+    if (!cart || cart.length === 0) return;
+
+    // Lightweight fingerprint: sorted item IDs + quantities (no crypto needed)
+    const fingerprint = cart
+      .map((item) => `${item.id}:${item.selectedColor || ''}:${item.selectedSize || ''}:${item.quantity}`)
+      .sort()
+      .join('|');
+
+    const payload = {
+      email,
+      cart_fingerprint: fingerprint,
+      items: cart.map((item) => ({
+        id: item.id,
+        title: item.title,
+        quantity: item.quantity,
+        price: item.price,
+        selectedColor: item.selectedColor || null,
+        selectedSize: item.selectedSize || null,
+        imageUrl: item.imageUrl || null,
+      })),
+    };
+
+    // fire-and-forget — never await, never block
+    fetch(`${API_BASE}/api/carts/abandoned`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => { /* silently ignore network errors */ });
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Legacy cart drawer JSX kept for parity while the active drawer is rendered below.
   // eslint-disable-next-line no-unused-vars
   const cartDrawer = (
@@ -3024,6 +3064,7 @@ function MainApp() {
                 required
                 value={checkoutForm.customerEmail}
                 onChange={(e) => setCheckoutForm((prev) => ({ ...prev, customerEmail: e.target.value }))}
+                onBlur={handleEmailBlur}
               />
               <input
                 name="phone"
