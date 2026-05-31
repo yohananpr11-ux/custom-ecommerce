@@ -101,6 +101,19 @@ db.serialize(() => {
   `);
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS abandoned_carts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      cart_fingerprint TEXT NOT NULL,
+      items_json TEXT,
+      source TEXT DEFAULT 'web',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(email, cart_fingerprint)
+    )
+  `);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS order_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       orderId INTEGER,
@@ -255,6 +268,7 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
 
   // Create indexes only AFTER all column migrations complete
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_abandoned_carts_email_updated ON abandoned_carts(email, updated_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_unsubscribed_emailSent ON leads(unsubscribed, emailSent, emailAttempts)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_orders_emailSent_status ON orders(status, emailSent, emailAttempts)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId)`);
