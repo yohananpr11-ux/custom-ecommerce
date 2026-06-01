@@ -106,6 +106,7 @@ const translations = {
     hoodies: "קפוצ'ונים",
     tshirts: "חולצות",
     tank_tops: "גופיות",
+    jewelry: "תכשיטים",
     fabric_fit: "חומר וגזרה",
     care_instructions: "טיפול",
     delivery_info: "משלוח",
@@ -238,6 +239,7 @@ const translations = {
     hoodies: "Hoodies",
     tshirts: "T-Shirts",
     tank_tops: "Tank Tops",
+    jewelry: "Jewelry",
     fabric_fit: "Fabric & Fit",
     care_instructions: "Care Instructions",
     delivery_info: "Delivery Info",
@@ -632,6 +634,8 @@ const findFirstAvailableVariantForColor = (variants, selectedColor) => {
 
 const deriveProductCategory = (product = {}) => {
   const title = String(product.title || '').toLowerCase();
+  const isJewelry = product.type === 'dropship' || product.supplier_id === 'dropship' || title.includes('jewelry') || title.includes('chain') || title.includes('bracelet') || title.includes('ring');
+  if (isJewelry) return 'Jewelry';
 
   if (title.includes('hoodie') || title.includes('sweatshirt')) return 'Hoodies';
   if (title.includes('tank')) return 'Tank Tops';
@@ -2318,7 +2322,8 @@ function MainApp() {
     });
     setCartBadgePulse(true);
     setTimeout(() => setCartBadgePulse(false), 360);
-    // Drawer pop-up disabled — user now sees a toast and can click the Cart button to open the full /cart page.
+    // Trigger toast notification
+    showToast(locale === 'he' ? 'התווסף לסל! 🛒' : 'Added to Cart! 🛒');
   }
 
   const addUpsellToCart = (upsellItem) => {
@@ -3206,54 +3211,74 @@ function MainApp() {
             {paymentMethod === 'paypal' ? (
               isPayPalAvailable ? (
                 <>
-                  <div style={{ marginBottom: '12px', textAlign: 'center', padding: '12px', background: '#1a1a1a', borderRadius: '8px', border: '1px solid #2a2a2a' }}>
-                    <p style={{ margin: 0, fontSize: '13px', color: '#ddd', lineHeight: '1.6' }}>
-                      {locale === 'he'
-                        ? '🔐 תשלום מאובטח דרך חשבון PayPal. אם אין לך חשבון — יצירת חשבון לוקחת דקה.'
-                        : '🔐 Secure payment via your PayPal account. No account? Sign up takes a minute.'}
-                    </p>
-                    <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: '#888' }}>
-                      {locale === 'he'
-                        ? 'תשלום בכרטיס אשראי ישראלי יחזור בקרוב.'
-                        : 'Israeli credit card checkout returning soon.'}
-                    </p>
+                <div className="premium-paypal-container" style={{
+                  padding: '24px',
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '12px',
+                  boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: '#ffd24d',
+                    textAlign: 'center',
+                    marginBottom: '16px'
+                  }}>
+                    ⚡ {locale === 'he' ? 'קופת תשלום אקספרס מאובטחת' : 'Secure Express Checkout'} ⚡
                   </div>
-                <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card,credit,paylater,venmo' }}>
-                  <PayPalButtons
-                    fundingSource="paypal"
-                    style={{ layout: 'horizontal', label: 'checkout', height: 48, shape: 'rect' }}
-                    forceReRender={[currency, cartTotal, paypalClientId]}
-                    createOrder={async () => {
-                      setIsPayPalProcessing(true);
-                      try {
-                        const orderID = await createPayPalOrder();
-                        return orderID;
-                      } catch (err) {
-                        showToast(err.message || GLOBAL_ERROR_TOAST_HE);
-                        throw err;
-                      } finally {
-                        setIsPayPalProcessing(false);
-                      }
-                    }}
-                    onApprove={async (data) => {
-                      setIsPayPalProcessing(true);
-                      try {
-                        await capturePayPalOrder(data.orderID);
-                        localStorage.removeItem('drip_street_cart');
-                        setCart([]);
-                        navigate('/success');
-                      } catch (err) {
-                        showToast(err.message || GLOBAL_ERROR_TOAST_HE);
-                      } finally {
-                        setIsPayPalProcessing(false);
-                      }
-                    }}
-                    onError={() => {
-                      showToast(GLOBAL_ERROR_TOAST_HE);
-                    }}
-                    disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
-                  />
-                </PayPalScriptProvider>
+                  <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card,credit,paylater,venmo' }}>
+                    <PayPalButtons
+                      fundingSource="paypal"
+                      style={{ layout: 'horizontal', label: 'checkout', height: 48, shape: 'rect' }}
+                      forceReRender={[currency, cartTotal, paypalClientId]}
+                      createOrder={async () => {
+                        setIsPayPalProcessing(true);
+                        try {
+                          const orderID = await createPayPalOrder();
+                          return orderID;
+                        } catch (err) {
+                          showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+                          throw err;
+                        } finally {
+                          setIsPayPalProcessing(false);
+                        }
+                      }}
+                      onApprove={async (data) => {
+                        setIsPayPalProcessing(true);
+                        try {
+                          await capturePayPalOrder(data.orderID);
+                          localStorage.removeItem('drip_street_cart');
+                          setCart([]);
+                          showToast(locale === 'he' ? 'התשלום בוצע בהצלחה! 🎉' : 'Payment Successful! 🎉');
+                          navigate('/success');
+                        } catch (err) {
+                          showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+                        } finally {
+                          setIsPayPalProcessing(false);
+                        }
+                      }}
+                      onError={() => {
+                        showToast(GLOBAL_ERROR_TOAST_HE);
+                      }}
+                      disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
+                    />
+                  </PayPalScriptProvider>
+                  <div style={{
+                    marginTop: '16px',
+                    fontSize: '11px',
+                    color: '#888',
+                    textAlign: 'center',
+                    lineHeight: '1.4'
+                  }}>
+                    {locale === 'he'
+                      ? '🔐 עיבוד נתונים מוצפן מקצה לקצה. כרטיסי אשראי ישראלים ובינלאומיים מתקבלים דרך פייפאל.'
+                      : '🔐 Encrypted end-to-end processing. All major local & global credit cards accepted.'}
+                  </div>
+                </div>
                 </>
               ) : (
                 <p style={{ color: '#ff6b6b', marginBottom: '16px' }}>PayPal is not configured yet. Please try again in a moment.</p>
@@ -3437,6 +3462,58 @@ function MainApp() {
               Explore Best Sellers
             </button>
           </motion.div>
+
+          <motion.div 
+            className="featured-jewelry-banner" 
+            initial={{ scale: 0.95, opacity: 0 }} 
+            animate={{ scale: 1, opacity: 1 }} 
+            transition={{ delay: 0.5 }}
+            onClick={() => navigate('/product/16')}
+            style={{
+              cursor: 'pointer',
+              marginTop: '40px',
+              padding: '20px 24px',
+              background: 'linear-gradient(90deg, rgba(255,210,77,0.06) 0%, rgba(0,0,0,0) 100%)',
+              border: '1px solid rgba(255, 210, 77, 0.15)',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              maxWidth: '680px',
+              marginInline: 'auto',
+              textAlign: 'left'
+            }}
+          >
+            <div>
+              <span style={{ fontSize: '10px', fontWeight: 800, color: '#ffd24d', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                {locale === 'he' ? '✨ קולקציה חדשה: תכשיטי פרימיום' : '✨ NEW COLLECTION: PREMIUM JEWELRY'}
+              </span>
+              <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 600, color: '#fff' }}>
+                {locale === 'he' ? 'שרשרת קובנית עם ליטוש 6 פיאות' : 'Six-sided Grinding Cuban Link Chain'}
+              </h4>
+              <p style={{ margin: 0, fontSize: '13px', color: '#aaa', maxWidth: '480px' }}>
+                {locale === 'he' 
+                  ? 'נחתכה במיוחד עם שש פיאות שטוחות ללכידת אור מירבית. פלדת אל-חלד מוצקה בציפוי זהב עמוק.'
+                  : 'Meticulously faceted with six flat-cut facets per link. Solid stainless steel plated in deep gold.'}
+              </p>
+            </div>
+            <button style={{
+              padding: '8px 16px',
+              background: '#ffd24d',
+              color: '#000',
+              border: 'none',
+              borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '12px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}>
+              {locale === 'he' ? 'גלה עכשיו' : 'Discover'}
+            </button>
+          </motion.div>
         </div>
       </section>
 
@@ -3477,7 +3554,8 @@ function MainApp() {
               'New Arrivals': 'new_arrivals',
               'Hoodies': 'hoodies',
               'Shirts': 'tshirts',
-              'Tank Tops': 'tank_tops'
+              'Tank Tops': 'tank_tops',
+              'Jewelry': 'jewelry'
             };
             return (
               <button 
@@ -3700,7 +3778,7 @@ function MainApp() {
                   closeMobileNav()
                 }}
               >
-                {cat === 'All' ? t('all') : cat === 'New Arrivals' ? t('new_arrivals') : cat === 'Hoodies' ? t('hoodies') : cat === 'Shirts' ? t('tshirts') : cat === 'Tank Tops' ? t('tank_tops') : cat}
+                {cat === 'All' ? t('all') : cat === 'New Arrivals' ? t('new_arrivals') : cat === 'Hoodies' ? t('hoodies') : cat === 'Shirts' ? t('tshirts') : cat === 'Tank Tops' ? t('tank_tops') : cat === 'Jewelry' ? t('jewelry') : cat}
               </button>
             ))}
             <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '8px' }}>

@@ -1220,7 +1220,7 @@ app.get('/api/products', (req, res) => {
 
     // Prefer real Printify catalog and hide local mock products when Printify items exist.
     const hasPrintifyProducts = rows.some(r => r.type === 'printify');
-    const visibleRows = hasPrintifyProducts ? rows.filter(r => r.type === 'printify') : rows;
+    const visibleRows = hasPrintifyProducts ? rows.filter(r => r.type === 'printify' || r.type === 'dropship') : rows;
     
     const productsWithUSD = visibleRows.map(r => ({
       ...r,
