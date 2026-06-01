@@ -4,8 +4,8 @@ console.log('🌱 Starting CJ Dropshipping Product Seeding (Idempotent Mode)...'
 
 const title = 'Six-sided Grinding Cuban Link Chain | Premium Jewelry';
 const description = 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the Drip Street jewelry line.';
-const price = 149.00; // ~39.99 USD
-const priceUSD = 39.99;
+const price = 5.00; // ~1.33 USD for sandbox testing
+const priceUSD = 1.33;
 const imageUrl = 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=600&q=80';
 const supplier_id = 'dropship';
 const type = 'dropship';
@@ -28,10 +28,10 @@ db.serialize(() => {
       const productId = existingProduct.id;
       console.log(`ℹ️ Product already exists (ID: ${productId}). Updating product and variant...`);
 
-      // Update product
+      // Update product, forcing images = NULL so the new imageUrl is preferred
       db.run(
         `UPDATE products
-         SET title = ?, description = ?, price = ?, priceUSD = ?, imageUrl = ?, type = ?, supplier_id = ?, stock = ?
+         SET title = ?, description = ?, price = ?, priceUSD = ?, imageUrl = ?, images = NULL, type = ?, supplier_id = ?, stock = ?
          WHERE id = ?`,
         [title, description, price, priceUSD, imageUrl, type, supplier_id, 999, productId],
         (updateErr) => {
@@ -43,9 +43,9 @@ db.serialize(() => {
           // Update variant
           db.run(
             `UPDATE product_variants
-             SET price = ?, cost = ?, color = ?, size = ?, stockQty = ?, isEnabled = 1, isAvailable = 1
+             SET price = ?, cost = ?, color = ?, size = ?, stockQty = ?, imageUrl = ?, isEnabled = 1, isAvailable = 1
              WHERE productId = ? AND printifyVariantId = ?`,
-            [price, cost, color, size, 999, productId, printifyVariantId],
+            [price, cost, color, size, 999, imageUrl, productId, printifyVariantId],
             (vUpdateErr) => {
               if (vUpdateErr) {
                 console.error('❌ Failed to update product variant:', vUpdateErr.message);
@@ -63,8 +63,8 @@ db.serialize(() => {
 
       // Insert product
       db.run(
-        `INSERT INTO products (title, description, price, priceUSD, imageUrl, type, printifyId, supplier_id, stock)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO products (title, description, price, priceUSD, imageUrl, images, type, printifyId, supplier_id, stock)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
         [title, description, price, priceUSD, imageUrl, type, printifyId, supplier_id, 999],
         function (insertErr) {
           if (insertErr) {
@@ -77,9 +77,9 @@ db.serialize(() => {
 
           // Insert variant
           db.run(
-            `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [productId, printifyVariantId, color, size, price, cost, 999, 1, 1],
+            `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [productId, printifyVariantId, color, size, price, cost, 999, 1, 1, imageUrl],
             function (vInsertErr) {
               if (vInsertErr) {
                 console.error('❌ Failed to seed product variant:', vInsertErr.message);
