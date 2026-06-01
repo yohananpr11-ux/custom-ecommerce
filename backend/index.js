@@ -562,7 +562,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   if (!order) return;
 
   const items = await dbAllAsync(
-    `SELECT oi.*, p.title, p.supplier_id, p.printifyId AS printifyProductId, pv.printifyVariantId
+    `SELECT oi.*, p.title, oi.supplier_id, p.printifyId AS printifyProductId, pv.printifyVariantId
      FROM order_items oi
      LEFT JOIN products p ON p.id = oi.productId
      LEFT JOIN product_variants pv ON pv.id = oi.variantId
@@ -2506,8 +2506,8 @@ const createPendingOrder = async (shippingInput, items, couponCode) => {
 
   for (const item of validatedItems) {
     await dbRunAsync(
-      `INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null]
+      `INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null, item.supplier_id || 'printify']
     );
   }
 
@@ -3307,6 +3307,10 @@ app.listen(PORT, () => {
 
 // Temporary test endpoint to simulate a paid checkout that triggers CJ Dropshipping end-to-end
 app.post('/api/test/simulate-dropship-fulfillment', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Simulation endpoint disabled in production' });
+  }
+
   try {
     const mockEmail = req.body.email || 'customer-jewel@dripstreetshop.com';
     const mockName = req.body.name || 'John Doe';
