@@ -17,7 +17,7 @@ import Terms from './pages/Terms'
 import RefundPolicy from './pages/RefundPolicy'
 import Shipping from './pages/Shipping'
 import ContactUs from './pages/ContactUs'
-import AboutUs from './pages/AboutUs'
+import About from './pages/About'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
 const MARKETING_ABANDONED_INTAKE_URL = `${API_BASE}/api/marketing/intake/abandoned-cart`;
@@ -26,7 +26,7 @@ const ABANDONED_CART_TIMEOUT_MS = Number(import.meta.env.VITE_ABANDONED_CART_DEL
 const ABANDONED_CART_FINGERPRINT_KEY = 'drip_street_abandoned_cart_fingerprint_v1';
 const CHECKOUT_COMPLETED_KEY = 'drip_street_checkout_completed_v1';
 const SHIPPING_COST = 29.90;
-const FREE_SHIPPING_THRESHOLD = 5;
+const FREE_SHIPPING_THRESHOLD = 249;
 const BUNDLE_ITEM_PRICE = 229;
 const BUNDLE_ITEM_COUNT = 3;
 const JEWELRY_UPSELL_MOCK = [
@@ -88,7 +88,7 @@ class ErrorBoundary extends React.Component {
 const translations = {
   he: {
     logo: "DRIP STREET",
-    announcement: "משלוח חינם בקנייה של 5 פריטים ומעלה | 3 חולצות ב-229 ₪",
+    announcement: "משלוח חינם בהזמנה מ-249 ₪ | 3 חולצות ב-229 ₪",
     search_placeholder: "חפש פריטים...",
     cart: "סל קניות",
     hero_title: "DRIP STREET",
@@ -158,7 +158,7 @@ const translations = {
     success_desc: "תודה! ההזמנה שלך מעובדת ועל הדרך אליך.",
     return_home: "חזרה לחנות",
     shipping_unlocked: "🎉 משלוח חינם!",
-    shipping_hint: "עוד {count} פריטים למשלוח חינם",
+    shipping_hint: "הוסף עוד {amount} למשלוח חינם",
     cart_empty: "הסל ריק",
     support_chat: "מני 🤖",
     support_placeholder: "שאלה קצרה? אני כאן לעזור",
@@ -223,7 +223,7 @@ const translations = {
   },
   en: {
     logo: "DRIP STREET",
-    announcement: "Complimentary shipping on 5+ items | 3-item bundle from $61",
+    announcement: "Complimentary shipping from 249 ILS cart subtotal | 3-item bundle from $61",
     search_placeholder: "Search items...",
     cart: "Cart",
     hero_title: "DRIP STREET",
@@ -293,7 +293,7 @@ const translations = {
     success_desc: "Thank you for your order. We are processing it now.",
     return_home: "Return to Store",
     shipping_unlocked: "🎉 You've unlocked free shipping",
-    shipping_hint: "Add {count} more item{plural} for free shipping!",
+    shipping_hint: "Add {amount} more for free shipping!",
     cart_empty: "Your cart is empty",
     support_chat: "Chat with Meni 🤖",
     support_placeholder: "Ask Meni about sizes, care, or delivery...",
@@ -671,6 +671,7 @@ const calculateBundlePricing = (cart) => {
 };
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
+const GLOBAL_OG_IMAGE_URL = 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80';
 const GLOBAL_ERROR_TOAST_HE = 'A temporary error occurred, please try again';
 const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
@@ -1558,7 +1559,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
   const absoluteImageUrl = activeImages[0]
     ? (activeImages[0].startsWith('http') ? activeImages[0] : `https://dripstreetshop.com${activeImages[0]}`)
-    : 'https://dripstreetshop.com/brand/generated/og-image.png';
+    : GLOBAL_OG_IMAGE_URL;
 
   const jsonLd = {
     "@context": "https://schema.org/",
@@ -2002,12 +2003,13 @@ function MainApp() {
 
   const couponDiscount = activeCoupon ? (baseSubtotal - bundleDiscount) * (activeCoupon.discount_pct / 100) : 0;
 
-  const isFreeShipping = totalItems >= FREE_SHIPPING_THRESHOLD;
-  const shippingCost = isFreeShipping ? 0 : (totalItems > 0 ? SHIPPING_COST : 0);
-  const itemsToFreeShipping = FREE_SHIPPING_THRESHOLD - totalItems;
   const subtotalAfterDiscounts = Math.max(0, bundlePricing.subtotalAfterDiscounts - couponDiscount);
   const leadPromoDiscount = activeLeadPromo ? subtotalAfterDiscounts * 0.10 : 0;
   const subtotalAfterLeadPromo = Math.max(0, subtotalAfterDiscounts - leadPromoDiscount);
+  const isFreeShipping = subtotalAfterLeadPromo >= FREE_SHIPPING_THRESHOLD;
+  const shippingCost = isFreeShipping ? 0 : (subtotalAfterLeadPromo > 0 ? SHIPPING_COST : 0);
+  const amountToFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotalAfterLeadPromo);
+  const freeShippingProgress = Math.min(100, (subtotalAfterLeadPromo / FREE_SHIPPING_THRESHOLD) * 100);
   const cartTotal = subtotalAfterLeadPromo + shippingCost;
   const amountToBundleThreshold = Math.max(0, BUNDLE_ITEM_PRICE - subtotalAfterLeadPromo);
   const bundleValueProgress = Math.min(100, (subtotalAfterLeadPromo / BUNDLE_ITEM_PRICE) * 100);
@@ -3038,12 +3040,12 @@ function MainApp() {
                 <p className="shipping-unlocked">{t('shipping_unlocked')}</p>
               ) : (
                 <>
-                  <p className="shipping-hint">{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
+                  <p className="shipping-hint">{t('shipping_hint', { amount: `${curSym}${displayVal(amountToFreeShipping).toFixed(2)}` })}</p>
                   <div className="progress-bar-bg">
                     <motion.div 
                       className="progress-bar-fill"
                       initial={{ width: 0 }}
-                      animate={{ width: `${(totalItems / FREE_SHIPPING_THRESHOLD) * 100}%` }}
+                      animate={{ width: `${freeShippingProgress}%` }}
                       transition={{ duration: 0.4 }}
                     />
                   </div>
@@ -3148,9 +3150,9 @@ function MainApp() {
           <meta property="og:title" content="Order Confirmed | Drip Street" />
           <meta property="og:description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
           <meta property="og:url" content="https://dripstreetshop.com/success" />
-          <meta property="og:image" content="https://dripstreetshop.com/brand/generated/og-image.png" />
+          <meta property="og:image" content={GLOBAL_OG_IMAGE_URL} />
           <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:image" content="https://dripstreetshop.com/brand/generated/og-image.png" />
+          <meta name="twitter:image" content={GLOBAL_OG_IMAGE_URL} />
         </Helmet>
         <div className="container" style={{ textAlign: 'center', padding: '100px 20px' }}>
           <motion.h1
@@ -3255,9 +3257,9 @@ function MainApp() {
 
               {totalItems > 0 && !isFreeShipping && (
                 <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
-                  <p style={{ fontSize: '12px', margin: '0 0 8px', color: '#aaa' }}>{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
+                  <p style={{ fontSize: '12px', margin: '0 0 8px', color: '#aaa' }}>{t('shipping_hint', { amount: `${curSym}${displayVal(amountToFreeShipping).toFixed(2)}` })}</p>
                   <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${Math.min(100, (totalItems / FREE_SHIPPING_THRESHOLD) * 100)}%`, background: '#fff', transition: 'width 0.4s' }} />
+                    <div style={{ height: '100%', width: `${freeShippingProgress}%`, background: '#fff', transition: 'width 0.4s' }} />
                   </div>
                 </div>
               )}
@@ -3392,9 +3394,9 @@ function MainApp() {
           <meta property="og:title" content="Secure Checkout | Drip Street" />
           <meta property="og:description" content="Complete your order securely at Drip Street checkout." />
           <meta property="og:url" content="https://dripstreetshop.com/checkout" />
-          <meta property="og:image" content="https://dripstreetshop.com/brand/generated/og-image.png" />
+          <meta property="og:image" content={GLOBAL_OG_IMAGE_URL} />
           <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:image" content="https://dripstreetshop.com/brand/generated/og-image.png" />
+          <meta name="twitter:image" content={GLOBAL_OG_IMAGE_URL} />
         </Helmet>
         <div className="container checkout-page">
           <div style={{ marginTop: '24px' }}><BackButton label="Back to Cart" fallback="/cart" /></div>
@@ -4178,7 +4180,7 @@ function MainApp() {
         <Route path="/refund" element={<RefundPolicy />} />
         <Route path="/shipping" element={<Shipping />} />
         <Route path="/contact" element={<ContactUs />} />
-        <Route path="/about" element={<AboutUs />} />
+        <Route path="/about" element={<About />} />
         <Route path="*" element={
           <div className="container legal-page" style={{textAlign: 'center', padding: '100px 20px'}}>
             <h1 style={{ fontSize: '36px', textTransform: 'uppercase', marginBottom: '16px' }}>{t('not_found_title')}</h1>
@@ -4454,12 +4456,12 @@ function MainApp() {
                   <p className="shipping-unlocked">{t('shipping_unlocked')}</p>
                 ) : (
                   <>
-                    <p className="shipping-hint">{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
+                    <p className="shipping-hint">{t('shipping_hint', { amount: `${curSym}${displayVal(amountToFreeShipping).toFixed(2)}` })}</p>
                     <div className="progress-bar-bg">
                       <motion.div 
                         className="progress-bar-fill"
                         initial={{ width: 0 }}
-                        animate={{ width: `${(totalItems / FREE_SHIPPING_THRESHOLD) * 100}%` }}
+                        animate={{ width: `${freeShippingProgress}%` }}
                         transition={{ duration: 0.4 }}
                       />
                     </div>

@@ -44,7 +44,7 @@ class PricingEngine {
 
     // Shipping cost displayed separately at checkout
     this.shippingCostNIS = 29.90;
-    this.freeShippingThreshold = 5; // 5+ items = free shipping
+    this.freeShippingThresholdNIS = 249; // cart subtotal >= 249 ILS = free shipping
   }
 
   normalizeExtremeThreshold(rawValue) {

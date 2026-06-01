@@ -15,7 +15,7 @@ Store Sizing & Products:
 
 Store Policies:
 - Sizing: True to size for Softstyle, size up for Bella Canvas, standard comfortable fit for hoodies.
-- Shipping: Free shipping when buying 5 or more items. Standard shipping is ₪29.90 ($7.90) taking 5-7 business days. Express shipping is ₪49.90 ($13.20) taking 2-3 business days.
+- Shipping: Free shipping on cart totals of ₪249 or more. Standard shipping is ₪29.90 ($7.90) taking 5-7 business days. Express shipping is ₪49.90 ($13.20) taking 2-3 business days.
 - Returns: 14 days returns allowed for any unworn and unwashed item.
 
 Human Representative:
@@ -65,7 +65,7 @@ class MeniChatService {
     if (lower.includes('size') || lower.includes('sizing')) {
       reply = "Sizing guide:\n- Basic Tee (Gildan Softstyle): true to size.\n- Premium Tee (Bella+Canvas): slightly slim fit, we recommend sizing up for a boxy streetwear look.\n- Hoodies: comfortable regular fit.";
     } else if (lower.includes('shipping') || lower.includes('delivery')) {
-      reply = "Shipping policy:\n- Free shipping on 5+ items.\n- Standard shipping (5-7 business days): ₪29.90\n- Express shipping (2-3 business days): ₪49.90";
+      reply = "Shipping policy:\n- Free shipping from ₪249 cart total.\n- Standard shipping (5-7 business days): ₪29.90\n- Express shipping (2-3 business days): ₪49.90";
     } else if (lower.includes('return') || lower.includes('refund')) {
       reply = "You can return or exchange any unworn and unwashed item within 14 days of delivery.";
     }

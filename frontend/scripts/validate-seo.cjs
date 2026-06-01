@@ -28,7 +28,7 @@ const files = {
   sitemap   : path.join(root, 'public', 'sitemap.xml'),
 };
 
-const OG_IMAGE_URL = 'https://dripstreetshop.com/brand/generated/og-image.png';
+const OG_IMAGE_URL = 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

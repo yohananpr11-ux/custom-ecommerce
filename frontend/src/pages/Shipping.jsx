@@ -26,26 +26,26 @@ export default function Shipping() {
     <LegalPageLayout title="Shipping Policy" breadcrumb="Shipping">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <section style={sectionStyle}>
-          <h2 style={headingStyle}>Shipping Policy Placeholder</h2>
-          <p style={{ margin: 0 }}>This policy page is intentionally scaffolded for final legal copy input before launch.</p>
+          <h2 style={headingStyle}>מדיניות משלוחים</h2>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>ב-Drip Street אנו שואפים לספק חוויית משלוח חלקה, שקופה ואמינה. הזמנות עוברות עיבוד, אריזה ושילוח בהתאם לזמינות המלאי וליעד המסירה.</p>
         </section>
 
         <section style={sectionStyle}>
-          <h3 style={headingStyle}>1. Processing Timeline</h3>
-          <p style={{ margin: 0 }}>TODO: Add fulfillment processing SLA and warehouse cut-off times.</p>
+          <h3 style={headingStyle}>1. זמן עיבוד</h3>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>רוב ההזמנות מטופלות תוך 2-5 ימי עסקים. זמנים עשויים להשתנות בתקופות עומס, חגים או במקרה של חוסר זמני במלאי.</p>
         </section>
 
         <section style={sectionStyle}>
-          <h3 style={headingStyle}>2. Delivery Windows</h3>
-          <p style={{ margin: 0 }}>TODO: Add destination-based shipping ranges and service levels.</p>
+          <h3 style={headingStyle}>2. חלונות אספקה</h3>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>זמני המשלוח תלויים ביעד ובחברת השילוח. בדרך כלל ההגעה מתבצעת בתוך 6-20 ימי עסקים מרגע יציאת ההזמנה לדרך.</p>
         </section>
 
         <section style={sectionStyle}>
-          <h3 style={headingStyle}>3. Tracking And Exceptions</h3>
-          <p style={{ margin: 0 }}>TODO: Add tracking support steps, delay handling, and lost parcel policy.</p>
+          <h3 style={headingStyle}>3. מעקב ועדכונים</h3>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>לאחר מסירת החבילה לחברת השילוח, יישלח קישור מעקב. אם לא מופיע עדכון במשך יותר מ-72 שעות, ניתן לפנות אלינו דרך התמיכה ואנחנו נבצע בדיקה מול הספק.</p>
         </section>
 
-        <p style={noteStyle}>Last updated: pending legal review.</p>
+        <p dir="rtl" style={noteStyle}>עודכן לאחרונה: 1 ביוני 2026</p>
       </div>
     </LegalPageLayout>
   );

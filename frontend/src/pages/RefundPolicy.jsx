@@ -1,69 +1,80 @@
 import LegalPageLayout from '../components/LegalPageLayout';
 
+const sectionStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '10px',
+};
+
+const headingStyle = {
+  color: 'var(--color-white)',
+  fontSize: '18px',
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  margin: 0,
+};
+
 export default function RefundPolicy() {
   return (
     <LegalPageLayout title="Refund Policy" breadcrumb="Refund Policy">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-        
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <section style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', padding: '24px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
           <h3 style={{ color: 'var(--color-white)', margin: '0 0 12px 0', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            ⚡ TL;DR Summary
+            סיכום קצר
           </h3>
-          <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6' }}>
-            Because Drip Street products are custom printed on demand upon receipt of your order, we do not accept returns or exchanges for incorrect sizes or changed minds. However, we offer a **30-day replacement/refund warranty** for any manufacturing defects, print blemishes, or items damaged during transit.
+          <p dir="rtl" style={{ margin: 0, fontSize: '14px', lineHeight: '1.8' }}>
+            מוצרי Drip Street מיוצרים לפי הזמנה, ולכן לא ניתן להחזיר או להחליף פריטים בגלל בחירת מידה שגויה או שינוי דעת. עם זאת, אנחנו מעניקים אחריות של 30 יום במקרה של פגם ייצור, הדפסה לא תקינה או נזק שנגרם במשלוח.
           </p>
         </section>
 
         <section>
           <h2 style={{ color: 'var(--color-white)', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>
-            1. 30-Day Manufacturing Warranty
+            1. אחריות ייצור ל-30 יום
           </h2>
-          <p style={{ margin: 0 }}>
-            If your garment arrives with a defect (such as misaligned prints, ink stains, torn fabric, or stitching issues), please notify us within **30 days** of the delivery date. We will coordinate a free replacement or complete refund immediately. You do not need to ship the defective item back to us.
+          <p dir="rtl" style={{ margin: 0, lineHeight: '1.9' }}>
+            אם המוצר הגיע עם פגם כמו הדפס לא מיושר, כתמי דיו, בד קרוע או בעיית תפירה, יש לפנות אלינו בתוך 30 יום ממועד המסירה. לאחר בדיקה, נדאג להחלפה ללא עלות או להחזר מלא בהתאם למקרה.
           </p>
         </section>
 
         <section>
           <h2 style={{ color: 'var(--color-white)', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>
-            2. How to File a Claim
+            2. איך מגישים פנייה
           </h2>
-          <p style={{ marginBottom: '16px' }}>
-            To report a damaged, defective, or misprinted item, please follow these steps:
-          </p>
-          <ol style={{ paddingLeft: '20px', margin: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <li>Send an email to <a href="mailto:support@dripstreet.shop" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreet.shop</a>.</li>
-            <li>Include your full name, email address used during purchase, and order number.</li>
-            <li>Attach high-resolution photos showing the garment defect alongside a picture of the shipping label on the package.</li>
+          <ol dir="rtl" style={{ paddingLeft: '20px', margin: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <li>שלחו מייל ל-<a href="mailto:support@dripstreetshop.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreetshop.com</a>.</li>
+            <li>ציינו שם מלא, כתובת האימייל שבה בוצעה ההזמנה ומספר הזמנה.</li>
+            <li>צרפו תמונות חדות של התקלה ושל תווית המשלוח.</li>
           </ol>
-          <p style={{ marginTop: '16px', marginBottom: 0 }}>
-            Once our customer service team evaluates the submission, we will arrange a replacement print or dispatch the refund.
+          <p dir="rtl" style={{ marginTop: '16px', marginBottom: 0, lineHeight: '1.9' }}>
+            לאחר בדיקה, נעדכן אתכם במייל לגבי ההמשך. במקרים מאושרים, ההחזר יועבר לאמצעי התשלום המקורי תוך 5-10 ימי עסקים.
           </p>
         </section>
 
         <section>
           <h2 style={{ color: 'var(--color-white)', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>
-            3. Size Exchanges & Selection Changes
+            3. שינויים במידה ובסגנון
           </h2>
-          <p style={{ margin: 0 }}>
-            Our garments are cataloged with custom sizing guides. Please review the sizing specs carefully before completing the payment checkout. Since Printify schedules manufacturing dynamically on bespoke blank materials, we cannot exchange sizes, styles, or colors once orders enter the production phase.
+          <p dir="rtl" style={{ margin: 0, lineHeight: '1.9' }}>
+            מומלץ לבדוק את טבלאות המידות לפני התשלום. מאחר וההזמנות נכנסות לייצור לפי דרישה, לא ניתן להחליף מידה, צבע או דגם לאחר תחילת התהליך.
           </p>
         </section>
 
         <section>
           <h2 style={{ color: 'var(--color-white)', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>
-            4. Order Cancellations
+            4. ביטול הזמנה
           </h2>
-          <p style={{ margin: 0 }}>
-            If you wish to cancel an order, you must contact us at <a href="mailto:support@dripstreet.shop" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreet.shop</a> within **2 hours** of placement. After this timeframe, your order will be automatically synced with the Printify manufacturing APIs and cannot be recalled.
+          <p dir="rtl" style={{ margin: 0, lineHeight: '1.9' }}>
+            לביטול הזמנה יש לפנות אלינו בתוך שעתיים מרגע ההזמנה ל-<a href="mailto:support@dripstreetshop.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreetshop.com</a>. לאחר מכן, ההזמנה עשויה להיכנס לייצור ולא ניתן יהיה לבטלה.
           </p>
         </section>
 
         <section>
           <h2 style={{ color: 'var(--color-white)', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>
-            5. Processing Timelines
+            5. עיתוי טיפול בהחזרים
           </h2>
-          <p style={{ margin: 0 }}>
-            Approved refunds are dispatched immediately to your original payment provider (PayPal, Visa, Mastercard, Apple Pay). It typically takes 3 to 7 business days for banking institutions to credit the transaction back to your account statement.
+          <p dir="rtl" style={{ margin: 0, lineHeight: '1.9' }}>
+            לאחר אישור הפנייה, ההחזר מבוצע מידית מול ספק התשלום. ברוב המקרים יידרשו 3-7 ימי עסקים עד להופעת הזיכוי בחשבון.
           </p>
         </section>
       </div>

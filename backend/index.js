@@ -299,7 +299,7 @@ const getOrderTotalAmount = (orderId) => new Promise((resolve, reject) => {
 const BUNDLE_ITEM_PRICE_NIS = 229;
 const BUNDLE_ITEM_COUNT = 3;
 const SHIPPING_COST_NIS = 29.90;
-const FREE_SHIPPING_THRESHOLD = 5;
+const FREE_SHIPPING_THRESHOLD_NIS = 249;
 
 const expandOrderUnits = (items = []) => {
   const units = [];
@@ -354,7 +354,9 @@ const calculateOrderPricing = (items = [], couponCode = null) => {
     ? Math.max(0, subtotalAfterBundle * (Number(currentActiveCoupon.discount_pct) / 100))
     : 0;
   const subtotalAfterDiscounts = Math.max(0, subtotalAfterBundle - couponDiscount);
-  const shippingCost = totalQuantity >= FREE_SHIPPING_THRESHOLD ? 0 : (totalQuantity > 0 ? SHIPPING_COST_NIS : 0);
+  const shippingCost = subtotalAfterDiscounts >= FREE_SHIPPING_THRESHOLD_NIS
+    ? 0
+    : (subtotalAfterDiscounts > 0 ? SHIPPING_COST_NIS : 0);
   const totalAmount = Math.max(0, subtotalAfterDiscounts + shippingCost);
 
   return {
@@ -579,8 +581,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   );
 
   const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
-  const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-  const shipping = totalQuantity >= FREE_SHIPPING_THRESHOLD ? 0 : (totalQuantity > 0 ? SHIPPING_COST_NIS : 0);
+  const shipping = subtotal >= FREE_SHIPPING_THRESHOLD_NIS ? 0 : (subtotal > 0 ? SHIPPING_COST_NIS : 0);
   const total = Number(order.totalAmount) || 0;
   const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
@@ -1229,6 +1230,38 @@ app.get('/api/products', (req, res) => {
     
     res.json(productsWithUSD);
   });
+});
+
+// Get active product IDs for sitemap/prerender pipelines.
+app.get('/api/products/active-ids', async (req, res) => {
+  try {
+    const allProducts = await dbAllAsync('SELECT id, type FROM products');
+    const hasPrintifyProducts = allProducts.some((row) => row.type === 'printify');
+    const visibilityFilter = hasPrintifyProducts
+      ? "AND (p.type = 'printify' OR p.type = 'dropship')"
+      : '';
+
+    const rows = await dbAllAsync(
+      `SELECT DISTINCT p.id
+       FROM products p
+       LEFT JOIN product_variants pv ON pv.productId = p.id
+       WHERE COALESCE(p.stock, 0) > 0
+         ${visibilityFilter}
+         AND (
+           pv.id IS NULL
+           OR (
+             COALESCE(pv.isEnabled, 0) = 1
+             AND COALESCE(pv.isAvailable, 0) = 1
+             AND COALESCE(pv.stockQty, 0) > 0
+           )
+         )
+       ORDER BY p.id ASC`
+    );
+
+    res.json({ ids: rows.map((row) => row.id) });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to load active product ids' });
+  }
 });
 
 // Get single product with full details + variants (for PDP)
@@ -3100,8 +3133,7 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           }
 
           const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
-          const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-          const shipping = totalQuantity >= FREE_SHIPPING_THRESHOLD ? 0 : (totalQuantity > 0 ? SHIPPING_COST_NIS : 0);
+          const shipping = subtotal >= FREE_SHIPPING_THRESHOLD_NIS ? 0 : (subtotal > 0 ? SHIPPING_COST_NIS : 0);
           const total = Number(order.totalAmount) || 0;
           const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
@@ -3302,13 +3334,13 @@ app.listen(PORT, () => {
         title: 'Six-sided Grinding Cuban Link Chain | Premium Jewelry',
         description: 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the Drip Street jewelry line.',
         price: 5.00,
-        priceUSD: 1.33,
-        imageUrl: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80',
+        priceUSD: 39.90,
+        imageUrl: 'https://images.unsplash.com/photo-1617038220319-276d3cfab638?auto=format&fit=crop&w=1200&q=80',
         type: 'dropship',
         supplier_id: 'dropship',
         printifyId: 'CJLX222053101AZ',
         stock: 999,
-        variant: { color: 'Gold', size: '20 Inch', price: 5.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80' },
+        variant: { color: 'Gold', size: '20 Inch', price: 5.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://images.unsplash.com/photo-1617038220319-276d3cfab638?auto=format&fit=crop&w=1200&q=80' },
       },
     ];
 

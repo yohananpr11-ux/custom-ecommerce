@@ -4,7 +4,7 @@ import LegalPageLayout from '../components/LegalPageLayout';
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce-qp30.onrender.com').replace(/\/$/, '');
 
 export default function ContactUs() {
-  const [formData, setFormData] = useState({ name: '', email: '', subject: '', message: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', message: '' });
   const [status, setStatus] = useState('idle'); // idle, loading, success, error
   const [feedbackMsg, setFeedbackMsg] = useState('');
 
@@ -30,20 +30,20 @@ export default function ContactUs() {
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
-          message: `[Subject: ${formData.subject || 'General Inquiry'}] ${formData.message}`
+          message: formData.message
         })
       });
 
       if (response.ok) {
         setStatus('success');
-        setFormData({ name: '', email: '', subject: '', message: '' });
+        setFormData({ name: '', email: '', message: '' });
         setFeedbackMsg('Thank you! Your message was sent successfully. We will reply to your email shortly.');
       } else {
         throw new Error('Server error');
       }
     } catch {
       setStatus('error');
-      setFeedbackMsg('We couldn\'t send your message. Please try again or contact support@dripstreet.shop directly.');
+      setFeedbackMsg('We couldn\'t send your message. Please try again or contact support@dripstreetshop.com directly.');
     }
   };
 
@@ -63,7 +63,7 @@ export default function ContactUs() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
             <div>
               <h4 style={{ color: 'var(--color-white)', margin: '0 0 4px 0', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email Support</h4>
-              <p style={{ margin: 0 }}><a href="mailto:support@dripstreet.shop" style={{ color: 'inherit', textDecoration: 'underline' }}>support@dripstreet.shop</a></p>
+              <p style={{ margin: 0 }}><a href="mailto:support@dripstreetshop.com" style={{ color: 'inherit', textDecoration: 'underline' }}>support@dripstreetshop.com</a></p>
             </div>
             <div>
               <h4 style={{ color: 'var(--color-white)', margin: '0 0 4px 0', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fulfillment Center</h4>
@@ -114,31 +114,6 @@ export default function ContactUs() {
                 required
                 placeholder="Enter your email"
                 value={formData.email}
-                onChange={handleChange}
-                disabled={status === 'loading'}
-                style={{
-                  padding: '12px 16px',
-                  background: 'var(--color-black-300)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--color-white)',
-                  borderRadius: '6px',
-                  outline: 'none',
-                  transition: 'border-color 0.2s',
-                  minHeight: '44px'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#fff'}
-                onBlur={(e) => e.target.style.borderColor = 'var(--border-color)'}
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label htmlFor="subject" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-white)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subject</label>
-              <input
-                type="text"
-                id="subject"
-                name="subject"
-                placeholder="What is this about?"
-                value={formData.subject}
                 onChange={handleChange}
                 disabled={status === 'loading'}
                 style={{

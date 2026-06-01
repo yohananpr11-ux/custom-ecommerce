@@ -17,19 +17,27 @@ const STATIC_ROUTES = [
   '/shipping'
 ];
 
-function fetchProducts() {
+function fetchActiveProductIds() {
   return new Promise((resolve, reject) => {
-    https.get(`${API_BASE}/api/products`, (res) => {
+    https.get(`${API_BASE}/api/products/active-ids`, (res) => {
       let data = '';
       res.on('data', (chunk) => {
         data += chunk;
       });
       res.on('end', () => {
         try {
-          const products = JSON.parse(data);
-          resolve(Array.isArray(products) ? products : []);
+          const payload = JSON.parse(data);
+          if (Array.isArray(payload)) {
+            resolve(payload.map((entry) => Number(entry && entry.id)).filter((id) => Number.isInteger(id) && id > 0));
+            return;
+          }
+          if (payload && Array.isArray(payload.ids)) {
+            resolve(payload.ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0));
+            return;
+          }
+          resolve([]);
         } catch (e) {
-          reject(new Error(`Failed to parse product data: ${e.message}`));
+          reject(new Error(`Failed to parse active product IDs: ${e.message}`));
         }
       });
     }).on('error', (err) => {
@@ -39,13 +47,13 @@ function fetchProducts() {
 }
 
 async function run() {
-  console.log('Fetching products to generate sitemap...');
-  let products = [];
+  console.log('Fetching active product IDs from DB to generate sitemap...');
+  let productIds = [];
   try {
-    products = await fetchProducts();
-    console.log(`Fetched ${products.length} products successfully.`);
+    productIds = await fetchActiveProductIds();
+    console.log(`Fetched ${productIds.length} active product IDs successfully.`);
   } catch (error) {
-    console.warn(`Could not fetch products from API (${error.message}). Falling back to static routes only.`);
+    console.warn(`Could not fetch active product IDs from API (${error.message}). Falling back to static routes only.`);
   }
 
   const currentDate = new Date().toISOString().split('T')[0];
@@ -63,10 +71,10 @@ async function run() {
   }
 
   // Add dynamic product routes
-  for (const product of products) {
-    if (product && product.id) {
+  for (const productId of productIds) {
+    if (productId) {
       sitemapUrls.push({
-        loc: `${BASE_URL}/product/${product.id}`,
+        loc: `${BASE_URL}/product/${productId}`,
         lastmod: currentDate,
         changefreq: 'weekly',
         priority: '0.9'

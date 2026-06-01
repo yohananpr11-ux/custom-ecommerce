@@ -90,7 +90,7 @@ class EmailService {
     const sig = this.generateUnsubscribeSignature(email);
     const unsubscribeUrl = `${API_BASE_URL}/api/unsubscribe?email=${encodeURIComponent(email)}&sig=${sig}`;
     
-    const text = `Welcome to the Club!\n\nThanks for joining our exclusive streetwear circle. As a member of Drip Street, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.\n\nYour Unique Promo Code: ${promoCode}\n10% OFF YOUR FIRST ORDER\n\nShop The Collection: https://custom-ecommerce-seven.vercel.app\n\nNeed help? Contact us at support@dripstreet.shop\n\nTo unsubscribe from our newsletter, visit:\n${unsubscribeUrl}\n\n© 2026 DRIP STREET. All rights reserved.`;
+    const text = `Welcome to the Club!\n\nThanks for joining our exclusive streetwear circle. As a member of Drip Street, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.\n\nYour Unique Promo Code: ${promoCode}\n10% OFF YOUR FIRST ORDER\n\nShop The Collection: https://custom-ecommerce-seven.vercel.app\n\nNeed help? Contact us at support@dripstreetshop.com\n\nTo unsubscribe from our newsletter, visit:\n${unsubscribeUrl}\n\n© 2026 DRIP STREET. All rights reserved.`;
 
     const html = `
       <!DOCTYPE html>
@@ -140,7 +140,7 @@ class EmailService {
           <tr>
             <td style="padding: 30px 40px; background-color: #0a0a0a; border-top: 1px solid #222222; text-align: center;">
               <p style="margin: 0 0 10px 0; font-size: 12px; color: #666666;">
-                Need help? Contact us at <a href="mailto:support@dripstreet.shop" style="color: #888888; text-decoration: underline;">support@dripstreet.shop</a>
+                Need help? Contact us at <a href="mailto:support@dripstreetshop.com" style="color: #888888; text-decoration: underline;">support@dripstreetshop.com</a>
               </p>
               <p style="margin: 0; font-size: 11px; color: #444444; text-transform: uppercase; letter-spacing: 0.05em;">
                 &copy; 2026 DRIP STREET. All rights reserved.

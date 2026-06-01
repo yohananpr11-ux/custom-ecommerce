@@ -30,7 +30,7 @@ const DIST_DIR     = path.join(__dirname, '..', 'dist');
 const TEMPLATE     = path.join(DIST_DIR, 'index.html');
 const API_BASE     = process.env.PRERENDER_API_BASE || 'https://custom-ecommerce-qp30.onrender.com';
 const SITE_BASE    = process.env.PRERENDER_SITE_BASE || 'https://dripstreetshop.com';
-const FALLBACK_OG  = `${SITE_BASE}/brand/generated/og-image.png`;
+const FALLBACK_OG  = 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80';
 const FETCH_TIMEOUT_MS = 15000;
 
 function fetchProducts() {

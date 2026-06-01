@@ -4,6 +4,13 @@ const path = require('path');
 const dotenv = require('dotenv');
 const DEFAULT_MENI_CHAT_ID = '644275080';
 
+const escapeHtml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 const pickFirstId = (value) => {
   if (!value || typeof value !== 'string') return null;
   const first = value.split(',').map((part) => part.trim()).find(Boolean);
@@ -140,10 +147,15 @@ class TelegramService {
   async notifySupportMessage(name, email, message) {
     if (!this.token || !this.chatId) return;
 
-    const text = `✉️ <b>New Contact Message</b>\n\n` +
-                 `<b>Name:</b> ${name}\n` +
-                 `<b>Email:</b> ${email}\n\n` +
-                 `<b>Message:</b>\n${message}`;
+    const safeName = String(name || 'Unknown').trim();
+    const safeEmail = String(email || 'Unknown').trim();
+    const safeMessage = String(message || '').trim();
+    const text = [
+      '📩 <b>Support Request</b>',
+      `<b>Name:</b> ${escapeHtml(safeName)}`,
+      `<b>Email:</b> ${escapeHtml(safeEmail)}`,
+      `<b>Message:</b> ${escapeHtml(safeMessage)}`,
+    ].join('\n');
 
     try {
       await axios.post(`${this.baseUrl}/sendMessage`, {

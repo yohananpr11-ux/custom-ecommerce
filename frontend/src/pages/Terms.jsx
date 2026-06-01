@@ -26,26 +26,26 @@ export default function Terms() {
     <LegalPageLayout title="Terms Of Service" breadcrumb="Terms">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <section style={sectionStyle}>
-          <h2 style={headingStyle}>Terms Placeholder</h2>
-          <p style={{ margin: 0 }}>This page is a launch scaffold and requires final legal approval text.</p>
+          <h2 style={headingStyle}>תנאי שימוש</h2>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>פרטי העסק: Drip Street | דוא"ל: support@dripstreetshop.com</p>
         </section>
 
         <section style={sectionStyle}>
-          <h3 style={headingStyle}>1. Order Agreement</h3>
-          <p style={{ margin: 0 }}>TODO: Insert finalized purchase terms, eligibility, and account responsibilities.</p>
+          <h3 style={headingStyle}>1. ביצוע הזמנה</h3>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>ביצוע הזמנה באתר מהווה אישור לכך שקראת והבנת את תנאי השימוש, את מדיניות המשלוחים ואת מדיניות ההחזרות של Drip Street. אנו שומרים לעצמנו את הזכות לעדכן מלאי, מחירים, זמני אספקה ותיאורי מוצרים לפי הצורך.</p>
         </section>
 
         <section style={sectionStyle}>
-          <h3 style={headingStyle}>2. Product Representation</h3>
-          <p style={{ margin: 0 }}>TODO: Add media accuracy language, color variation clause, and availability notices.</p>
+          <h3 style={headingStyle}>2. תיאור מוצרים ותמונות</h3>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>אנו פועלים להציג את המוצרים באופן מדויק ככל האפשר, אך ייתכנו הבדלים קלים בגוון, בגזרה או במרקם בין התצוגה במסך לבין המוצר בפועל. תמונות המוצר מיועדות להמחשה בלבד.</p>
         </section>
 
         <section style={sectionStyle}>
-          <h3 style={headingStyle}>3. Liability And Disputes</h3>
-          <p style={{ margin: 0 }}>TODO: Add liability cap, dispute jurisdiction, and policy change process.</p>
+          <h3 style={headingStyle}>3. אחריות והגבלות</h3>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>האחריות של Drip Street מוגבלת לערך הרכישה ששולם בפועל. איננו אחראים לעיכובים הנובעים מגורמי שילוח חיצוניים, עיכובי מכס, שימוש לא נכון במוצר או נזק שנגרם לאחר המסירה.</p>
         </section>
 
-        <p style={noteStyle}>Last updated: pending legal review.</p>
+        <p dir="rtl" style={noteStyle}>עודכן לאחרונה: 1 ביוני 2026</p>
       </div>
     </LegalPageLayout>
   );

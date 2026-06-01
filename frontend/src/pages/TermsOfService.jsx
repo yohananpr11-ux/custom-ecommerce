@@ -69,7 +69,7 @@ export default function TermsOfService() {
 
         <section style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', marginTop: '16px' }}>
           <p style={{ margin: 0, fontSize: '14px', opacity: 0.8 }}>
-            If you have questions regarding these Terms, contact our support team at <a href="mailto:support@dripstreet.shop" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreet.shop</a>.
+            If you have questions regarding these Terms, contact our support team at <a href="mailto:support@dripstreetshop.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreetshop.com</a>.
           </p>
         </section>
       </div>
