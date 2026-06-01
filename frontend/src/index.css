@@ -706,7 +706,9 @@ html[dir="ltr"] .checkout-page input {
 }
 
 .best-sellers-section {
-  padding: 14px 0 10px;
+  padding: 48px 0 24px;
+  position: relative;
+  z-index: 10;
 }
 
 .best-sellers-head {
@@ -726,7 +728,7 @@ html[dir="ltr"] .checkout-page input {
 .best-sellers-head p {
   margin: 0;
   max-width: 52ch;
-  color: var(--color-text-lighter);
+  color: #ccc;
   font-size: 14px;
 }
 
@@ -3419,7 +3421,7 @@ button,
 
 .why-card p {
   font-size: 12px;
-  color: #777;
+  color: #ccc;
   margin: 0;
   line-height: 1.6;
 }

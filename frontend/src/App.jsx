@@ -594,10 +594,15 @@ const getMappedImagesForVariantIds = (productImages, variantIds) => {
   return Array.from(new Set(ordered));
 };
 
+const isClothingSize = (size) => {
+  const s = String(size || '').toUpperCase().trim();
+  return /^[X]*[SML]$|^[0-9]XL$/i.test(s);
+};
+
 const getOrderedDisplaySizes = (sizes = []) => {
   const unique = Array.from(new Set((sizes || []).map((size) => normalizeSizeLabel(size)).filter(Boolean)));
   return unique
-    .filter((size) => (SIZE_RANK[size] || Number.MAX_SAFE_INTEGER) <= MAX_ALLOWED_SIZE_RANK)
+    .filter((size) => !isClothingSize(size) || (SIZE_RANK[size] || Number.MAX_SAFE_INTEGER) <= MAX_ALLOWED_SIZE_RANK)
     .sort((a, b) => {
       const rankA = SIZE_RANK[a] || Number.MAX_SAFE_INTEGER;
       const rankB = SIZE_RANK[b] || Number.MAX_SAFE_INTEGER;
@@ -1082,7 +1087,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         normalizeValue(variant.color) === normalizedColor
         && Number(variant.isEnabled) !== 0
         && Number(variant.isAvailable) !== 0
-        && (SIZE_RANK[normalizeSizeLabel(variant.size)] || Number.MAX_SAFE_INTEGER) <= MAX_ALLOWED_SIZE_RANK
+        && (!isClothingSize(normalizeSizeLabel(variant.size)) || (SIZE_RANK[normalizeSizeLabel(variant.size)] || Number.MAX_SAFE_INTEGER) <= MAX_ALLOWED_SIZE_RANK)
       ) {
         sizes.add(normalizeSizeLabel(variant.size));
       }

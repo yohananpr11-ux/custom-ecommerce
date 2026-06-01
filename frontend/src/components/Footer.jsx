@@ -84,7 +84,7 @@ export default function Footer() {
             <button 
               type="submit" 
               style={{
-                padding: '10px 20px',
+                padding: '10px 24px',
                 borderRadius: '4px',
                 border: 'none',
                 background: 'var(--color-white)',
@@ -93,7 +93,8 @@ export default function Footer() {
                 fontSize: '13px',
                 cursor: 'pointer',
                 textTransform: 'uppercase',
-                letterSpacing: '0.05em'
+                letterSpacing: '0.05em',
+                whiteSpace: 'nowrap'
               }}
             >
               Join
