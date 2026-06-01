@@ -3293,10 +3293,85 @@ app.listen(PORT, () => {
     }
   };
   
+  // Idempotent seeder for CJ Dropshipping products — runs on every startup
+  // Ensures dropship products exist in production even after ephemeral DB wipes on Render
+  const seedDropshipProducts = () => new Promise((resolve) => {
+    const CJ_CATALOG = [
+      {
+        title: 'Six-sided Grinding Cuban Link Chain | Premium Jewelry',
+        description: 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the Drip Street jewelry line.',
+        price: 149.00,
+        priceUSD: 39.99,
+        imageUrl: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=600&q=80',
+        type: 'dropship',
+        supplier_id: 'dropship',
+        printifyId: 'CJLX222053101AZ',
+        stock: 999,
+        variant: { color: 'Gold', size: '20 Inch', price: 149.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999 },
+      },
+    ];
+
+    let pending = CJ_CATALOG.length;
+    if (pending === 0) return resolve();
+
+    CJ_CATALOG.forEach((product) => {
+      db.get(`SELECT id FROM products WHERE printifyId = ?`, [product.printifyId], (err, existing) => {
+        if (err) {
+          console.error('[CJ Seed] DB error:', err.message);
+          if (--pending === 0) resolve();
+          return;
+        }
+
+        const afterProduct = (productId) => {
+          const v = product.variant;
+          db.get(
+            `SELECT id FROM product_variants WHERE productId = ? AND printifyVariantId = ?`,
+            [productId, v.printifyVariantId],
+            (vGetErr, existingVariant) => {
+              if (existingVariant) {
+                db.run(
+                  `UPDATE product_variants SET price=?, cost=?, color=?, size=?, stockQty=? WHERE id=?`,
+                  [v.price, v.cost, v.color, v.size, v.stockQty, existingVariant.id],
+                  () => { console.log(`✅ [CJ Seed] "${product.title}" (ID:${productId}) updated.`); if (--pending === 0) resolve(); }
+                );
+              } else {
+                db.run(
+                  `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+                  [productId, v.printifyVariantId, v.color, v.size, v.price, v.cost, v.stockQty],
+                  () => { console.log(`✅ [CJ Seed] "${product.title}" (ID:${productId}) inserted.`); if (--pending === 0) resolve(); }
+                );
+              }
+            }
+          );
+        };
+
+        if (existing) {
+          db.run(
+            `UPDATE products SET title=?, description=?, price=?, priceUSD=?, imageUrl=?, type=?, supplier_id=?, stock=? WHERE id=?`,
+            [product.title, product.description, product.price, product.priceUSD, product.imageUrl, product.type, product.supplier_id, product.stock, existing.id],
+            () => afterProduct(existing.id)
+          );
+        } else {
+          db.run(
+            `INSERT INTO products (title, description, price, priceUSD, imageUrl, type, printifyId, supplier_id, stock)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [product.title, product.description, product.price, product.priceUSD, product.imageUrl, product.type, product.printifyId, product.supplier_id, product.stock],
+            function (insertErr) {
+              if (insertErr) { console.error('[CJ Seed] Insert failed:', insertErr.message); if (--pending === 0) resolve(); return; }
+              afterProduct(this.lastID);
+            }
+          );
+        }
+      });
+    });
+  });
+
   // Auto-sync on startup (critical for Render where DB is ephemeral)
   setTimeout(async () => {
     console.log('🔄 Auto-syncing Printify products on startup...');
     await performSync();
+    await seedDropshipProducts();
   }, 3000);
   
   // ---- SCHEDULED SYNC: Every hour ----
