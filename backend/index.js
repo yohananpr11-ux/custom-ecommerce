@@ -566,10 +566,17 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
      FROM order_items oi
      LEFT JOIN products p ON p.id = oi.productId
      LEFT JOIN product_variants pv ON pv.id = oi.variantId
-     WHERE oi.orderId = ?`,
+     WHERE oi.orderId = ? AND (oi.fulfillment_status IS NULL OR oi.fulfillment_status = 'pending')`,
     [orderId]
   );
   if (!items.length) return;
+
+  // Phase 3.4: Atomic lock — prevents double-fulfillment from concurrent webhook triggers
+  const itemIds = items.map(i => i.id);
+  await dbRunAsync(
+    `UPDATE order_items SET fulfillment_status = 'processing' WHERE id IN (${itemIds.map(() => '?').join(',')})`,
+    itemIds
+  );
 
   const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
   const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
@@ -644,7 +651,12 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
       }
     }).catch((e) => console.error(`[email] failed to send order confirmation email for #${orderId}:`, e.message));
   } catch (pErr) {
-    await telegram.sendMessage(`🚨 <b>Production submission failed</b>\nOrder #${orderId} was paid but fulfillment routing failed: ${pErr.message.slice(0, 200)}`);
+    // Phase 3.4: Revert lock to 'failed' and store error details for admin triage
+    await dbRunAsync(
+      `UPDATE order_items SET fulfillment_status = 'failed', fulfillment_ref = ? WHERE orderId = ? AND fulfillment_status = 'processing'`,
+      [`ERR: ${pErr.message.slice(0, 200)}`, orderId]
+    ).catch(() => null);
+    await telegram.sendMessage(`🚨 <b>Production submission failed</b>\nOrder #${orderId} was paid but fulfillment routing failed: ${pErr.message.slice(0, 200)}`).catch(() => null);
   }
 };
 
@@ -2716,7 +2728,10 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     if (paidOrder) {
       telegram.notifyNewOrder(localOrderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
     }
-    await processPaidOrderFulfillment(localOrderId, 'PayPal');
+    // Phase 3.4: Fire-and-forget — respond to PayPal immediately, fulfill in background
+    processPaidOrderFulfillment(localOrderId, 'PayPal').catch(err =>
+      console.error(`[fulfillment] background error for order #${localOrderId}:`, err.message)
+    );
 
     return res.json({
       success: true,
