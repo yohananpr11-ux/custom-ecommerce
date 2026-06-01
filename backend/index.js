@@ -3305,8 +3305,11 @@ app.listen(PORT, () => {
   }
 });
 
-// Conditional Mounting: dev/test routes are only loaded outside production
-if (process.env.NODE_ENV !== 'production') {
+// Conditional Mounting: dev/test routes are only loaded outside production.
+// Guards: NODE_ENV must not be 'production', AND RENDER env var must not be set
+// (Render always injects RENDER=true on all its environments).
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
+if (!isProduction) {
   app.use('/api/test', require('./routes/dev')(processPaidOrderFulfillment));
   console.log('🧪 Development simulation router mounted at /api/test');
 }
