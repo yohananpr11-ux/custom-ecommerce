@@ -545,9 +545,12 @@ const extractImageUrl = (value) => {
     const trimmed = value.trim();
     return trimmed ? trimmed : null;
   }
-  if (typeof value === 'object' && typeof value.src === 'string') {
-    const trimmed = value.src.trim();
-    return trimmed ? trimmed : null;
+  if (typeof value === 'object') {
+    const candidate = value.src || value.url || value.image_url || value.imageUrl;
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      return trimmed ? trimmed : null;
+    }
   }
   return null;
 };
@@ -1116,8 +1119,34 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     if (!product) return [];
 
     const variants = Array.isArray(product.variants) ? product.variants : [];
+    
+    // Safely extract product images array
+    let productImages = [];
+    if (Array.isArray(product.images)) {
+      productImages = product.images;
+    } else if (typeof product.images === 'string') {
+      try {
+        const parsed = JSON.parse(product.images);
+        if (Array.isArray(parsed)) {
+          productImages = parsed;
+        } else if (parsed && typeof parsed === 'object') {
+          productImages = parsed.allImages || parsed.images || [parsed];
+        } else {
+          productImages = [product.images];
+        }
+      } catch {
+        if (product.images.includes(',')) {
+          productImages = product.images.split(',').map(s => s.trim()).filter(Boolean);
+        } else {
+          productImages = [product.images];
+        }
+      }
+    } else if (product.images) {
+      productImages = [product.images];
+    }
+
     const mappedVariantImages = getMappedImagesForVariantIds(
-      Array.isArray(product.images) ? product.images : [],
+      productImages,
       getVariantIdsForColor(variants, selectedColor)
     );
     if (mappedVariantImages.length > 0) return mappedVariantImages;
@@ -1137,17 +1166,23 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       }
     }
 
-    if (selectedVariant?.imageUrl) {
-      const variantImage = extractImageUrl(selectedVariant.imageUrl);
+    if (selectedVariant?.imageUrl || selectedVariant?.image_url) {
+      const variantImage = extractImageUrl(selectedVariant.imageUrl || selectedVariant.image_url);
       if (variantImage) return [variantImage];
     }
 
-    if (Array.isArray(product.images) && product.images.length > 0) {
-      const productImages = product.images.map((entry) => extractImageUrl(entry)).filter(Boolean);
-      if (productImages.length > 0) return productImages;
+    if (productImages.length > 0) {
+      const parsedImages = productImages.map((entry) => extractImageUrl(entry)).filter(Boolean);
+      if (parsedImages.length > 0) return parsedImages;
     }
 
-    const fallbackImage = pickFirstImageUrl(product.imageUrl, product.backImageUrl, GLOBAL_IMAGE_FALLBACK);
+    const fallbackImage = pickFirstImageUrl(
+      product.imageUrl,
+      product.image_url,
+      product.backImageUrl,
+      product.backImage_url,
+      GLOBAL_IMAGE_FALLBACK
+    );
     return [fallbackImage || GLOBAL_IMAGE_FALLBACK];
   }, [product, selectedColor, selectedVariant]);
 
@@ -1329,7 +1364,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
             <>
               <div className="pdp-main-image-frame">
                 <GuardedProductImage
-                  src={activeImages[activeImageIndex] || product.imageUrl}
+                  src={activeImages[activeImageIndex] || product.imageUrl || product.image_url}
                   alt={`${product.title} active view`}
                   className="pdp-image"
                   loading="eager"
