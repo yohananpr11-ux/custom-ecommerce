@@ -3303,12 +3303,12 @@ app.listen(PORT, () => {
         description: 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the Drip Street jewelry line.',
         price: 5.00,
         priceUSD: 1.33,
-        imageUrl: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=600&q=80',
+        imageUrl: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80',
         type: 'dropship',
         supplier_id: 'dropship',
         printifyId: 'CJLX222053101AZ',
         stock: 999,
-        variant: { color: 'Gold', size: '20 Inch', price: 5.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=600&q=80' },
+        variant: { color: 'Gold', size: '20 Inch', price: 5.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80' },
       },
     ];
 

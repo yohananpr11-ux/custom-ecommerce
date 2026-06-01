@@ -111,6 +111,8 @@ const translations = {
     care_instructions: "טיפול",
     delivery_info: "משלוח",
     product_description: "תיאור",
+    material_care: "חומרים וטיפול",
+    shipping_returns: "משלוחים והחזרות",
     color: "צבע",
     size: "מידה",
     quantity: "כמות",
@@ -244,6 +246,8 @@ const translations = {
     care_instructions: "Care Instructions",
     delivery_info: "Delivery Info",
     product_description: "Description",
+    material_care: "Material & Care",
+    shipping_returns: "Shipping & Returns",
     color: "Color",
     size: "Size",
     quantity: "Quantity",
@@ -466,6 +470,144 @@ function getLocalizedDelivery(product, locale) {
 
   if (locale !== 'he') return product.deliveryInfo || 'Standard delivery.';
   return product.deliveryInfo || 'זמני משלוח מתעדכנים לפי זמינות בזמן אמת.';
+}
+
+const isJewelryProduct = (product = {}) => deriveProductCategory(product) === 'Jewelry';
+
+const getSizeGuideContent = (product, locale) => {
+  const jewelry = isJewelryProduct(product);
+
+  if (jewelry) {
+    return {
+      title: locale === 'he' ? 'מדריך מידות לתכשיטים' : 'Jewelry Size Guide',
+      subtitle: locale === 'he'
+        ? 'בחר אורך שרשרת לפי נקודת הישיבה הרצויה על הצוואר והחזה.'
+        : 'Choose your chain length based on where you want it to sit.',
+      note: locale === 'he'
+        ? 'למראה שכבות דרמטי, 22-24 אינץ׳ הם האורך המומלץ.'
+        : 'For layered looks, 22-24 inches usually works best.',
+      columns: locale === 'he'
+        ? ['אורך', 'סגנון ישיבה', 'למי זה מתאים']
+        : ['Length', 'Fit Style', 'Best For'],
+      rows: [
+        ['18" / 45cm', locale === 'he' ? 'צמוד לבסיס הצוואר' : 'Close neckline', locale === 'he' ? 'מראה נקי' : 'Clean minimal look'],
+        ['20" / 50cm', locale === 'he' ? 'על עצם הבריח' : 'At collarbone', locale === 'he' ? 'אורך יומיומי' : 'Everyday classic'],
+        ['22" / 55cm', locale === 'he' ? 'מתחת לעצם הבריח' : 'Below collarbone', locale === 'he' ? 'לוק סטריט' : 'Streetwear presence'],
+        ['24" / 60cm', locale === 'he' ? 'אמצע חזה עליון' : 'Upper chest', locale === 'he' ? 'שכבות בולטות' : 'Layered statement'],
+      ],
+    };
+  }
+
+  return {
+    title: locale === 'he' ? 'מדריך מידות לביגוד' : 'Apparel Size Guide',
+    subtitle: locale === 'he'
+      ? 'מדוד חולצה מועדפת והשווה לטבלה להתאמה מדויקת.'
+      : 'Measure a favorite tee and compare for the best fit.',
+    note: locale === 'he'
+      ? 'אם אתה בין מידות, למראה אוברסייז בחר מידה אחת למעלה.'
+      : 'Between sizes? Size up for an oversized silhouette.',
+    columns: locale === 'he'
+      ? ['מידה', 'חזה', 'אורך גוף', 'כתפיים']
+      : ['Size', 'Chest', 'Body Length', 'Shoulders'],
+    rows: [
+      ['S', '96-101 cm', '69 cm', '43 cm'],
+      ['M', '102-107 cm', '72 cm', '46 cm'],
+      ['L', '108-113 cm', '75 cm', '49 cm'],
+      ['XL', '114-119 cm', '78 cm', '52 cm'],
+      ['2XL', '120-127 cm', '81 cm', '55 cm'],
+    ],
+  };
+};
+
+function SizeGuideModal({ product, locale, onClose }) {
+  const guide = useMemo(() => getSizeGuideContent(product, locale), [product, locale]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="size-guide-overlay" onClick={onClose}>
+      <div className="size-guide-modal" onClick={(event) => event.stopPropagation()} dir={locale === 'he' ? 'rtl' : 'ltr'}>
+        <button type="button" className="size-guide-close" onClick={onClose} aria-label={locale === 'he' ? 'סגור חלון' : 'Close modal'}>×</button>
+        <div className="size-guide-header">
+          <span>{locale === 'he' ? 'מדריך מידות 📏' : 'Size Guide 📏'}</span>
+          <h3>{guide.title}</h3>
+          <p>{guide.subtitle}</p>
+        </div>
+        <div className="size-guide-table-wrap">
+          <table className="size-guide-table">
+            <thead>
+              <tr>
+                {guide.columns.map((column) => <th key={column}>{column}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {guide.rows.map((row) => (
+                <tr key={row.join('-')}>
+                  {row.map((cell) => <td key={cell}>{cell}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="size-guide-note">{guide.note}</div>
+      </div>
+    </div>
+  );
+}
+
+function CartDemandBanner({ locale, totalItems }) {
+  const headline = locale === 'he'
+    ? '🔥 ביקוש גבוה! פריטים פופולריים נעלמים מהר מהסל.'
+    : '🔥 High Demand! Popular pieces are moving fast right now.';
+  const detail = locale === 'he'
+    ? `יש כרגע ${totalItems} פריטים בסל שלך. השלם תשלום כדי לנעול מלאי ומחיר.`
+    : `You currently have ${totalItems} item${totalItems === 1 ? '' : 's'} in your cart. Complete checkout to lock stock and price.`;
+
+  return (
+    <div className="cart-demand-banner">
+      <div className="cart-demand-pulse" aria-hidden="true" />
+      <div>
+        <strong>{headline}</strong>
+        <p>{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function CartTrustSignals({ locale }) {
+  const badges = locale === 'he'
+    ? [
+        { icon: '🔐', title: 'קופה מוצפנת SSL' },
+        { icon: '🚚', title: 'משלוח אקספרס מבוטח' },
+        { icon: '🛡', title: 'אחריות איכות מלאה' },
+      ]
+    : [
+        { icon: '🔐', title: 'SSL Encrypted Checkout' },
+        { icon: '🚚', title: 'Insured Express Shipping' },
+        { icon: '🛡', title: 'Quality Guarantee' },
+      ];
+
+  return (
+    <div className="cart-trust-grid">
+      {badges.map((badge) => (
+        <div key={badge.title} className="cart-trust-card">
+          <span>{badge.icon}</span>
+          <b>{badge.title}</b>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** Check if a product is a tee (not hoodie or tank) */
@@ -1008,6 +1150,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   const [selectedQty, setSelectedQty] = useState(1);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [activeTab, setActiveTab] = useState('');
+  const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
   const [showStickyCta, setShowStickyCta] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const mainCtaRef = useRef(null);
@@ -1249,16 +1392,57 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   if (loading) {
     return (
       <div className="container pdp-skeleton-layout">
-        <div className="skeleton pdp-skeleton-gallery" />
+        <div className="pdp-skeleton-visuals">
+          <div className="skeleton pdp-skeleton-gallery" />
+          <div className="pdp-skeleton-thumb-row">
+            <div className="skeleton pdp-skeleton-thumb" />
+            <div className="skeleton pdp-skeleton-thumb" />
+            <div className="skeleton pdp-skeleton-thumb" />
+            <div className="skeleton pdp-skeleton-thumb" />
+          </div>
+        </div>
         <div className="pdp-skeleton-meta">
+          <div className="skeleton pdp-skeleton-kicker" />
           <div className="skeleton pdp-skeleton-line" />
           <div className="skeleton pdp-skeleton-line short" />
-          <div className="skeleton pdp-skeleton-line" />
+          <div className="skeleton pdp-skeleton-price" />
+          <div className="skeleton pdp-skeleton-chip-row" />
+          <div className="skeleton pdp-skeleton-chip-row short" />
+          <div className="skeleton pdp-skeleton-button" />
+          <div className="skeleton pdp-skeleton-button secondary" />
         </div>
       </div>
     );
   }
   if (!product || product.error || !product.title) return <div className="container" style={{padding: '100px 0', textAlign: 'center'}}>{t('product_not_found')}</div>;
+
+  const isJewelry = isJewelryProduct(product);
+  const materialCareContent = locale === 'he'
+    ? {
+        intro: isJewelry
+          ? 'פלדת אל-חלד איכותית עם ציפוי מוזהב וגימור מבריק שמיועד לנוכחות יומיומית.'
+          : `${getLocalizedFabric(product, locale)} ${getLocalizedCare(product, locale)}`,
+        bullets: isJewelry
+          ? ['היפואלרגני ומתאים לשימוש יומיומי', 'ברק חלק עם ליטוש מדויק', 'מתאים לשכבות או לענידה בודדת']
+          : ['בד פרימיום עם תחושת משקל נכונה', 'נוחות גבוהה ליום שלם', 'שומר על צורה ונראות גם אחרי כביסות'],
+      }
+    : {
+        intro: isJewelry
+          ? 'Premium stainless steel with a deep gold finish built for everyday shine and comfort.'
+          : `${getLocalizedFabric(product, locale)} ${getLocalizedCare(product, locale)}`,
+        bullets: isJewelry
+          ? ['Hypoallergenic everyday wear', 'Polished premium shine', 'Strong solo piece or layering staple']
+          : ['Premium-weight fabrication', 'All-day comfort and structure', 'Designed to keep its shape after repeated wear'],
+      };
+  const shippingReturnsContent = locale === 'he'
+    ? {
+        intro: getLocalizedDelivery(product, locale),
+        bullets: ['מספר מעקב נשלח מיד לאחר יציאה למחסן השילוח', 'החזרות והחלפות מטופלות מול שירות הלקוחות במהירות', 'במקרה של פגם ייצור נטפל בהחלפה או בזיכוי ללא עיכוב'],
+      }
+    : {
+        intro: getLocalizedDelivery(product, locale),
+        bullets: ['Tracking is emailed once the parcel is scanned by the carrier', 'Easy support-led returns and replacements', 'Manufacturing defects are handled quickly with a replacement or refund'],
+      };
 
   const handleAdd = (mode = 'cart') => {
     let variantId = null;
@@ -1409,7 +1593,12 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
             {orderedDisplaySizes.length > 0 && (
               <div className="pdp-section">
-                <h3>{t('size')}</h3>
+                <div className="pdp-section-headline">
+                  <h3>{t('size')}</h3>
+                  <button type="button" className="size-guide-link" onClick={() => setIsSizeGuideOpen(true)}>
+                    {locale === 'he' ? 'מדריך מידות 📏' : 'Size Guide 📏'}
+                  </button>
+                </div>
                 {isOutOfStock && <div className="low-stock-badge out-of-stock">{locale === 'he' ? 'אזל מהמלאי' : 'Out of stock'}</div>}
                 {!isOutOfStock && isLowStock && <div className="low-stock-badge"><span className="stock-pulse-dot" />{t('low_stock')}</div>}
                 <div className="pdp-options premium-size-grid">
@@ -1490,22 +1679,30 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
                 {activeTab === 'description' && <div className="accordion-content">{getLocalizedProductDescription(product, locale)}</div>}
               </div>
               <div className="accordion-item">
-                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'fabric' ? '' : 'fabric')}>
-                  {t('fabric_fit')} <span>{activeTab === 'fabric' ? '−' : '+'}</span>
+                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'materialCare' ? '' : 'materialCare')}>
+                  {t('material_care')} <span>{activeTab === 'materialCare' ? '−' : '+'}</span>
                 </button>
-                {activeTab === 'fabric' && <div className="accordion-content">{getLocalizedFabric(product, locale)}</div>}
+                {activeTab === 'materialCare' && (
+                  <div className="accordion-content accordion-rich-copy">
+                    <p>{materialCareContent.intro}</p>
+                    <ul>
+                      {materialCareContent.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                    </ul>
+                  </div>
+                )}
               </div>
               <div className="accordion-item">
-                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'care' ? '' : 'care')}>
-                  {t('care_instructions')} <span>{activeTab === 'care' ? '−' : '+'}</span>
+                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'shippingReturns' ? '' : 'shippingReturns')}>
+                  {t('shipping_returns')} <span>{activeTab === 'shippingReturns' ? '−' : '+'}</span>
                 </button>
-                {activeTab === 'care' && <div className="accordion-content">{getLocalizedCare(product, locale)}</div>}
-              </div>
-              <div className="accordion-item">
-                <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'delivery' ? '' : 'delivery')}>
-                  {t('delivery_info')} <span>{activeTab === 'delivery' ? '−' : '+'}</span>
-                </button>
-                {activeTab === 'delivery' && <div className="accordion-content">{getLocalizedDelivery(product, locale)}</div>}
+                {activeTab === 'shippingReturns' && (
+                  <div className="accordion-content accordion-rich-copy">
+                    <p>{shippingReturnsContent.intro}</p>
+                    <ul>
+                      {shippingReturnsContent.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
             <CustomerReviews t={t} locale={locale} />
@@ -1515,15 +1712,17 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
       {showStickyCta && (
         <div className="sticky-buy-bar">
-          <button className="sticky-buy-btn secondary" onClick={() => handleAdd('cart')}>
+          <div className="sticky-buy-meta">
+            <strong>{getProductTitle(product.title, locale)}</strong>
+            <span>{curSym}{displayPrice.toFixed(2)}</span>
+          </div>
+          <button className="sticky-buy-btn" onClick={() => handleAdd('cart')}>
             {t('add_to_cart')}
-          </button>
-          <button className="sticky-buy-btn" onClick={() => handleAdd('buy')}>
-            {t('buy_now')}
           </button>
         </div>
       )}
-      <Footer />
+      {isSizeGuideOpen && <SizeGuideModal product={product} locale={locale} onClose={() => setIsSizeGuideOpen(false)} />}
+      <Footer locale={locale} />
       <CookieConsent />
     </>
   );
@@ -2732,6 +2931,8 @@ function MainApp() {
             curSym={curSym}
             displayVal={displayVal}
           />
+
+          {cart.length > 0 && <CartDemandBanner locale={locale} totalItems={totalItems} />}
         </div>
 
         <div className="cart-footer">
@@ -2815,6 +3016,7 @@ function MainApp() {
           <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
             {t('checkout')}
           </button>
+          <CartTrustSignals locale={locale} />
           <div className="cart-payment-icons" aria-label={t('payment_icons_label')}>
             <svg viewBox="0 0 38 24" width="38" height="24" aria-label="Visa" role="img"><rect width="38" height="24" rx="4" fill="#1a1f71"/><text x="6" y="17" fontFamily="Arial" fontWeight="bold" fontSize="11" fill="#fff">VISA</text></svg>
             <svg viewBox="0 0 38 24" width="38" height="24" aria-label="Mastercard" role="img"><rect width="38" height="24" rx="4" fill="#252525"/><circle cx="15" cy="12" r="7" fill="#eb001b"/><circle cx="23" cy="12" r="7" fill="#f79e1b"/><path d="M19 6.8a7 7 0 0 1 0 10.4A7 7 0 0 1 19 6.8z" fill="#ff5f00"/></svg>
@@ -2951,6 +3153,8 @@ function MainApp() {
                 {t('order_summary')}
               </h3>
 
+              <CartDemandBanner locale={locale} totalItems={totalItems} />
+
               {totalItems > 0 && !isFreeShipping && (
                 <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
                   <p style={{ fontSize: '12px', margin: '0 0 8px', color: '#aaa' }}>{t('shipping_hint', { count: itemsToFreeShipping, plural: itemsToFreeShipping > 1 ? 's' : '' })}</p>
@@ -3050,6 +3254,8 @@ function MainApp() {
               <button type="button" className="checkout-btn" style={{ width: '100%' }} onClick={proceedToCheckout} disabled={cart.length === 0}>
                 {t('checkout')} →
               </button>
+
+              <CartTrustSignals locale={locale} />
 
               <p style={{ fontSize: '11px', color: '#666', textAlign: 'center', marginTop: '12px' }}>
                 Taxes and shipping calculated at checkout
@@ -4268,7 +4474,7 @@ function MainApp() {
       <AnimatePresence>
         <LeadCapturePopup t={t} currentPath={currentPath} />
       </AnimatePresence>
-      <Footer />
+      <Footer locale={locale} />
       <CookieConsent />
     </>
   )
