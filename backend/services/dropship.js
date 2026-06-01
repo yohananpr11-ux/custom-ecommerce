@@ -191,6 +191,7 @@ async function sendOrder(orderId, shippingDestination, items) {
     const resultObj = json.result || json.data || {};
     const ref = resultObj.orderNumber || resultObj.cjOrderNumber || json.orderNumber || `CJ-${orderId}`;
 
+    console.log(`[${SUPPLIER_NAME}] Raw API Response:`, JSON.stringify(json));
     console.log(`[${SUPPLIER_NAME}] ✓ Order #${orderId} submitted successfully to CJ! Ref=${ref}`);
     return { ref };
   } catch (error) {
