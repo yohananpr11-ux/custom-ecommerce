@@ -13,9 +13,9 @@ import BackButton from './components/BackButton'
 
 // Compliance & Legal Pages
 import PrivacyPolicy from './pages/PrivacyPolicy'
-import TermsOfService from './pages/TermsOfService'
+import Terms from './pages/Terms'
 import RefundPolicy from './pages/RefundPolicy'
-import ShippingPolicy from './pages/ShippingPolicy'
+import Shipping from './pages/Shipping'
 import ContactUs from './pages/ContactUs'
 import AboutUs from './pages/AboutUs'
 
@@ -681,6 +681,12 @@ const ENGLISH_SHIPPING_TEXT_REGEX = /^[A-Za-z0-9\s.,'\-/#()]+$/;
 const normalizeValue = (value) => String(value || '').trim().toLowerCase();
 const normalizeSizeLabel = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
 
+const triggerHapticTap = () => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
+  if (!window.matchMedia('(max-width: 768px)').matches) return;
+  if (typeof navigator.vibrate === 'function') navigator.vibrate(12);
+};
+
 const extractImageUrl = (value) => {
   if (!value) return null;
   if (typeof value === 'string') {
@@ -1329,13 +1335,52 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     return [fallbackImage || GLOBAL_IMAGE_FALLBACK];
   }, [product, selectedColor, selectedVariant]);
 
+  const mediaAssets = useMemo(() => {
+    const imageAssets = activeImages.map((src, index) => ({
+      type: 'image',
+      src,
+      key: `img-${index}-${src}`,
+      label: `Image ${index + 1}`,
+    }));
+
+    const videoAssets = [
+      ...(Array.isArray(product?.videoUrls) ? product.videoUrls : []),
+      product?.videoUrl,
+    ]
+      .filter(Boolean)
+      .map((src, index) => ({
+        type: 'video',
+        src,
+        key: `vid-${index}-${src}`,
+        label: `Video ${index + 1}`,
+      }));
+
+    const assets = [...imageAssets, ...videoAssets];
+    if (assets.length === 0) {
+      assets.push({ type: 'placeholder', kind: 'image', key: 'ph-image', label: 'Image Placeholder' });
+    }
+
+    assets.push({ type: 'placeholder', kind: 'video', key: 'ph-video', label: locale === 'he' ? 'וידאו מוצר בקרוב' : 'Product Video Coming Soon' });
+    assets.push({ type: 'placeholder', kind: 'gif', key: 'ph-gif', label: locale === 'he' ? 'תצוגת GIF בקרוב' : 'GIF Motion Preview Coming Soon' });
+
+    return assets;
+  }, [activeImages, product, locale]);
+
+  const activeMedia = mediaAssets[activeImageIndex] || mediaAssets[0] || null;
+
   useEffect(() => {
     setActiveImageIndex(0);
     if (mobileCarouselRef.current) mobileCarouselRef.current.scrollLeft = 0;
   }, [selectedColor, productId]);
 
+  useEffect(() => {
+    if (activeImageIndex >= mediaAssets.length) {
+      setActiveImageIndex(0);
+    }
+  }, [activeImageIndex, mediaAssets.length]);
+
   const goToImage = (index) => {
-    const boundedIndex = Math.max(0, Math.min(index, activeImages.length - 1));
+    const boundedIndex = Math.max(0, Math.min(index, mediaAssets.length - 1));
     setActiveImageIndex(boundedIndex);
     if (isMobileViewport && mobileCarouselRef.current) {
       const viewportWidth = mobileCarouselRef.current.clientWidth;
@@ -1388,6 +1433,44 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   const isOutOfStock = selectedVariantStock === 0 || (selectedVariant && Number(selectedVariant.isAvailable) === 0);
   const hasLiveInventory = Boolean(product?.operationalNotice?.isLiveInventory);
   const isLowStock = hasLiveInventory && selectedVariantStock !== null && selectedVariantStock > 0 && selectedVariantStock < LOW_STOCK_THRESHOLD;
+
+  const renderMediaAsset = (asset, variant = 'main') => {
+    if (!asset) return null;
+
+    if (asset.type === 'video') {
+      return (
+        <video
+          className={variant === 'thumb' ? 'pdp-thumb-img' : 'pdp-image'}
+          controls
+          muted
+          playsInline
+          preload="metadata"
+          poster={activeImages[0] || GLOBAL_IMAGE_FALLBACK}
+        >
+          <source src={asset.src} />
+        </video>
+      );
+    }
+
+    if (asset.type === 'placeholder') {
+      return (
+        <div className={`pdp-media-placeholder ${variant === 'thumb' ? 'thumb' : ''}`}>
+          <span>{asset.kind === 'video' ? '▶' : asset.kind === 'gif' ? 'GIF' : 'IMG'}</span>
+          <small>{asset.label}</small>
+        </div>
+      );
+    }
+
+    return (
+      <GuardedProductImage
+        src={asset.src}
+        alt={`${product.title} ${asset.label}`}
+        className={variant === 'thumb' ? 'pdp-thumb-img' : 'pdp-image'}
+        loading={variant === 'main' ? 'eager' : 'lazy'}
+        fetchPriority={variant === 'main' ? 'high' : 'auto'}
+      />
+    );
+  };
 
   if (loading) {
     return (
@@ -1520,54 +1603,42 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           {isMobileViewport ? (
             <div className="pdp-mobile-gallery">
               <div className="pdp-mobile-carousel" ref={mobileCarouselRef} onScroll={handleMobileScroll}>
-                {activeImages.map((imgSrc, i) => (
-                  <div className="pdp-mobile-slide" key={`${selectedColor}-${i}-${imgSrc}`}>
-                    <GuardedProductImage
-                      src={imgSrc}
-                      alt={`${product.title} view ${i + 1}`}
-                      className="pdp-image"
-                      loading={i === 0 ? 'eager' : 'lazy'}
-                      fetchPriority={i === 0 ? 'high' : 'auto'}
-                    />
+                {mediaAssets.map((asset, i) => (
+                  <div className="pdp-mobile-slide" key={`${selectedColor}-${i}-${asset.key}`}>
+                    {renderMediaAsset(asset, 'main')}
                   </div>
                 ))}
               </div>
               <div className="pdp-carousel-dots">
-                {activeImages.map((_, i) => (
+                {mediaAssets.map((asset, i) => (
                   <button
-                    key={`dot-${i}`}
+                    key={`dot-${i}-${asset.key}`}
                     type="button"
                     className={`pdp-dot ${activeImageIndex === i ? 'active' : ''}`}
                     onClick={() => goToImage(i)}
-                    aria-label={`Show image ${i + 1}`}
+                    aria-label={`Show media ${i + 1}`}
                   />
                 ))}
               </div>
             </div>
           ) : (
-            <>
+            <div className="pdp-desktop-media-grid">
               <div className="pdp-main-image-frame">
-                <GuardedProductImage
-                  src={activeImages[activeImageIndex] || product.imageUrl || product.image_url}
-                  alt={`${product.title} active view`}
-                  className="pdp-image"
-                  loading="eager"
-                  fetchPriority="high"
-                />
+                {renderMediaAsset(activeMedia, 'main')}
               </div>
-              <div className="pdp-thumbnail-row">
-                {activeImages.map((imgSrc, i) => (
+              <div className="pdp-thumbnail-row pdp-media-rail">
+                {mediaAssets.map((asset, i) => (
                   <button
-                    key={`thumb-${i}-${imgSrc}`}
+                    key={`thumb-${i}-${asset.key}`}
                     type="button"
                     className={`pdp-thumb-btn ${activeImageIndex === i ? 'active' : ''}`}
                     onClick={() => goToImage(i)}
                   >
-                    <GuardedProductImage src={imgSrc} alt={`${product.title} thumbnail ${i + 1}`} className="pdp-thumb-img" />
+                    {renderMediaAsset(asset, 'thumb')}
                   </button>
                 ))}
               </div>
-            </>
+            </div>
           )}
 
           <div className="pdp-purchase-panel">
@@ -1609,7 +1680,10 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
                         key={sizeOption}
                         className={`size-btn ${selectedSize === sizeOption ? 'active' : ''}`}
                         disabled={unavailable}
-                        onClick={() => setSelectedSize(sizeOption)}
+                        onClick={() => {
+                          triggerHapticTap();
+                          setSelectedSize(sizeOption);
+                        }}
                       >
                         {sizeOption}
                       </button>
@@ -1628,10 +1702,19 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
               </div>
             </div>
 
-            <button ref={mainCtaRef} className="checkout-btn add-to-cart-large" onClick={() => handleAdd('cart')}>
+            <motion.button
+              ref={mainCtaRef}
+              className="checkout-btn add-to-cart-large"
+              whileTap={{ scale: 0.985 }}
+              data-track="pdp_add_to_cart"
+              onClick={() => {
+                triggerHapticTap();
+                handleAdd('cart');
+              }}
+            >
               {t('add_to_cart')}
-            </button>
-            <button className="buy-now-inline" onClick={() => handleAdd('buy')}>
+            </motion.button>
+            <button className="buy-now-inline" data-track="pdp_buy_now" onClick={() => handleAdd('buy')}>
               {t('buy_now')}
             </button>
 
@@ -1676,33 +1759,35 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
                 <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'description' ? '' : 'description')}>
                   {t('product_description')} <span>{activeTab === 'description' ? '−' : '+'}</span>
                 </button>
-                {activeTab === 'description' && <div className="accordion-content">{getLocalizedProductDescription(product, locale)}</div>}
+                <div className={`accordion-panel ${activeTab === 'description' ? 'open' : ''}`}>
+                  <div className="accordion-content">{getLocalizedProductDescription(product, locale)}</div>
+                </div>
               </div>
               <div className="accordion-item">
                 <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'materialCare' ? '' : 'materialCare')}>
                   {t('material_care')} <span>{activeTab === 'materialCare' ? '−' : '+'}</span>
                 </button>
-                {activeTab === 'materialCare' && (
+                <div className={`accordion-panel ${activeTab === 'materialCare' ? 'open' : ''}`}>
                   <div className="accordion-content accordion-rich-copy">
                     <p>{materialCareContent.intro}</p>
                     <ul>
                       {materialCareContent.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
                     </ul>
                   </div>
-                )}
+                </div>
               </div>
               <div className="accordion-item">
                 <button className="accordion-header" onClick={() => setActiveTab(activeTab === 'shippingReturns' ? '' : 'shippingReturns')}>
                   {t('shipping_returns')} <span>{activeTab === 'shippingReturns' ? '−' : '+'}</span>
                 </button>
-                {activeTab === 'shippingReturns' && (
+                <div className={`accordion-panel ${activeTab === 'shippingReturns' ? 'open' : ''}`}>
                   <div className="accordion-content accordion-rich-copy">
                     <p>{shippingReturnsContent.intro}</p>
                     <ul>
                       {shippingReturnsContent.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
                     </ul>
                   </div>
-                )}
+                </div>
               </div>
             </div>
             <CustomerReviews t={t} locale={locale} />
@@ -1716,7 +1801,14 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
             <strong>{getProductTitle(product.title, locale)}</strong>
             <span>{curSym}{displayPrice.toFixed(2)}</span>
           </div>
-          <button className="sticky-buy-btn" onClick={() => handleAdd('cart')}>
+          <button
+            className="sticky-buy-btn"
+            data-track="pdp_sticky_add_to_cart"
+            onClick={() => {
+              triggerHapticTap();
+              handleAdd('cart');
+            }}
+          >
             {t('add_to_cart')}
           </button>
         </div>
@@ -1917,6 +2009,8 @@ function MainApp() {
   const leadPromoDiscount = activeLeadPromo ? subtotalAfterDiscounts * 0.10 : 0;
   const subtotalAfterLeadPromo = Math.max(0, subtotalAfterDiscounts - leadPromoDiscount);
   const cartTotal = subtotalAfterLeadPromo + shippingCost;
+  const amountToBundleThreshold = Math.max(0, BUNDLE_ITEM_PRICE - subtotalAfterLeadPromo);
+  const bundleValueProgress = Math.min(100, (subtotalAfterLeadPromo / BUNDLE_ITEM_PRICE) * 100);
 
   const abandonedCartPayload = useMemo(() => {
     if (!cart.length || !hasCheckoutContact) return null;
@@ -2872,6 +2966,8 @@ function MainApp() {
                 <div key={item.cartId || item.id} className="cart-item" style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                   {itemThumbnail && (
                     <img
+                      loading="lazy"
+                      decoding="async"
                       src={itemThumbnail}
                       alt={item.title}
                       style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, background: '#1a1a1a' }}
@@ -2915,7 +3011,7 @@ function MainApp() {
                       className="cart-recommendation-card"
                       onClick={() => openQuickAdd(product)}
                     >
-                      <img src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
+                      <img loading="lazy" decoding="async" src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
                       <strong>{getProductTitle(product.title, locale)}</strong>
                       <span>{curSym}{displayPrice.toFixed(2)}</span>
                     </button>
@@ -3013,7 +3109,7 @@ function MainApp() {
           </div>
 
           <p className="cart-taxes-note">{t('taxes_shipping_note')}</p>
-          <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
+          <button className="checkout-btn" data-track="cart_checkout" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
             {t('checkout')}
           </button>
           <CartTrustSignals locale={locale} />
@@ -3116,6 +3212,8 @@ function MainApp() {
                     >
                       {itemThumbnail && (
                         <img
+                          loading="lazy"
+                          decoding="async"
                           src={itemThumbnail}
                           alt={item.title}
                           style={{ width: '96px', height: '96px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, background: '#1a1a1a' }}
@@ -3163,6 +3261,22 @@ function MainApp() {
                   </div>
                 </div>
               )}
+              <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                {amountToBundleThreshold > 0 ? (
+                  <p style={{ fontSize: '12px', margin: '0 0 8px', color: '#f3d7a2' }}>
+                    {locale === 'he'
+                      ? `הוסף עוד ${curSym}${displayVal(amountToBundleThreshold).toFixed(2)} כדי לנעול הנחת באנדל`
+                      : `Add ${curSym}${displayVal(amountToBundleThreshold).toFixed(2)} more to unlock bundle savings`}
+                  </p>
+                ) : (
+                  <p style={{ fontSize: '12px', margin: '0 0 8px', color: '#8dff9e' }}>
+                    {locale === 'he' ? 'באנדל מחיר הופעל על הסל שלך 🎉' : 'Bundle pricing unlocked for your cart 🎉'}
+                  </p>
+                )}
+                <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${bundleValueProgress}%`, background: '#ff6b35', transition: 'width 0.4s' }} />
+                </div>
+              </div>
               {isFreeShipping && (
                 <div style={{ marginBottom: '20px', padding: '10px', background: 'rgba(76,175,80,0.1)', border: '1px solid rgba(76,175,80,0.3)', borderRadius: '6px', textAlign: 'center', fontSize: '12px', color: '#4caf50', fontWeight: 600 }}>
                   🎉 {t('shipping_unlocked')}
@@ -3251,7 +3365,7 @@ function MainApp() {
                 )}
               </div>
 
-              <button type="button" className="checkout-btn" style={{ width: '100%' }} onClick={proceedToCheckout} disabled={cart.length === 0}>
+              <button type="button" className="checkout-btn" data-track="cart_page_checkout" style={{ width: '100%' }} onClick={proceedToCheckout} disabled={cart.length === 0}>
                 {t('checkout')} →
               </button>
 
@@ -3537,7 +3651,7 @@ function MainApp() {
                 <p style={{ color: '#ff6b6b', marginBottom: '16px' }}>PayPal is not configured yet. Please try again in a moment.</p>
               )
             ) : (
-              <button type="submit" className="checkout-btn">{t('complete_order')} – {curSym}{displayVal(cartTotal).toFixed(2)}</button>
+              <button type="submit" className="checkout-btn" data-track="checkout_submit">{t('complete_order')} – {curSym}{displayVal(cartTotal).toFixed(2)}</button>
             )}
           </form>
           
@@ -3879,7 +3993,7 @@ function MainApp() {
                         <span className="product-price">{curSym}{displayPrice.toFixed(2)}</span>
                       </div>
                       <div className="product-card-actions">
-                        <button className="add-to-cart" aria-label={`${t('add_to_cart')} ${getProductTitle(product.title, locale)}`} onClick={() => openQuickAdd(product)}>
+                        <button className="add-to-cart" data-track="grid_add_to_cart" aria-label={`${t('add_to_cart')} ${getProductTitle(product.title, locale)}`} onClick={() => openQuickAdd(product)}>
                           {t('add_to_cart')}
                         </button>
                         <div className="product-card-signals" aria-label="Material and shipping highlights">
@@ -4060,9 +4174,9 @@ function MainApp() {
           />
         } />
         <Route path="/privacy" element={<PrivacyPolicy />} />
-        <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/terms" element={<Terms />} />
         <Route path="/refund" element={<RefundPolicy />} />
-        <Route path="/shipping" element={<ShippingPolicy />} />
+        <Route path="/shipping" element={<Shipping />} />
         <Route path="/contact" element={<ContactUs />} />
         <Route path="/about" element={<AboutUs />} />
         <Route path="*" element={
@@ -4179,7 +4293,7 @@ function MainApp() {
 
                   <div className="quick-config-actions">
                     <button type="button" className="quick-config-secondary" onClick={closeQuickAdd}>{t('continue_shopping')}</button>
-                    <button type="button" className="quick-config-primary" onClick={submitQuickAdd}>{t('add_selected_to_cart')}</button>
+                    <button type="button" className="quick-config-primary" data-track="quick_add_to_cart" onClick={submitQuickAdd}>{t('add_selected_to_cart')}</button>
                   </div>
 
                   <div className="quick-config-trust">
@@ -4296,7 +4410,7 @@ function MainApp() {
                         className="cart-recommendation-card"
                         onClick={() => openQuickAdd(product)}
                       >
-                        <img src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
+                        <img loading="lazy" decoding="async" src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
                         <strong>{getProductTitle(product.title, locale)}</strong>
                         <span>{curSym}{displayPrice.toFixed(2)}</span>
                       </button>
@@ -4353,6 +4467,25 @@ function MainApp() {
                 )}
               </div>
             )}
+            <div className="shipping-progress cart-footer-progress" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px' }}>
+              {amountToBundleThreshold > 0 ? (
+                <p className="shipping-hint">
+                  {locale === 'he'
+                    ? `הוסף עוד ${curSym}${displayVal(amountToBundleThreshold).toFixed(2)} כדי לנעול הנחת באנדל`
+                    : `Add ${curSym}${displayVal(amountToBundleThreshold).toFixed(2)} more to unlock bundle savings`}
+                </p>
+              ) : (
+                <p className="shipping-unlocked">{locale === 'he' ? 'הנחת באנדל פעילה 🎉' : 'Bundle savings active 🎉'}</p>
+              )}
+              <div className="progress-bar-bg">
+                <motion.div
+                  className="progress-bar-fill"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${bundleValueProgress}%` }}
+                  transition={{ duration: 0.4 }}
+                />
+              </div>
+            </div>
             <button type="button" className="continue-shopping-btn" onClick={closeCartDrawer}>{t('continue_shopping')}</button>
             {bundleDiscount > 0 && (
               <div className="cart-savings-line">
@@ -4384,7 +4517,7 @@ function MainApp() {
             </div>
 
             <p className="cart-taxes-note">{t('taxes_shipping_note')}</p>
-            <button className="checkout-btn" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
+            <button className="checkout-btn" data-track="drawer_checkout" onClick={proceedToCheckout} disabled={cart.length === 0} style={{ opacity: cart.length === 0 ? 0.5 : 1 }}>
               {t('checkout')}
             </button>
             <div className="cart-payment-icons" aria-label={t('payment_icons_label')}>

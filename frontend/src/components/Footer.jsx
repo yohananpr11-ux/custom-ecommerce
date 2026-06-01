@@ -184,6 +184,7 @@ export default function Footer({ locale = 'en' }) {
             />
             <button 
               type="submit" 
+              data-track="newsletter_submit"
               style={{
                 padding: '10px 24px',
                 borderRadius: '4px',
