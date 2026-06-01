@@ -94,7 +94,8 @@ export default function Footer() {
                 cursor: 'pointer',
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                flexShrink: 0
               }}
             >
               Join

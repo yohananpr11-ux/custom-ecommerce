@@ -615,11 +615,11 @@ const findMatchingVariant = (variants, selectedColor, selectedSize) => {
   if (!Array.isArray(variants) || variants.length === 0) return null;
 
   const normalizedColor = normalizeValue(selectedColor);
-  const normalizedSize = normalizeValue(selectedSize);
+  const normalizedSize = normalizeSizeLabel(selectedSize);
 
   return variants.find((variant) => (
     normalizeValue(variant.color) === normalizedColor
-    && normalizeValue(variant.size) === normalizedSize
+    && normalizeSizeLabel(variant.size) === normalizedSize
     && Number(variant.isEnabled) !== 0
     && Number(variant.isAvailable) !== 0
   )) || null;
@@ -1025,19 +1025,26 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           
           // Map variant IDs to colors
           data.variants.forEach(v => {
-            variantIdToColor[v.printifyVariantId] = v.color;
+            const vid = v.printifyVariantId || v.variantId || v.id;
+            if (vid) {
+              variantIdToColor[vid] = v.color;
+            }
           });
           
           // Group images by variant ID (extracted from URL path)
           const imagesByVariantId = {};
-          data.images.forEach(img => {
-            const variantMatch = img.src.match(/\/mockup\/[^/]+\/(\d+)\//);
-            if (variantMatch) {
-              const variantId = variantMatch[1];
-              if (!imagesByVariantId[variantId]) imagesByVariantId[variantId] = [];
-              imagesByVariantId[variantId].push(img);
-            }
-          });
+          if (Array.isArray(data.images)) {
+            data.images.forEach(img => {
+              const imgSrc = typeof img === 'string' ? img : (img?.src || '');
+              if (!imgSrc) return;
+              const variantMatch = imgSrc.match(/\/mockup\/[^/]+\/(\d+)\//);
+              if (variantMatch) {
+                const variantId = variantMatch[1];
+                if (!imagesByVariantId[variantId]) imagesByVariantId[variantId] = [];
+                imagesByVariantId[variantId].push(img);
+              }
+            });
+          }
           
           // Map images to colors
           Object.entries(imagesByVariantId).forEach(([variantId, images]) => {
@@ -3526,7 +3533,7 @@ function MainApp() {
         <section className="best-sellers-section container">
           <div className="best-sellers-head">
             <h2>Best Sellers</h2>
-            <p>Most-loved pieces customers keep reordering for fit, quality, and everyday styling.</p>
+            <p className="text-gray-300">Most-loved pieces customers keep reordering for fit, quality, and everyday styling.</p>
           </div>
           <div className="best-sellers-grid">
             {bestSellerProducts.map((product) => {

@@ -205,6 +205,8 @@ h4,
 .text-large { font-size: var(--text-lg); }
 .text-small { font-size: var(--text-sm); }
 .text-tiny { font-size: var(--text-xs); }
+.text-gray-300 { color: #d1d5db !important; }
+.text-gray-400 { color: #9ca3af !important; }
 
 .btn {
   display: inline-flex;
@@ -706,9 +708,10 @@ html[dir="ltr"] .checkout-page input {
 }
 
 .best-sellers-section {
-  padding: 48px 0 24px;
+  padding: 80px 0 24px;
   position: relative;
   z-index: 10;
+  clear: both;
 }
 
 .best-sellers-head {
@@ -723,12 +726,13 @@ html[dir="ltr"] .checkout-page input {
   margin: 0;
   font-size: 34px;
   letter-spacing: 0.04em;
+  color: #ffffff;
 }
 
 .best-sellers-head p {
   margin: 0;
   max-width: 52ch;
-  color: #ccc;
+  color: #d1d5db;
   font-size: 14px;
 }
 
@@ -3410,18 +3414,19 @@ button,
 .why-icon {
   font-size: 24px;
   margin-bottom: 4px;
+  color: #ffffff;
 }
 
 .why-card strong {
   font-size: 13px;
   font-weight: 700;
-  color: #fff;
+  color: #ffffff;
   letter-spacing: 0.5px;
 }
 
 .why-card p {
   font-size: 12px;
-  color: #ccc;
+  color: #e5e7eb;
   margin: 0;
   line-height: 1.6;
 }
