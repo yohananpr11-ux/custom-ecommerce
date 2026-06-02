@@ -3804,15 +3804,12 @@ function MainApp() {
       )}
 
       <section className="hero">
-        <div className="hero-drip-mark" aria-hidden="true">
-          <img src="/brand/drip-mark.png" alt="" draggable="false" />
-        </div>
         <div className="container hero-content">
           <motion.span className="hero-eyebrow" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
             DRIP STREET SIGNATURE DROP
           </motion.span>
-          <motion.h1 className="holographic-text hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            Premium Streetwear. Zero Guesswork Fit.
+          <motion.h1 className="hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+            PREMIUM STREETWEAR. ZERO GUESSWORK FIT.
           </motion.h1>
           <motion.p className="hero-vibe-subtitle" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
             Heavyweight essentials engineered for daily city movement, late-night edge, and effortless rotation.
@@ -3842,9 +3839,9 @@ function MainApp() {
               cursor: 'pointer',
               marginTop: '40px',
               padding: '20px 24px',
-              background: 'linear-gradient(90deg, rgba(255,210,77,0.06) 0%, rgba(0,0,0,0) 100%)',
-              border: '1px solid rgba(255, 210, 77, 0.15)',
-              borderRadius: '12px',
+              background: '#050505',
+              border: '1px solid rgba(255,255,255,0.26)',
+              borderRadius: '2px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -3855,13 +3852,13 @@ function MainApp() {
             }}
           >
             <div>
-              <span style={{ fontSize: '10px', fontWeight: 800, color: '#ffd24d', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+              <span style={{ fontSize: '10px', fontWeight: 800, color: '#f3f4f6', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                 {locale === 'he' ? '✨ קולקציה חדשה: תכשיטי פרימיום' : '✨ NEW COLLECTION: PREMIUM JEWELRY'}
               </span>
-              <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 600, color: '#fff' }}>
+              <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 700, color: '#f3f4f6', letterSpacing: '-0.01em' }}>
                 {locale === 'he' ? 'שרשרת קובנית עם ליטוש 6 פיאות' : 'Six-sided Grinding Cuban Link Chain'}
               </h4>
-              <p style={{ margin: 0, fontSize: '13px', color: '#aaa', maxWidth: '480px' }}>
+              <p style={{ margin: 0, fontSize: '13px', color: '#d1d5db', maxWidth: '480px' }}>
                 {locale === 'he' 
                   ? 'נחתכה במיוחד עם שש פיאות שטוחות ללכידת אור מירבית. פלדת אל-חלד מוצקה בציפוי זהב עמוק.'
                   : 'Meticulously faceted with six flat-cut facets per link. Solid stainless steel plated in deep gold.'}
@@ -3869,10 +3866,10 @@ function MainApp() {
             </div>
             <button style={{
               padding: '8px 16px',
-              background: '#ffd24d',
-              color: '#000',
-              border: 'none',
-              borderRadius: '6px',
+              background: '#f3f4f6',
+              color: '#050505',
+              border: '1px solid #f3f4f6',
+              borderRadius: '2px',
               fontWeight: 700,
               fontSize: '12px',
               textTransform: 'uppercase',

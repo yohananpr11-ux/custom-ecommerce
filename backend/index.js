@@ -3333,14 +3333,14 @@ app.listen(PORT, () => {
         id: 16, // Canonical ID — must match frontend routes (/product/16)
         title: 'Six-sided Grinding Cuban Link Chain | Premium Jewelry',
         description: 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the Drip Street jewelry line.',
-        price: 5.00,
+        price: 149.00,
         priceUSD: 39.90,
-        imageUrl: 'https://images.unsplash.com/photo-1617038220319-276d3cfab638?auto=format&fit=crop&w=1200&q=80',
+        imageUrl: 'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?q=80&w=1000&auto=format&fit=crop',
         type: 'dropship',
         supplier_id: 'dropship',
         printifyId: 'CJLX222053101AZ',
         stock: 999,
-        variant: { color: 'Gold', size: '20 Inch', price: 5.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://images.unsplash.com/photo-1617038220319-276d3cfab638?auto=format&fit=crop&w=1200&q=80' },
+        variant: { color: 'Gold', size: '20 Inch', price: 149.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?q=80&w=1000&auto=format&fit=crop' },
       },
     ];
 
@@ -3349,75 +3349,50 @@ app.listen(PORT, () => {
 
     CJ_CATALOG.forEach((product) => {
       const targetId = product.id;
+      const v = product.variant;
 
-      const upsertVariant = (productId) => {
-        const v = product.variant;
-        db.get(
-          `SELECT id FROM product_variants WHERE productId = ? AND printifyVariantId = ?`,
-          [productId, v.printifyVariantId],
-          (vGetErr, existingVariant) => {
-            if (existingVariant) {
-              db.run(
-                `UPDATE product_variants SET price=?, cost=?, color=?, size=?, stockQty=?, imageUrl=? WHERE id=?`,
-                [v.price, v.cost, v.color, v.size, v.stockQty, v.imageUrl, existingVariant.id],
-                () => { console.log(`✅ [CJ Seed] "${product.title}" (ID:${productId}) variant updated.`); if (--pending === 0) resolve(); }
-              );
-            } else {
+      // Nuclear overwrite: always delete canonical product and its variants, then re-insert fresh.
+      db.run(`DELETE FROM product_variants WHERE productId = ?`, [targetId], (deleteVariantErr) => {
+        if (deleteVariantErr) {
+          console.error('[CJ Seed] Variant delete failed:', deleteVariantErr.message);
+          if (--pending === 0) resolve();
+          return;
+        }
+
+        db.run(`DELETE FROM products WHERE id = ?`, [targetId], (deleteProductErr) => {
+          if (deleteProductErr) {
+            console.error('[CJ Seed] Product delete failed:', deleteProductErr.message);
+            if (--pending === 0) resolve();
+            return;
+          }
+
+          db.run(
+            `INSERT INTO products (id, title, description, price, priceUSD, imageUrl, images, type, printifyId, supplier_id, stock)
+             VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+            [targetId, product.title, product.description, product.price, product.priceUSD, product.imageUrl, product.type, product.printifyId, product.supplier_id, product.stock],
+            (insertProductErr) => {
+              if (insertProductErr) {
+                console.error('[CJ Seed] Product insert failed:', insertProductErr.message);
+                if (--pending === 0) resolve();
+                return;
+              }
+
               db.run(
                 `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
                  VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
-                [productId, v.printifyVariantId, v.color, v.size, v.price, v.cost, v.stockQty, v.imageUrl],
-                () => { console.log(`✅ [CJ Seed] "${product.title}" (ID:${productId}) variant inserted.`); if (--pending === 0) resolve(); }
-              );
-            }
-          }
-        );
-      };
-
-      // Check if product exists at canonical ID
-      db.get(`SELECT id FROM products WHERE id = ?`, [targetId], (errById, atTarget) => {
-        if (errById) { console.error('[CJ Seed] DB error:', errById.message); if (--pending === 0) resolve(); return; }
-
-        if (atTarget) {
-          // Already at correct ID — just update fields, forcing images = NULL so the new imageUrl is preferred
-          db.run(
-            `UPDATE products SET title=?, description=?, price=?, priceUSD=?, imageUrl=?, images=NULL, type=?, supplier_id=?, stock=?, printifyId=? WHERE id=?`,
-            [product.title, product.description, product.price, product.priceUSD, product.imageUrl, product.type, product.supplier_id, product.stock, product.printifyId, targetId],
-            () => upsertVariant(targetId)
-          );
-        } else {
-          // Not at target ID — check if it exists at a different ID (stale auto-increment row)
-          db.get(`SELECT id FROM products WHERE printifyId = ?`, [product.printifyId], (errByPid, stale) => {
-            if (stale) {
-              // Migrate: delete stale row (and its variants) then re-insert at canonical ID
-              db.run(`DELETE FROM product_variants WHERE productId = ?`, [stale.id], () => {
-                db.run(`DELETE FROM products WHERE id = ?`, [stale.id], () => {
-                  console.log(`[CJ Seed] Migrated product from stale ID:${stale.id} → canonical ID:${targetId}`);
-                  db.run(
-                    `INSERT INTO products (id, title, description, price, priceUSD, imageUrl, images, type, printifyId, supplier_id, stock)
-                     VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-                    [targetId, product.title, product.description, product.price, product.priceUSD, product.imageUrl, product.type, product.printifyId, product.supplier_id, product.stock],
-                    (insErr) => {
-                      if (insErr) { console.error('[CJ Seed] Re-insert failed:', insErr.message); if (--pending === 0) resolve(); return; }
-                      upsertVariant(targetId);
-                    }
-                  );
-                });
-              });
-            } else {
-              // Completely new — insert at canonical ID
-              db.run(
-                `INSERT INTO products (id, title, description, price, priceUSD, imageUrl, images, type, printifyId, supplier_id, stock)
-                 VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-                [targetId, product.title, product.description, product.price, product.priceUSD, product.imageUrl, product.type, product.printifyId, product.supplier_id, product.stock],
-                function (insertErr) {
-                  if (insertErr) { console.error('[CJ Seed] Insert failed:', insertErr.message); if (--pending === 0) resolve(); return; }
-                  upsertVariant(targetId);
+                [targetId, v.printifyVariantId, v.color, v.size, v.price, v.cost, v.stockQty, v.imageUrl],
+                (insertVariantErr) => {
+                  if (insertVariantErr) {
+                    console.error('[CJ Seed] Variant insert failed:', insertVariantErr.message);
+                  } else {
+                    console.log(`✅ [CJ Seed] Forced overwrite complete for ID:${targetId}`);
+                  }
+                  if (--pending === 0) resolve();
                 }
               );
             }
-          });
-        }
+          );
+        });
       });
     });
   });
