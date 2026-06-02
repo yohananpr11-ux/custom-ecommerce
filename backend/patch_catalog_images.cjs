@@ -16,7 +16,7 @@ const PATCHES = [
   },
   {
     id: 17,
-    imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
   },
   {
     id: 18,
@@ -25,7 +25,7 @@ const PATCHES = [
   },
   {
     id: 21,
-    imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
   },
 ];
 

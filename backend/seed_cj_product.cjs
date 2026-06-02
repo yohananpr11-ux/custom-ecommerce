@@ -13,7 +13,7 @@ const HARDWARE_ITEMS = [
     spu: 'CJLX1574470',
     title: 'HEAVYWEIGHT CUBAN CHAIN',
     price: 149,
-    imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
   },
   {
     id: 18,
@@ -41,7 +41,7 @@ const HARDWARE_ITEMS = [
     spu: 'CJLX1552176',
     title: 'ONYX ZIRCON STUDS',
     price: 89,
-    imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
   },
 ];
 
