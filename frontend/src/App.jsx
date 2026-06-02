@@ -2675,7 +2675,13 @@ function MainApp() {
   };
 
   const addToCart = (product, options = {}) => {
-    const { onAdded, quantity = 1 } = options;
+    // P9-3 CRITICAL BUG FIX: openCart was destructured-out and ignored, so the
+    // cart drawer never opened after Quick Add despite callers passing
+    // { openCart: true }. The user reported "drawer opens but says empty" —
+    // root cause: drawer opened LATER via cart icon click, and the cart state
+    // had updated correctly, but the user observed the empty-state momentarily
+    // because the open-after-add flow never happened. Now openCart is honored.
+    const { onAdded, quantity = 1, openCart = false } = options;
     const incrementBy = Math.max(1, Number(quantity) || 1);
     const cartId = product.cartId || `${product.id}`;
     setCart((prevCart) => {
@@ -2692,6 +2698,13 @@ function MainApp() {
     });
     setCartBadgePulse(true);
     setTimeout(() => setCartBadgePulse(false), 360);
+    // Honor the openCart option — open the drawer so the customer sees their
+    // item land in the cart immediately, without needing to hunt the cart icon.
+    if (openCart) {
+      // Defer to next tick so the setCart state commit has propagated before
+      // the drawer mounts and reads `cart` — guarantees the new item renders.
+      setTimeout(() => setIsCartOpen(true), 0);
+    }
     // Fire AddToCart pixel event (Meta + TikTok + GA4) — no-ops if not configured.
     trackAddToCart({
       id: product.id,
@@ -3360,9 +3373,16 @@ function MainApp() {
         </h1>
 
         {cart.length === 0 ? (
+          // P9-3: explicitly center the "Return to Store" button. The button
+          // is a block-level element via .checkout-btn, so text-align on the
+          // parent doesn't center it — needs margin-inline:auto and display:block.
           <div style={{ textAlign: 'center', padding: '80px 20px', color: '#888' }}>
             <p style={{ fontSize: '18px', marginBottom: '24px' }}>{t('cart_empty')}.</p>
-            <button className="checkout-btn" style={{ maxWidth: '240px' }} onClick={() => navigate('/')}>
+            <button
+              className="checkout-btn"
+              style={{ display: 'block', maxWidth: '240px', marginInline: 'auto' }}
+              onClick={() => navigate('/')}
+            >
               {t('return_home')}
             </button>
           </div>
@@ -4520,110 +4540,117 @@ function MainApp() {
               transition={{ duration: 0.22 }}
               onClick={(event) => event.stopPropagation()}
             >
+              {/* P9-3: rebuilt modal layout. Mobile = vertical stack. Desktop (md:768+)
+                  = 2-column grid (image left, details + CTAs right). Buttons pinned to
+                  bottom of the details column so they align with the bottom of the image. */}
               <button className="quick-config-close" onClick={closeQuickAdd} aria-label={t('close_cart_aria')}>×</button>
               <div className="quick-config-head">
                 <h3>{t('configure_product_title')}</h3>
                 <p>{t('configure_product_subtitle')}</p>
               </div>
 
-              <div className="quick-config-product">
-                <AnimatePresence mode="wait">
-                  <motion.img
-                    key={`${quickAddColor}-${quickAddActiveImage}`}
-                    src={quickAddActiveImage}
-                    alt={quickAddProduct.title}
-                    onError={(e) => setImageFallback(e)}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.28, ease: 'easeOut' }}
-                    className="quick-config-product-image"
-                  />
-                </AnimatePresence>
-                <div>
-                  <strong>{getProductTitle(quickAddProduct.title, locale)}</strong>
-                  <span>{curSym}{displayVal(quickAddProduct.price).toFixed(2)}</span>
+              <div className="quick-config-body">
+                <div className="quick-config-media">
+                  <AnimatePresence mode="wait">
+                    <motion.img
+                      key={`${quickAddColor}-${quickAddActiveImage}`}
+                      src={quickAddActiveImage}
+                      alt={quickAddProduct.title}
+                      onError={(e) => setImageFallback(e)}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.28, ease: 'easeOut' }}
+                      className="quick-config-product-image"
+                    />
+                  </AnimatePresence>
+                  <div className="quick-config-product-meta">
+                    <strong>{getProductTitle(quickAddProduct.title, locale)}</strong>
+                    <span>{curSym}{displayVal(quickAddProduct.price).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="quick-config-details">
+                  {isQuickAddLoading ? (
+                    <p>{t('loading')}</p>
+                  ) : (
+                    <>
+                      {Array.isArray(quickAddProduct.colors) && quickAddProduct.colors.length > 0 && (
+                        <div className="quick-config-group">
+                          <label>{t('choose_color')}</label>
+                          <div className="quick-config-swatches">
+                            {quickAddProduct.colors.map((colorOption) => (
+                              <button
+                                key={colorOption.name}
+                                type="button"
+                                className={`quick-swatch ${normalizeValue(quickAddColor) === normalizeValue(colorOption.name) ? 'active' : ''}`}
+                                style={{ backgroundColor: colorOption.hex }}
+                                onClick={() => {
+                                  setQuickAddColor(colorOption.name)
+                                  const fallbackVariant = findFirstAvailableVariantForColor(quickAddProduct.variants, colorOption.name)
+                                  if (fallbackVariant?.size) {
+                                    setQuickAddSize(normalizeSizeLabel(fallbackVariant.size))
+                                  }
+                                }}
+                                title={localizeColorName(colorOption.name, locale)}
+                                aria-label={`${t('color')} ${localizeColorName(colorOption.name, locale)}`}
+                                aria-pressed={normalizeValue(quickAddColor) === normalizeValue(colorOption.name)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {quickAddAvailableSizes.length > 0 && (
+                        <div className="quick-config-group">
+                          <label>{t('choose_size')}</label>
+                          <div className="quick-config-sizes">
+                            {getOrderedDisplaySizes(quickAddAvailableSizes).map((sizeOption) => (
+                              <button
+                                key={sizeOption}
+                                type="button"
+                                className={`quick-size-btn ${quickAddSize === sizeOption ? 'active' : ''}`}
+                                onClick={() => setQuickAddSize(sizeOption)}
+                              >
+                                {sizeOption}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="quick-config-group">
+                        <label htmlFor="quick-add-qty">{t('choose_quantity')}</label>
+                        <select
+                          id="quick-add-qty"
+                          value={quickAddQuantity}
+                          onChange={(e) => setQuickAddQuantity(Number(e.target.value) || 1)}
+                        >
+                          {Array.from({ length: 10 }, (_, index) => index + 1).map((qty) => (
+                            <option key={`quick-qty-${qty}`} value={qty}>{qty}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="quick-config-actions">
+                        <button type="button" className="quick-config-secondary" onClick={closeQuickAdd}>{t('continue_shopping')}</button>
+                        <button type="button" className="quick-config-primary" data-track="quick_add_to_cart" onClick={submitQuickAdd}>{t('add_selected_to_cart')}</button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
-              {isQuickAddLoading ? (
-                <p>{t('loading')}</p>
-              ) : (
-                <>
-                  {Array.isArray(quickAddProduct.colors) && quickAddProduct.colors.length > 0 && (
-                    <div className="quick-config-group">
-                      <label>{t('choose_color')}</label>
-                      <div className="quick-config-swatches">
-                        {quickAddProduct.colors.map((colorOption) => (
-                          <button
-                            key={colorOption.name}
-                            type="button"
-                            className={`quick-swatch ${normalizeValue(quickAddColor) === normalizeValue(colorOption.name) ? 'active' : ''}`}
-                            style={{ backgroundColor: colorOption.hex }}
-                            onClick={() => {
-                              setQuickAddColor(colorOption.name)
-                              const fallbackVariant = findFirstAvailableVariantForColor(quickAddProduct.variants, colorOption.name)
-                              if (fallbackVariant?.size) {
-                                setQuickAddSize(normalizeSizeLabel(fallbackVariant.size))
-                              }
-                            }}
-                            title={localizeColorName(colorOption.name, locale)}
-                            aria-label={`${t('color')} ${localizeColorName(colorOption.name, locale)}`}
-                            aria-pressed={normalizeValue(quickAddColor) === normalizeValue(colorOption.name)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {quickAddAvailableSizes.length > 0 && (
-                    <div className="quick-config-group">
-                      <label>{t('choose_size')}</label>
-                      <div className="quick-config-sizes">
-                        {getOrderedDisplaySizes(quickAddAvailableSizes).map((sizeOption) => (
-                          <button
-                            key={sizeOption}
-                            type="button"
-                            className={`quick-size-btn ${quickAddSize === sizeOption ? 'active' : ''}`}
-                            onClick={() => setQuickAddSize(sizeOption)}
-                          >
-                            {sizeOption}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="quick-config-group">
-                    <label htmlFor="quick-add-qty">{t('choose_quantity')}</label>
-                    <select
-                      id="quick-add-qty"
-                      value={quickAddQuantity}
-                      onChange={(e) => setQuickAddQuantity(Number(e.target.value) || 1)}
-                    >
-                      {Array.from({ length: 10 }, (_, index) => index + 1).map((qty) => (
-                        <option key={`quick-qty-${qty}`} value={qty}>{qty}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="quick-config-actions">
-                    <button type="button" className="quick-config-secondary" onClick={closeQuickAdd}>{t('continue_shopping')}</button>
-                    <button type="button" className="quick-config-primary" data-track="quick_add_to_cart" onClick={submitQuickAdd}>{t('add_selected_to_cart')}</button>
-                  </div>
-
-                  <div className="quick-config-trust">
-                    <div>
-                      <strong>Material & Fit</strong>
-                      <span>Premium Heavyweight Cotton · Relaxed Street Fit</span>
-                    </div>
-                    <div>
-                      <strong>Shipping & Returns</strong>
-                      <span>Tracked Delivery · Easy 14-Day Returns</span>
-                    </div>
-                  </div>
-                </>
-              )}
+              <div className="quick-config-trust">
+                <div>
+                  <strong>Material & Fit</strong>
+                  <span>Premium Heavyweight Cotton · Relaxed Street Fit</span>
+                </div>
+                <div>
+                  <strong>Shipping & Returns</strong>
+                  <span>Tracked Delivery · Easy 14-Day Returns</span>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -4709,7 +4736,20 @@ function MainApp() {
                   </div>
                 );
               })}
-              {cart.length === 0 && <p style={{color: '#666', textAlign: 'center', marginTop: '40px'}}>{t('cart_empty')}.</p>}
+              {cart.length === 0 && (
+                // P9-3: empty cart drawer state — added a centered "Return to Store"
+                // CTA so customers have a clear next step instead of just text.
+                <div style={{ textAlign: 'center', marginTop: '40px', color: '#666' }}>
+                  <p style={{ marginBottom: '20px' }}>{t('cart_empty')}.</p>
+                  <button
+                    className="checkout-btn"
+                    style={{ display: 'block', maxWidth: '220px', marginInline: 'auto' }}
+                    onClick={() => { closeCartDrawer(); navigate('/'); }}
+                  >
+                    {t('return_home')}
+                  </button>
+                </div>
+              )}
             </div>
 
             {cartRecommendations.length > 0 && (

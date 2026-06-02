@@ -579,11 +579,30 @@ html[dir="ltr"] .checkout-page input {
   background: #050505;
   position: relative;
   overflow: hidden;
+  /* P9-3: belt-and-suspenders centering. text-align centers inline text, the
+     flex column centers block-level children (h1, ul, cta-group) so nothing
+     can drift left due to width constraints. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .hero-content {
   position: relative;
   z-index: 1;
+  /* P9-3: container is also a centered flex column so every child element
+     stays in the visual center regardless of its own width / max-width. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+/* P9-3: any direct text/content block inside the hero is explicitly centered
+   in case a future class forgets margin-inline:auto. */
+.hero-content > * {
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .hero-eyebrow {
@@ -1027,7 +1046,10 @@ html[dir="ltr"] .checkout-page input {
 .product-image-wrapper {
   position: relative;
   width: 100%;
-  aspect-ratio: 3/4;
+  /* P9-3: standardize aspect ratio across every product card. 4/5 reads
+     more product-portrait than the previous 3/4 (too tall on desktop),
+     giving the grid a consistent rhythm regardless of source asset size. */
+  aspect-ratio: 4 / 5;
   border-radius: 8px;
   margin-bottom: 16px;
   overflow: hidden;
@@ -1702,13 +1724,89 @@ html[dir="ltr"] .checkout-page input {
 }
 
 .quick-config-modal {
-  width: min(560px, 100%);
+  /* P9-3: widened from 560px so the new 2-column body fits with breathing
+     room. Mobile still respects 96vw cap and stacks into a single column. */
+  width: min(820px, 96vw);
+  max-height: 92vh;
+  overflow-y: auto;
   border-radius: 18px;
   border: 1px solid var(--overlay-white-40);
   background: linear-gradient(160deg, var(--color-black-600) 0%, var(--color-black-100) 100%);
   box-shadow: 0 24px 56px var(--overlay-black-30);
-  padding: 26px;
+  padding: 28px;
   position: relative;
+}
+
+/* P9-3: new 2-column body. Image + title/price live in the left column;
+   color/size/qty + CTAs live in the right. On mobile both stack vertically. */
+.quick-config-body {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 768px) {
+  .quick-config-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 28px;
+    align-items: start;
+  }
+}
+
+.quick-config-media {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.quick-config-media .quick-config-product-image {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--color-black-200);
+}
+
+.quick-config-product-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0 0;
+}
+
+.quick-config-product-meta strong {
+  display: block;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+.quick-config-product-meta span {
+  color: var(--color-text-very-light);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.quick-config-details {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* In the new 2-column layout each .quick-config-group sits in the column
+   gap stack, so reset its inherited top margin. */
+.quick-config-details .quick-config-group {
+  margin-top: 0;
+}
+
+.quick-config-details .quick-config-actions {
+  /* Pin the CTAs to the bottom of the details column so they align with the
+     bottom of the image on desktop, giving a balanced visual frame. */
+  margin-top: auto;
+  margin-bottom: 0;
 }
 
 .quick-config-close {
