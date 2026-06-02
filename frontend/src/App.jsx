@@ -3,7 +3,14 @@ import { Helmet } from 'react-helmet-async'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom'
-import { initAnalytics, trackPageView, trackViewItem } from './utils/analytics.js'
+import {
+  initAnalytics,
+  trackPageView,
+  trackViewItem,
+  trackAddToCart,
+  trackInitiateCheckout,
+  trackPurchase,
+} from './utils/analytics.js'
 import './index.css'
 
 // Shared Components
@@ -2685,6 +2692,13 @@ function MainApp() {
     });
     setCartBadgePulse(true);
     setTimeout(() => setCartBadgePulse(false), 360);
+    // Fire AddToCart pixel event (Meta + TikTok + GA4) — no-ops if not configured.
+    trackAddToCart({
+      id: product.id,
+      title: product.title,
+      price: Number(product.price) || 0,
+      quantity: incrementBy,
+    }, currency);
     // Trigger toast notification
     showToast(locale === 'he' ? 'התווסף לסל! 🛒' : 'Added to Cart! 🛒');
   }
@@ -3269,6 +3283,42 @@ function MainApp() {
     }
   }, [location.pathname]);
 
+  // InitiateCheckout — fires once when the user lands on /checkout with items.
+  useEffect(() => {
+    if (location.pathname !== '/checkout') return;
+    if (!cart || cart.length === 0) return;
+    const totalItems = cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+    trackInitiateCheckout({
+      value: Number(Number(cartTotal || 0).toFixed(2)),
+      currency,
+      itemCount: totalItems,
+    });
+    // Intentionally fires per /checkout visit — Meta/TikTok dedupe by their own session windows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  // Purchase — fires when the user lands on /success. Pulls the order snapshot
+  // saved by the Meshulam/PayPal flow into sessionStorage so we report a real value.
+  useEffect(() => {
+    if (location.pathname !== '/success') return;
+    let snapshot = null;
+    try {
+      const raw = sessionStorage.getItem('drip_street_pending_order');
+      if (raw) snapshot = JSON.parse(raw);
+    } catch { /* sessionStorage unavailable */ }
+
+    trackPurchase({
+      orderId: snapshot && snapshot.orderId ? snapshot.orderId : `unknown-${Date.now()}`,
+      value: snapshot && Number(snapshot.amount) ? Number(snapshot.amount) : Number(Number(cartTotal || 0).toFixed(2)),
+      currency: (snapshot && snapshot.currency) || currency || 'ILS',
+    });
+
+    // Single-fire guard: clear the snapshot so a refresh of /success doesn't
+    // double-count the same purchase.
+    try { sessionStorage.removeItem('drip_street_pending_order'); } catch { /* noop */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
   // ============ ROUTE: SUCCESS ============
   if (currentPath === '/success') {
     return (
@@ -3831,6 +3881,18 @@ function MainApp() {
                         setIsPayPalProcessing(true);
                         try {
                           await capturePayPalOrder(data.orderID);
+                          // Capture the order snapshot BEFORE clearing the cart so the
+                          // Purchase pixel event on /success can report real value.
+                          try {
+                            sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
+                              orderId: data.orderID,
+                              amount: Number(Number(cartTotal || 0).toFixed(2)),
+                              currency,
+                              method: 'paypal',
+                              createdAt: new Date().toISOString(),
+                              itemCount: cart.length,
+                            }));
+                          } catch { /* sessionStorage unavailable in private mode */ }
                           localStorage.removeItem('drip_street_cart');
                           setCart([]);
                           showToast(locale === 'he' ? 'התשלום בוצע בהצלחה! 🎉' : 'Payment Successful! 🎉');
