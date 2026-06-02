@@ -2950,8 +2950,12 @@ button,
     gap: 12px;
   }
 
-  .footer {
-    padding-bottom: 110px;
+  /* P9-2 P1-5: only reserve space for the mobile-tabbar when it's actually
+     rendered. Previously this 110px reserve applied on every mobile page even
+     when no tabbar was mounted (MobileNav is currently only used on select
+     routes), leaving a visible empty strip under the footer. */
+  body:has(.mobile-tabbar) .footer {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom) + 20px);
   }
 
   .checkout-page h1 {

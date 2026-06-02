@@ -1868,6 +1868,9 @@ function MainApp() {
     }
   })
   const [isCartOpen, setIsCartOpen] = useState(false)
+  // P9-2 P1-3: ref attached to the active cart panel for focus management.
+  const cartPanelRef = useRef(null)
+  const cartLastFocusRef = useRef(null)
   const [paymentMethod, setPaymentMethod] = useState('')
   const [paypalClientId, setPaypalClientId] = useState(import.meta.env.VITE_PAYPAL_CLIENT_ID || '')
   const [checkoutConfig, setCheckoutConfig] = useState({
@@ -3079,7 +3082,15 @@ function MainApp() {
   // eslint-disable-next-line no-unused-vars
   const cartDrawer = (
     <div className={`cart-overlay ${isCartOpen ? 'open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) closeCartDrawer(); }}>
-      <div className="cart-panel" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="cart-panel"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('cart')}
+        tabIndex={-1}
+        ref={cartPanelRef}
+      >
         <div className="cart-header">
           <h2>{t('cart')} ({totalItems})</h2>
           <button className="close-cart" aria-label={t('close_cart_aria')} onClick={closeCartDrawer}>×</button>
@@ -3157,7 +3168,12 @@ function MainApp() {
                       className="cart-recommendation-card"
                       onClick={() => openQuickAdd(product)}
                     >
-                      <img loading="lazy" decoding="async" src={product.imageUrl} alt={product.title} onError={(e) => setImageFallback(e)} />
+                      {/* P9-2 P1-1: Branded skeleton on CDN failure. */}
+                      <GuardedProductImage
+                        src={product.imageUrl}
+                        alt={product.title}
+                        loading="lazy"
+                      />
                       <strong>{getProductTitle(product.title, locale)}</strong>
                       <span>{curSym}{displayPrice.toFixed(2)}</span>
                     </button>
@@ -3282,6 +3298,70 @@ function MainApp() {
       setIsCartOpen(true);
     }
   }, [location.pathname]);
+
+  // P9-2 P1-3: Cart drawer accessibility — Escape to close, Tab traps focus,
+  // body scroll locked, focus returns to the trigger on close.
+  useEffect(() => {
+    if (!isCartOpen) return;
+
+    // Remember where focus came from so we can restore it on close.
+    cartLastFocusRef.current = document.activeElement;
+
+    const getFocusable = () => {
+      const root = cartPanelRef.current;
+      if (!root) return [];
+      return Array.from(
+        root.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.hasAttribute('aria-hidden'));
+    };
+
+    const handleKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeCartDrawer();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKey);
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // Focus the first focusable element inside the drawer on next tick so the
+    // panel has mounted; if nothing is focusable, focus the panel itself.
+    const focusTimer = setTimeout(() => {
+      const focusable = getFocusable();
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      } else if (cartPanelRef.current) {
+        cartPanelRef.current.focus();
+      }
+    }, 50);
+
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = previousBodyOverflow;
+      clearTimeout(focusTimer);
+      // Restore focus to whatever element opened the drawer.
+      if (cartLastFocusRef.current && typeof cartLastFocusRef.current.focus === 'function') {
+        try { cartLastFocusRef.current.focus(); } catch { /* element may have unmounted */ }
+      }
+    };
+  }, [isCartOpen]);
 
   // InitiateCheckout — fires once when the user lands on /checkout with items.
   useEffect(() => {
@@ -4183,7 +4263,13 @@ function MainApp() {
                 return (
                   <article key={`hardware-${product.id}`} className="hardware-card">
                     <button type="button" className="hardware-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
-                      <img src={product.imageUrl} alt={getProductTitle(product.title, locale)} loading="lazy" onError={(e) => setImageFallback(e)} />
+                      {/* P9-2 P1-1: GuardedProductImage shows a branded skeleton
+                          if the CJ CDN URL 404s, instead of a broken-image glyph. */}
+                      <GuardedProductImage
+                        src={product.imageUrl}
+                        alt={getProductTitle(product.title, locale)}
+                        loading="lazy"
+                      />
                     </button>
                     <div className="hardware-meta">
                       <h3>{getProductTitle(product.title, locale)}</h3>
@@ -4212,7 +4298,12 @@ function MainApp() {
               return (
                 <article key={`bestseller-${product.id}`} className="best-seller-card">
                   <button type="button" className="best-seller-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
-                    <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
+                    {/* P9-2 P1-1: GuardedProductImage shows branded skeleton on CDN failure. */}
+                    <GuardedProductImage
+                      src={product.imageUrl}
+                      alt={getProductTitle(product.title, locale)}
+                      loading="lazy"
+                    />
                   </button>
                   <div className="best-seller-content">
                     <h3>{getProductTitle(product.title, locale)}</h3>
@@ -4353,7 +4444,12 @@ function MainApp() {
                   onClick={() => navigate(`/product/${product.id}`)}
                 >
                   <div className="trending-card-img-wrap">
-                    <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
+                    {/* P9-2 P1-1: Branded skeleton on CDN failure. */}
+                    <GuardedProductImage
+                      src={product.imageUrl}
+                      alt={getProductTitle(product.title, locale)}
+                      loading="lazy"
+                    />
                   </div>
                   <div className="trending-card-info">
                     <span className="trending-card-title">{getProductTitle(product.title, locale)}</span>
