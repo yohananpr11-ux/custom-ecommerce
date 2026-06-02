@@ -19,7 +19,7 @@ const feedsRouter = require('./routes/feeds');
 const cartsRouter = require('./routes/carts');
 const marketingWebhooksRouter = require('./routes/marketing-webhooks');
 const adminReportsRouter = require('./routes/admin-reports');
-const paymentRouter = require('./routes/paymentRoutes');
+const paymentRoutesFactory = require('./routes/paymentRoutes');
 const { seedHardwareCatalog } = require('./seed_cj_product.cjs');
 // Phase 3: Multi-Vendor fulfillment router
 const fulfillment = require('./services/fulfillment');
@@ -1128,7 +1128,9 @@ app.use('/api/feed', feedsRouter);
 app.use('/api/carts', cartsRouter);
 app.use('/api/marketing', marketingWebhooksRouter);
 app.use('/api/admin', adminReportsRouter);
-app.use('/api/payment', paymentRouter);
+// Meshulam (Grow) payment routes — webhook reuses the shared fulfillment trigger
+// defined below so successful payments flow straight into CJ Dropshipping.
+app.use('/api/payment', paymentRoutesFactory(processPaidOrderFulfillment));
 
 
 // Pulse Check Route

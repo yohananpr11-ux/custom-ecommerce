@@ -240,6 +240,11 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('orders', 'region', 'TEXT'),
     addColumnIfMissing('orders', 'postalCode', 'TEXT'),
     addColumnIfMissing('orders', 'country', 'TEXT'),
+    // Backfill columns that CREATE TABLE declares but legacy DBs were created without
+    // (locale/currency added for i18n checkout; shippingCost added for transparency).
+    addColumnIfMissing('orders', 'shippingCost', 'REAL DEFAULT 0'),
+    addColumnIfMissing('orders', 'locale', "TEXT DEFAULT 'he'"),
+    addColumnIfMissing('orders', 'currency', "TEXT DEFAULT 'ILS'"),
     // design_jobs
     addColumnIfMissing('design_jobs', 'lastError', 'TEXT'),
     // product_variants

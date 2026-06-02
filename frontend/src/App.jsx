@@ -2908,37 +2908,59 @@ function MainApp() {
     try {
       const fullName = `${(checkoutForm.firstName || '').trim()} ${(checkoutForm.lastName || '').trim()}`.trim()
         || (checkoutForm.customerName || '').trim();
-      const orderId = generateOrderId();
 
-      // Persist a minimal pending-order snapshot so the success page can
-      // reconcile after Meshulam redirects the user back to the storefront.
-      try {
-        sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
-          orderId,
-          amount: Number(Number(cartTotal || 0).toFixed(2)),
-          method: paymentMethod,
-          createdAt: new Date().toISOString(),
-          itemCount: cart.length,
-        }));
-      } catch { /* sessionStorage may be unavailable in private mode */ }
+      // Build the cart-items payload that the backend will persist into
+      // order_items so the Meshulam webhook can dispatch them to CJ on success.
+      const itemsPayload = (cart || []).map((item) => ({
+        productId: item.id,
+        variantId: item.variantId || null,
+        quantity: Number(item.quantity) || 1,
+        price: Number(item.price) || 0,
+        selectedColor: item.selectedColor || null,
+        selectedSize: item.selectedSize || null,
+      }));
 
       const response = await fetch(`${API_BASE}/api/payment/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: Number(Number(cartTotal || 0).toFixed(2)),
-          orderId,
-          paymentMethod, // meshulam_card or meshulam_bit — hint for the controller
+          paymentMethod, // meshulam_card or meshulam_bit
           customer: {
             fullName,
             email: (checkoutForm.customerEmail || '').trim(),
             phone: (checkoutForm.phone || '').trim(),
           },
+          shipping: {
+            firstName: (checkoutForm.firstName || '').trim(),
+            lastName: (checkoutForm.lastName || '').trim(),
+            addressLine1: (checkoutForm.addressLine1 || '').trim(),
+            addressLine2: (checkoutForm.addressLine2 || '').trim(),
+            city: (checkoutForm.city || '').trim(),
+            region: (checkoutForm.region || '').trim(),
+            postalCode: (checkoutForm.postalCode || '').trim(),
+            country: (checkoutForm.country || 'IL').toUpperCase(),
+          },
+          items: itemsPayload,
+          currency,
+          locale,
         }),
       });
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.ok === true && data.redirectUrl) {
+        // Persist a pending-order snapshot keyed on the REAL internal orderId
+        // the backend returned — used by the /success page for reconciliation.
+        try {
+          sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
+            orderId: data.orderId,
+            amount: Number(Number(cartTotal || 0).toFixed(2)),
+            method: paymentMethod,
+            createdAt: new Date().toISOString(),
+            itemCount: cart.length,
+          }));
+        } catch { /* sessionStorage may be unavailable in private mode */ }
+
         showToast(t('payment_meshulam_processing'));
         // Do NOT clear the cart here — only after the success webhook lands.
         window.location.href = data.redirectUrl;
