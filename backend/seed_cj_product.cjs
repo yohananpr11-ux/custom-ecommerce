@@ -13,35 +13,35 @@ const HARDWARE_ITEMS = [
     spu: 'CJLX1574470',
     title: 'HEAVYWEIGHT CUBAN CHAIN',
     price: 149,
-    fallbackImage: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
   },
   {
     id: 18,
-    spu: 'CJLX2653180',
+    spu: 'CJLX2853160',
     title: 'TITANIUM BRAIDED PENDANT',
     price: 139,
-    fallbackImage: 'https://cf.cjdropshipping.com/quick/product/08ae3ced-40ba-4a40-a822-aac14cf926d2.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/quick/product/88af505d-2f06-4dc1-a84b-6cc0530a5c89.jpg',
   },
   {
     id: 19,
     spu: 'CJZBLXSL06697',
     title: 'COLD WIND CUBAN BRACELET',
     price: 119,
-    fallbackImage: 'https://cf.cjdropshipping.com/2054/4883093832835.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/2054/4883093832835.jpg',
   },
   {
     id: 20,
     spu: 'CJLX1022452',
     title: 'ESSENTIAL STEEL STUDS',
     price: 79,
-    fallbackImage: 'https://cf.cjdropshipping.com/1614328451320.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/1614328451320.jpg',
   },
   {
     id: 21,
     spu: 'CJLX1552176',
     title: 'ONYX ZIRCON STUDS',
     price: 89,
-    fallbackImage: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
   },
 ];
 
@@ -95,7 +95,14 @@ async function getCJAccessToken() {
   return token;
 }
 
-async function resolvePrimaryImage(token, spu, fallbackImage) {
+async function resolvePrimaryImage(token, spu, configuredImage) {
+  // Canonical override: if an explicit imageUrl is configured for this SPU,
+  // pin it directly. Avoids drift caused by CJ catalog reshuffles and keeps
+  // production aligned with the verified CDN URLs the brand vetted.
+  if (configuredImage) {
+    return configuredImage;
+  }
+
   await sleep(1200); // Respect CJ QPS limits.
 
   try {
@@ -117,8 +124,7 @@ async function resolvePrimaryImage(token, spu, fallbackImage) {
     console.warn(`CJ image query failed for ${spu}: ${detail}`);
   }
 
-  console.warn(`Falling back to static CJ CDN image for ${spu}`);
-  return fallbackImage;
+  throw new Error(`No imageUrl configured and CJ lookup yielded nothing for SPU ${spu}`);
 }
 
 (async () => {
@@ -126,7 +132,7 @@ async function resolvePrimaryImage(token, spu, fallbackImage) {
     const token = await getCJAccessToken();
 
     for (const item of HARDWARE_ITEMS) {
-      const imageUrl = await resolvePrimaryImage(token, item.spu, item.fallbackImage);
+      const imageUrl = await resolvePrimaryImage(token, item.spu, item.imageUrl);
       const description = `${item.title} - curated hardware drop sourced from CJ catalog SPU ${item.spu}.`;
 
       // Keep Product 16 untouched. For hardware IDs 17-21, overwrite atomically.
