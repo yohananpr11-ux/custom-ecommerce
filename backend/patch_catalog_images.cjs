@@ -23,6 +23,10 @@ const PATCHES = [
     imageUrl: 'https://cf.cjdropshipping.com/quick/product/88af505d-2f06-4dc1-a84b-6cc0530a5c89.jpg',
     spu: 'CJLX2853160',
   },
+  {
+    id: 21,
+    imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
+  },
 ];
 
 const db = new sqlite3.Database(DB_PATH, (err) => {

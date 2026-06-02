@@ -19,6 +19,8 @@ const feedsRouter = require('./routes/feeds');
 const cartsRouter = require('./routes/carts');
 const marketingWebhooksRouter = require('./routes/marketing-webhooks');
 const adminReportsRouter = require('./routes/admin-reports');
+const paymentRouter = require('./routes/paymentRoutes');
+const { seedHardwareCatalog } = require('./seed_cj_product.cjs');
 // Phase 3: Multi-Vendor fulfillment router
 const fulfillment = require('./services/fulfillment');
 
@@ -1126,6 +1128,7 @@ app.use('/api/feed', feedsRouter);
 app.use('/api/carts', cartsRouter);
 app.use('/api/marketing', marketingWebhooksRouter);
 app.use('/api/admin', adminReportsRouter);
+app.use('/api/payment', paymentRouter);
 
 
 // Pulse Check Route
@@ -3402,6 +3405,15 @@ app.listen(PORT, () => {
     console.log('🔄 Auto-syncing Printify products on startup...');
     await performSync();
     await seedDropshipProducts();
+    // Hardware catalog (CJ IDs 17-21) — must run every startup because Render's
+    // SQLite is ephemeral and these rows aren't backed by the Printify sync.
+    try {
+      console.log('🔄 Seeding CJ hardware catalog (IDs 17-21)...');
+      await seedHardwareCatalog({ verbose: false });
+      console.log('✅ CJ hardware catalog seeded.');
+    } catch (err) {
+      console.error('⚠️ CJ hardware seed failed:', err.message);
+    }
   }, 3000);
   
   // ---- SCHEDULED SYNC: Every hour ----

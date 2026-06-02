@@ -41,7 +41,7 @@ const HARDWARE_ITEMS = [
     spu: 'CJLX1552176',
     title: 'ONYX ZIRCON STUDS',
     price: 89,
-    imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
   },
 ];
 
@@ -127,33 +127,60 @@ async function resolvePrimaryImage(token, spu, configuredImage) {
   throw new Error(`No imageUrl configured and CJ lookup yielded nothing for SPU ${spu}`);
 }
 
-(async () => {
-  try {
-    const token = await getCJAccessToken();
+/**
+ * Idempotently seed the CJ hardware catalog (IDs 17-21) into the SQLite DB.
+ *
+ * Safe to call repeatedly. On Render the DB is ephemeral, so this MUST run on
+ * every startup (called from backend/index.js after seedDropshipProducts).
+ *
+ * If `imageUrl` is configured per item, it's pinned directly (no network call).
+ * If missing, we lazily mint a CJ access token and resolve from the live API.
+ */
+async function seedHardwareCatalog({ verbose = false } = {}) {
+  const needsToken = HARDWARE_ITEMS.some((item) => !item.imageUrl);
+  let token = null;
+  if (needsToken) {
+    try {
+      token = await getCJAccessToken();
+    } catch (err) {
+      console.warn(`[hardware-seed] CJ token unavailable (${err.message}); items without configured imageUrl will be skipped.`);
+    }
+  }
 
-    for (const item of HARDWARE_ITEMS) {
-      const imageUrl = await resolvePrimaryImage(token, item.spu, item.imageUrl);
-      const description = `${item.title} - curated hardware drop sourced from CJ catalog SPU ${item.spu}.`;
-
-      // Keep Product 16 untouched. For hardware IDs 17-21, overwrite atomically.
-      await dbRun('DELETE FROM product_variants WHERE productId = ?', [item.id]);
-      await dbRun('DELETE FROM products WHERE id = ?', [item.id]);
-
-      await dbRun(
-        `INSERT INTO products (id, title, description, price, priceUSD, imageUrl, images, type, printifyId, supplier_id, stock)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-        [item.id, item.title, description, item.price, null, imageUrl, 'dropship', item.spu, 'dropship', 999]
-      );
-
-      await dbRun(
-        `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
-        [item.id, item.spu, 'Default', 'One Size', item.price, 0, 999, imageUrl]
-      );
-
-      console.log(`Seeded hardware product ID ${item.id} (${item.spu})`);
+  for (const item of HARDWARE_ITEMS) {
+    let imageUrl;
+    try {
+      imageUrl = await resolvePrimaryImage(token, item.spu, item.imageUrl);
+    } catch (err) {
+      console.warn(`[hardware-seed] Skipping ID ${item.id} (${item.spu}): ${err.message}`);
+      continue;
     }
 
+    const description = `${item.title} - curated hardware drop sourced from CJ catalog SPU ${item.spu}.`;
+
+    // For hardware IDs 17-21, overwrite atomically. Product 16 lives in
+    // backend/index.js seedDropshipProducts() and is intentionally not touched here.
+    await dbRun('DELETE FROM product_variants WHERE productId = ?', [item.id]);
+    await dbRun('DELETE FROM products WHERE id = ?', [item.id]);
+
+    await dbRun(
+      `INSERT INTO products (id, title, description, price, priceUSD, imageUrl, images, type, printifyId, supplier_id, stock)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      [item.id, item.title, description, item.price, null, imageUrl, 'dropship', item.spu, 'dropship', 999]
+    );
+
+    await dbRun(
+      `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
+      [item.id, item.spu, 'Default', 'One Size', item.price, 0, 999, imageUrl]
+    );
+
+    if (verbose) {
+      console.log(`[hardware-seed] Seeded ID ${item.id} (${item.spu})`);
+    }
+  }
+
+  if (verbose) {
     const rows = await dbAll('SELECT id, title, price, imageUrl, printifyId FROM products WHERE id BETWEEN 17 AND 21 ORDER BY id');
     console.log('\n=== Seeded Hardware Products ===');
     console.table(rows);
@@ -161,10 +188,19 @@ async function resolvePrimaryImage(token, spu, configuredImage) {
     const variants = await dbAll('SELECT productId, printifyVariantId, price, imageUrl FROM product_variants WHERE productId BETWEEN 17 AND 21 ORDER BY productId');
     console.log('\n=== Seeded Hardware Variants ===');
     console.table(variants);
-
-    process.exit(0);
-  } catch (error) {
-    console.error('Hardware seed failed:', error.message);
-    process.exit(1);
   }
-})();
+
+  return HARDWARE_ITEMS.length;
+}
+
+module.exports = { seedHardwareCatalog, HARDWARE_ITEMS };
+
+// CLI entrypoint — preserved so `node backend/seed_cj_product.cjs` still works.
+if (require.main === module) {
+  seedHardwareCatalog({ verbose: true })
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error('Hardware seed failed:', error.message);
+      process.exit(1);
+    });
+}
