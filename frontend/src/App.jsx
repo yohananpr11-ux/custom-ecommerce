@@ -746,6 +746,18 @@ const getVariantIdsForColor = (variants, colorName) => {
     .filter(Boolean);
 };
 
+/**
+ * Resolve images tagged with a matching variant id.
+ *
+ * Accepts multiple field naming conventions because the catalog mixes:
+ *   - Printify-style entries: { src, variantId }
+ *   - CJ-style entries:       { src, printifyVariantId } (SPU stored in printifyVariantId)
+ *   - Snake-case entries:     { src, variant_id } (from raw API JSON)
+ *
+ * Without this flexibility, products whose images use any field other than
+ * `variantId` silently return an empty array and the variant click falls
+ * through to product.imageUrl, producing the "wrong image" symptom.
+ */
 const getMappedImagesForVariantIds = (productImages, variantIds) => {
   if (!Array.isArray(productImages) || productImages.length === 0) return [];
   if (!Array.isArray(variantIds) || variantIds.length === 0) return [];
@@ -754,8 +766,17 @@ const getMappedImagesForVariantIds = (productImages, variantIds) => {
   const ordered = [];
 
   productImages.forEach((entry) => {
-    const entryVariantId = String(entry?.variantId || '');
-    if (!entryVariantId || !variantIdSet.has(entryVariantId)) return;
+    if (!entry || typeof entry !== 'object') return;
+    // Check all known field names a variant id could live under.
+    const candidates = [
+      entry.variantId,
+      entry.printifyVariantId,
+      entry.variant_id,
+      entry.printify_variant_id,
+      entry.sku,
+    ];
+    const matched = candidates.some((c) => c != null && variantIdSet.has(String(c)));
+    if (!matched) return;
     const src = extractImageUrl(entry);
     if (src) ordered.push(src);
   });
@@ -1333,14 +1354,26 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       }
     }
 
-    if (selectedVariant?.imageUrl || selectedVariant?.image_url) {
-      const variantImage = extractImageUrl(selectedVariant.imageUrl || selectedVariant.image_url);
-      if (variantImage) return [variantImage];
-    }
+    // P9-1 P1-2: When a specific variant has its own imageUrl, that image
+    // should appear FIRST in the carousel. Previously the function returned
+    // only the variant image, hiding the rest of the product gallery; now we
+    // prepend the variant image and append any non-duplicate product photos.
+    const variantImage = (selectedVariant?.imageUrl || selectedVariant?.image_url)
+      ? extractImageUrl(selectedVariant.imageUrl || selectedVariant.image_url)
+      : null;
 
     if (productImages.length > 0) {
       const parsedImages = productImages.map((entry) => extractImageUrl(entry)).filter(Boolean);
-      if (parsedImages.length > 0) return parsedImages;
+      if (parsedImages.length > 0) {
+        if (variantImage && !parsedImages.includes(variantImage)) {
+          return [variantImage, ...parsedImages];
+        }
+        return parsedImages;
+      }
+    }
+
+    if (variantImage) {
+      return [variantImage];
     }
 
     const fallbackImage = pickFirstImageUrl(
@@ -3582,7 +3615,7 @@ function MainApp() {
           <div style={{ marginTop: '24px' }}><BackButton label="Back to Cart" fallback="/cart" /></div>
         <h1 style={{ marginTop: '16px' }}>{t('checkout_secure')}</h1>
         <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
-          <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1', minWidth: '300px' }}>
+          <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1 1 320px', minWidth: 0 }}>
             <h3>{t('shipping_details')}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <input
@@ -3735,6 +3768,9 @@ function MainApp() {
             )}
             
             <h3 style={{ marginTop: '24px' }}>{t('payment_method')}</h3>
+            {/* P9-1 P1-4: direction: rtl in Hebrew flips the flex visual order so the
+                amount appears on the right and the label on the left, matching how
+                Israeli shoppers read price summaries. No JS swap required. */}
             <div style={{
               marginBottom: '12px',
               padding: '14px 16px',
@@ -3745,6 +3781,7 @@ function MainApp() {
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: '12px',
+              direction: locale === 'he' ? 'rtl' : 'ltr',
             }}>
               <span style={{
                 fontSize: '11px',
@@ -3772,7 +3809,7 @@ function MainApp() {
                     checked={paymentMethod === 'meshulam_card'}
                     onChange={() => setPaymentMethod('meshulam_card')}
                   />
-                  <span style={{ flex: 1 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, letterSpacing: '0.02em' }}>{t('payment_meshulam_card')}</div>
                     <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{t('payment_meshulam_card_sub')}</div>
                     <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
@@ -3796,7 +3833,7 @@ function MainApp() {
                     checked={paymentMethod === 'meshulam_bit'}
                     onChange={() => setPaymentMethod('meshulam_bit')}
                   />
-                  <span style={{ flex: 1 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span aria-hidden="true" style={{
                         display: 'inline-flex',
@@ -3940,7 +3977,7 @@ function MainApp() {
             )}
           </form>
           
-          <div style={{ flex: '1', minWidth: '300px', backgroundColor: '#111', padding: '24px', borderRadius: '12px', height: 'fit-content' }}>
+          <div style={{ width: '100%', maxWidth: '320px', flex: '1 1 280px', minWidth: 0, backgroundColor: '#111', padding: '20px', borderRadius: '12px', height: 'fit-content' }}>
             <h3>{t('order_summary')}</h3>
             <CartUpsellRail
               items={jewelryUpsellCandidates}
@@ -4183,7 +4220,13 @@ function MainApp() {
                 return (
                   <article key={`hardware-${product.id}`} className="hardware-card">
                     <button type="button" className="hardware-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
-                      <img src={product.imageUrl} alt={getProductTitle(product.title, locale)} loading="lazy" onError={(e) => setImageFallback(e)} />
+                      {/* P9-1 P1-1: GuardedProductImage swaps to a branded skeleton if
+                          the CJ CDN URL 404s, instead of showing a broken-image glyph. */}
+                      <GuardedProductImage
+                        src={product.imageUrl}
+                        alt={getProductTitle(product.title, locale)}
+                        loading="lazy"
+                      />
                     </button>
                     <div className="hardware-meta">
                       <h3>{getProductTitle(product.title, locale)}</h3>
