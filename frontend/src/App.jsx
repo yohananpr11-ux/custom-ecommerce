@@ -143,6 +143,11 @@ const translations = {
     payment_card_bit: "כרטיס אשראי / ביט",
     payment_stripe: "כרטיס בינלאומי (Stripe)",
     payment_paypal: "PayPal",
+    payment_meshulam_card: "כרטיס אשראי ישראלי",
+    payment_meshulam_card_sub: "ויזה · מאסטרקארד · ישראכרט · Apple Pay",
+    payment_meshulam_bit: "תשלום ב-Bit",
+    payment_meshulam_bit_sub: "סריקת QR מהאפליקציה",
+    payment_meshulam_processing: "מעביר אותך לעמוד תשלום מאובטח...",
     payment_unavailable: "אמצעי התשלום שבחרת לא זמין כרגע. נסה PayPal.",
     order_summary: "סיכום הזמנה",
     subtotal: "סכום ביניים",
@@ -278,6 +283,11 @@ const translations = {
     payment_card_bit: "Card Payment",
     payment_stripe: "Stripe ($)",
     payment_paypal: "PayPal",
+    payment_meshulam_card: "Credit Card (Israel)",
+    payment_meshulam_card_sub: "Visa · Mastercard · Isracard · Apple Pay",
+    payment_meshulam_bit: "Pay with Bit",
+    payment_meshulam_bit_sub: "Scan QR from the Bit app",
+    payment_meshulam_processing: "Redirecting to secure payment page...",
     payment_unavailable: "Selected payment method is unavailable right now. Please use PayPal.",
     order_summary: "Order Summary",
     subtotal: "Subtotal",
@@ -1857,8 +1867,10 @@ function MainApp() {
     paypalEnabled: true,
     stripeEnabled: false,
     payplusEnabled: false,
+    meshulamEnabled: true,
   })
   const [isPayPalProcessing, setIsPayPalProcessing] = useState(false)
+  const [isMeshulamProcessing, setIsMeshulamProcessing] = useState(false)
   const [checkoutForm, setCheckoutForm] = useState({
     customerName: '',
     customerEmail: '',
@@ -2330,6 +2342,9 @@ function MainApp() {
   const isPayPalAvailable = Boolean(checkoutConfig.paypalEnabled && paypalClientId);
   const isStripeAvailable = Boolean(checkoutConfig.stripeEnabled);
   const isPayPlusAvailable = Boolean(checkoutConfig.payplusEnabled);
+  // Meshulam (Grow) — Israeli payment processor. Always offered in the UI;
+  // the backend returns a clear "not configured" error if env vars are missing.
+  const isMeshulamAvailable = Boolean(checkoutConfig.meshulamEnabled !== false);
   const shippingValidationMessage = (() => {
     const f = checkoutForm;
     const namesProvided = (f.firstName || '').trim() || (f.lastName || '').trim();
@@ -2350,19 +2365,25 @@ function MainApp() {
     if (!isValidEnglishShippingValue(f.address, { requireLetter: true })) return t('shipping_address_english_only');
     return '';
   })();
-  const isSelectedPaymentAvailable = paymentMethod === 'paypal'
-    ? isPayPalAvailable
-    : (paymentMethod === 'stripe' ? isStripeAvailable : isPayPlusAvailable);
+  const isSelectedPaymentAvailable = (() => {
+    if (paymentMethod === 'paypal') return isPayPalAvailable;
+    if (paymentMethod === 'stripe') return isStripeAvailable;
+    if (paymentMethod === 'meshulam_card' || paymentMethod === 'meshulam_bit') return isMeshulamAvailable;
+    return isPayPlusAvailable;
+  })();
 
   useEffect(() => {
     if (paymentMethod) return;
-    if (isStripeAvailable) setPaymentMethod('stripe');
+    // Meshulam (local) is the preferred default for the Israeli storefront.
+    if (isMeshulamAvailable) setPaymentMethod('meshulam_card');
+    else if (isStripeAvailable) setPaymentMethod('stripe');
     else if (isPayPlusAvailable) setPaymentMethod('payplus');
     else if (isPayPalAvailable) setPaymentMethod('paypal');
-  }, [isStripeAvailable, isPayPlusAvailable, isPayPalAvailable, paymentMethod]);
+  }, [isMeshulamAvailable, isStripeAvailable, isPayPlusAvailable, isPayPalAvailable, paymentMethod]);
 
   useEffect(() => {
     const availableMethods = [];
+    if (isMeshulamAvailable) availableMethods.push('meshulam_card', 'meshulam_bit');
     if (isPayPalAvailable) availableMethods.push('paypal');
     if (isPayPlusAvailable) availableMethods.push('payplus');
     if (isStripeAvailable) availableMethods.push('stripe');
@@ -2370,7 +2391,7 @@ function MainApp() {
     if (availableMethods.length > 0 && !availableMethods.includes(paymentMethod)) {
       setPaymentMethod(availableMethods[0]);
     }
-  }, [isPayPalAvailable, isPayPlusAvailable, isStripeAvailable, paymentMethod]);
+  }, [isMeshulamAvailable, isPayPalAvailable, isPayPlusAvailable, isStripeAvailable, paymentMethod]);
 
   const closeCartDrawer = () => {
     setIsCartOpen(false);
@@ -2853,6 +2874,87 @@ function MainApp() {
     return data;
   };
 
+  // Generate a short, URL-safe order ID. crypto.randomUUID is available in all
+  // modern browsers; we keep a tiny fallback for old engines just in case.
+  const generateOrderId = () => {
+    try {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return `DS-${crypto.randomUUID().split('-')[0].toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+      }
+    } catch { /* ignore */ }
+    return `DS-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+  };
+
+  const submitMeshulamPayment = async () => {
+    if (isMeshulamProcessing) return;
+    if (hasInvalidVariant) {
+      showToast(t('variant_error_toast'));
+      return;
+    }
+    if (!isCheckoutFormValid) {
+      showToast(shippingValidationMessage || t('shipping_details'));
+      return;
+    }
+    if (!isMeshulamAvailable) {
+      showToast(t('payment_unavailable'));
+      return;
+    }
+    if (!cart || cart.length === 0) {
+      showToast(t('cart_empty') || t('payment_unavailable'));
+      return;
+    }
+
+    setIsMeshulamProcessing(true);
+    try {
+      const fullName = `${(checkoutForm.firstName || '').trim()} ${(checkoutForm.lastName || '').trim()}`.trim()
+        || (checkoutForm.customerName || '').trim();
+      const orderId = generateOrderId();
+
+      // Persist a minimal pending-order snapshot so the success page can
+      // reconcile after Meshulam redirects the user back to the storefront.
+      try {
+        sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
+          orderId,
+          amount: Number(Number(cartTotal || 0).toFixed(2)),
+          method: paymentMethod,
+          createdAt: new Date().toISOString(),
+          itemCount: cart.length,
+        }));
+      } catch { /* sessionStorage may be unavailable in private mode */ }
+
+      const response = await fetch(`${API_BASE}/api/payment/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: Number(Number(cartTotal || 0).toFixed(2)),
+          orderId,
+          paymentMethod, // meshulam_card or meshulam_bit — hint for the controller
+          customer: {
+            fullName,
+            email: (checkoutForm.customerEmail || '').trim(),
+            phone: (checkoutForm.phone || '').trim(),
+          },
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data.ok === true && data.redirectUrl) {
+        showToast(t('payment_meshulam_processing'));
+        // Do NOT clear the cart here — only after the success webhook lands.
+        window.location.href = data.redirectUrl;
+        return;
+      }
+
+      const reason = data && (data.details || data.error);
+      showToast(reason || t('payment_unavailable'));
+    } catch (err) {
+      console.error('[meshulam] checkout failed:', err);
+      showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+    } finally {
+      setIsMeshulamProcessing(false);
+    }
+  };
+
   const submitCheckout = async (e) => {
     e.preventDefault();
 
@@ -2868,6 +2970,12 @@ function MainApp() {
 
     if (!isSelectedPaymentAvailable) {
       showToast(t('payment_unavailable'));
+      return;
+    }
+
+    // Meshulam: hosted-page redirect flow.
+    if (paymentMethod === 'meshulam_card' || paymentMethod === 'meshulam_bit') {
+      await submitMeshulamPayment();
       return;
     }
 
@@ -3555,7 +3663,88 @@ function MainApp() {
             )}
             
             <h3 style={{ marginTop: '24px' }}>{t('payment_method')}</h3>
+            <div style={{
+              marginBottom: '12px',
+              padding: '14px 16px',
+              border: '1px solid #fff',
+              borderRadius: '2px',
+              background: '#000',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+            }}>
+              <span style={{
+                fontSize: '11px',
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color: '#888',
+                fontWeight: 700,
+              }}>
+                {locale === 'he' ? 'סה״כ לתשלום' : 'Total to pay'}
+              </span>
+              <span style={{ fontSize: '22px', fontWeight: 900, letterSpacing: '0.02em', color: '#fff' }}>
+                {curSym}{displayVal(cartTotal).toFixed(2)}
+              </span>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+              {isMeshulamAvailable && (
+                <label
+                  data-track="payment_select_meshulam_card"
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '14px', border: `1px solid ${paymentMethod === 'meshulam_card' ? '#fff' : '#333'}`, borderRadius: '2px', background: paymentMethod === 'meshulam_card' ? '#0a0a0a' : 'transparent' }}
+                >
+                  <input
+                    type="radio"
+                    name="payment"
+                    value="meshulam_card"
+                    checked={paymentMethod === 'meshulam_card'}
+                    onChange={() => setPaymentMethod('meshulam_card')}
+                  />
+                  <span style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, letterSpacing: '0.02em' }}>{t('payment_meshulam_card')}</div>
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{t('payment_meshulam_card_sub')}</div>
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ padding: '2px 6px', background: '#1a1f71', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>VISA</span>
+                      <span style={{ padding: '2px 6px', background: '#eb001b', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>MC</span>
+                      <span style={{ padding: '2px 6px', background: '#0a3d62', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>ISRACARD</span>
+                      <span style={{ padding: '2px 6px', background: '#000', color: '#fff', borderRadius: '2px', fontSize: '10px', border: '1px solid #555', fontWeight: 700 }}>Pay</span>
+                    </div>
+                  </span>
+                </label>
+              )}
+              {isMeshulamAvailable && (
+                <label
+                  data-track="payment_select_meshulam_bit"
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '14px', border: `1px solid ${paymentMethod === 'meshulam_bit' ? '#fff' : '#333'}`, borderRadius: '2px', background: paymentMethod === 'meshulam_bit' ? '#0a0a0a' : 'transparent' }}
+                >
+                  <input
+                    type="radio"
+                    name="payment"
+                    value="meshulam_bit"
+                    checked={paymentMethod === 'meshulam_bit'}
+                    onChange={() => setPaymentMethod('meshulam_bit')}
+                  />
+                  <span style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span aria-hidden="true" style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '32px',
+                        height: '20px',
+                        background: '#0066ff',
+                        color: '#fff',
+                        fontSize: '11px',
+                        fontWeight: 900,
+                        letterSpacing: '0.04em',
+                        borderRadius: '2px',
+                      }}>BIT</span>
+                      <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>{t('payment_meshulam_bit')}</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{t('payment_meshulam_bit_sub')}</div>
+                  </span>
+                </label>
+              )}
               {isStripeAvailable && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'stripe' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
                   <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
@@ -3653,7 +3842,17 @@ function MainApp() {
                 <p style={{ color: '#ff6b6b', marginBottom: '16px' }}>PayPal is not configured yet. Please try again in a moment.</p>
               )
             ) : (
-              <button type="submit" className="checkout-btn" data-track="checkout_submit">{t('complete_order')} – {curSym}{displayVal(cartTotal).toFixed(2)}</button>
+              <button
+                type="submit"
+                className="checkout-btn"
+                data-track={paymentMethod === 'meshulam_bit' ? 'checkout_submit_bit' : (paymentMethod === 'meshulam_card' ? 'checkout_submit_meshulam_card' : 'checkout_submit')}
+                disabled={isMeshulamProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
+                style={{ opacity: isMeshulamProcessing ? 0.7 : 1 }}
+              >
+                {isMeshulamProcessing
+                  ? t('payment_meshulam_processing')
+                  : `${t('complete_order')} – ${curSym}${displayVal(cartTotal).toFixed(2)}`}
+              </button>
             )}
           </form>
           
