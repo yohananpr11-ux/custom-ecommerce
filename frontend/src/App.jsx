@@ -3792,6 +3792,10 @@ function MainApp() {
     return source.slice(0, 4);
   })();
 
+  const hardwareProducts = products
+    .filter((product) => [17, 18, 19, 20, 21].includes(Number(product.id)))
+    .sort((a, b) => Number(a.id) - Number(b.id));
+
   const homeContent = (
     <>
       {activeCoupon && (
@@ -3882,6 +3886,36 @@ function MainApp() {
           </motion.div>
         </div>
       </section>
+
+      {!isLoading && hardwareProducts.length > 0 && (
+        <section className="hardware-section">
+          <div className="container">
+            <div className="hardware-head">
+              <h2>HARDWARE</h2>
+              <p>Five precision jewelry statements built for brutal everyday rotation.</p>
+            </div>
+            <div className="hardware-grid">
+              {hardwareProducts.map((product) => {
+                const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+                return (
+                  <article key={`hardware-${product.id}`} className="hardware-card">
+                    <button type="button" className="hardware-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
+                      <img src={product.imageUrl} alt={getProductTitle(product.title, locale)} loading="lazy" onError={(e) => setImageFallback(e)} />
+                    </button>
+                    <div className="hardware-meta">
+                      <h3>{getProductTitle(product.title, locale)}</h3>
+                      <span>{curSym}{displayPrice.toFixed(2)}</span>
+                    </div>
+                    <button type="button" className="hardware-cta" onClick={() => navigate(`/product/${product.id}`)}>
+                      View Item
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       {!isLoading && bestSellerProducts.length > 0 && (
         <section className="best-sellers-section container">

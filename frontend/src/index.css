@@ -690,6 +690,143 @@ html[dir="ltr"] .checkout-page input {
   border-color: #f3f4f6;
 }
 
+.hardware-section {
+  background: #050505;
+  padding: 56px 0 40px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.hardware-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.hardware-head h2 {
+  margin: 0;
+  color: #f3f4f6;
+  font-size: clamp(36px, 6vw, 72px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.hardware-head p {
+  margin: 0;
+  max-width: 56ch;
+  color: #d1d5db;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hardware-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hardware-card {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 0;
+  background: #050505;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.hardware-card:hover {
+  border-color: #f3f4f6;
+  background: #000;
+}
+
+.hardware-image-btn {
+  padding: 0;
+  border: 0;
+  background: #000;
+  cursor: pointer;
+}
+
+.hardware-image-btn img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  display: block;
+  filter: grayscale(1) contrast(1.02);
+  transition: filter 0.2s ease;
+}
+
+.hardware-card:hover .hardware-image-btn img {
+  filter: grayscale(0) contrast(1.02);
+}
+
+.hardware-meta {
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.hardware-meta h3 {
+  margin: 0;
+  color: #f3f4f6;
+  font-size: 13px;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hardware-meta span {
+  color: #f3f4f6;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.hardware-cta {
+  margin: 0 12px 12px;
+  min-height: 40px;
+  border-radius: 0;
+  border: 1px solid #f3f4f6;
+  background: #f3f4f6;
+  color: #050505;
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.hardware-cta:hover {
+  background: #050505;
+  color: #f3f4f6;
+}
+
+@media (max-width: 1100px) {
+  .hardware-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .hardware-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .hardware-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .best-sellers-section {
   padding: 80px 0 24px;
   position: relative;
