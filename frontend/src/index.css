@@ -4621,12 +4621,7 @@ button,
 
 /* 2. Hero Ticker (Infinite Scrolling Banner) */
 .hero-ticker-container {
-  width: 100vw;
-  position: relative;
-  left: 50%;
-  right: 50%;
-  margin-left: -50vw;
-  margin-right: -50vw;
+  width: 100%;
   overflow: hidden;
   background: #000;
   border-top: 1px solid rgba(56, 189, 248, 0.25); /* Subtle icy blue accent border */
