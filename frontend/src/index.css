@@ -338,22 +338,26 @@ a,
 
 /* Header — Glassmorphic Sticky */
 .header {
-  padding: 24px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 16px max(20px, calc((100% - 1200px) / 2)) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
   display: flex;
   justify-content: space-between;
   align-items: center;
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.70);
-  backdrop-filter: blur(12px) saturate(180%);
-  -webkit-backdrop-filter: blur(12px) saturate(180%);
-  transition: background 0.3s ease, border-bottom-color 0.3s ease;
+  background: rgba(10, 10, 10, 0.60) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  transition: background 0.3s ease, border-bottom-color 0.3s ease, padding 0.3s ease;
+  max-width: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box;
 }
 .header.scrolled {
-  background: rgba(0, 0, 0, 0.88);
-  border-bottom-color: rgba(255, 255, 255, 0.12);
+  background: rgba(10, 10, 10, 0.80) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.15) !important;
+  padding: 12px max(20px, calc((100% - 1200px) / 2)) !important;
 }
 
 .header-leading {
@@ -476,14 +480,18 @@ a,
 }
 
 .search-bar input {
-  padding: 10px 16px;
-  border-radius: 20px;
-  border: 1px solid var(--border-color);
-  background: transparent;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text-color);
   width: 300px;
   outline: none;
   font-family: inherit;
+  font-size: 13px;
+  transition: all 0.2s ease;
 }
 
 html[dir="rtl"] .search-bar input,
@@ -505,27 +513,35 @@ html[dir="ltr"] .checkout-page input {
 }
 
 .search-bar input:focus {
-  border-color: var(--color-text-muted);
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .cart-btn {
   background: transparent;
   border: none;
   color: var(--text-color);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   font-weight: 600;
 }
 
 .cart-btn-pill {
   position: relative;
-  min-height: 48px;
-  padding: 8px 12px;
-  border: 1px solid var(--color-shade-70);
-  border-radius: 999px;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  transition: all 0.2s ease;
+}
+.cart-btn-pill:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .locale-toggle-btn {
@@ -4442,23 +4458,25 @@ button,
 
 /* Language Switcher Styling */
 .lang-toggle-btn {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
-  padding: 6px 12px;
-  border-radius: 20px;
+  padding: 0 12px;
+  border-radius: 4px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  height: 36px;
+  height: 38px;
+  box-sizing: border-box;
   transition: all 0.2s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 .lang-toggle-btn:hover {
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
 }
 @media (max-width: 768px) {
   .hide-on-mobile {
