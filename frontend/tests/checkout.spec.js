@@ -141,31 +141,25 @@ test.describe('Drip Street — Phase 10 checkout flow', () => {
       `[phase10] ✓ /api/payment/create payload OK (amount=${payload.amount}, items=${payload.items.length})`
     );
 
-    // ── 8. Assert response — accept either configured or unconfigured paths ──
+    // ── 8. Live Meshulam contract assertion ──────────────────────────────────
+    // Phase 12: backend now has real MESHULAM_PAGE_CODE / USER_ID / API_KEY,
+    // so the only acceptable response is 200 + ok:true + redirectUrl pointing
+    // at the Meshulam hosted-page domain. Any 500/502 indicates either the env
+    // vars got dropped, the keys expired, or the credentials are wrong — and
+    // we want CI to fail loudly in any of those cases.
     const status = paymentResponse.status();
     const body = await paymentResponse.json().catch(() => ({}));
-    console.log(`[phase10] /api/payment/create → HTTP ${status}, body=${JSON.stringify(body).slice(0, 200)}`);
+    console.log(`[phase12] /api/payment/create → HTTP ${status}, body=${JSON.stringify(body).slice(0, 240)}`);
 
-    if (status === 200 && body.ok === true) {
-      // Meshulam is fully configured: must hand us a redirect URL.
-      expect(body.redirectUrl, 'redirectUrl must be present on success').toMatch(/^https?:\/\//);
-      expect(typeof body.orderId).not.toBe('undefined');
-      console.log('[phase10] ✓ Meshulam configured — received redirectUrl');
-    } else {
-      // Backend Meshulam env vars are not set yet — frontend must catch this
-      // gracefully via a toast. We've already proven the payload contract; now
-      // assert the frontend didn't crash and surfaced a user-visible message.
-      expect([400, 500, 502]).toContain(status);
-      expect(body.ok).toBe(false);
-      expect(typeof body.error).toBe('string');
-      expect(['meshulam_not_configured', 'meshulam_failed', 'meshulam_rejected', 'order_persist_failed']).toContain(body.error);
-
-      // Toast container hooks into a window CustomEvent in the app; the simplest
-      // user-visible proof is that we're still on /checkout (not crashed) and
-      // the submit button is interactive again.
-      await expect(page).toHaveURL(/\/checkout/);
-      await expect(submitBtn).toBeEnabled();
-      console.log(`[phase10] ✓ Meshulam unconfigured — frontend handled "${body.error}" gracefully`);
-    }
+    expect(status, 'live Meshulam should respond 200 OK').toBe(200);
+    expect(body.ok, 'response.ok must be true').toBe(true);
+    expect(body.redirectUrl, 'redirectUrl must be a Meshulam hosted-page URL').toMatch(
+      /^https?:\/\/(?:sandbox\.)?meshulam\.co\.il\//
+    );
+    expect(typeof body.orderId, 'orderId must be returned for reconciliation').toBe('number');
+    expect(body.transactionId, 'transactionId is required for the webhook callback').toBeTruthy();
+    console.log(
+      `[phase12] ✓ Meshulam configured — received redirectUrl=${body.redirectUrl} orderId=${body.orderId}`
+    );
   });
 });

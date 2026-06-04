@@ -116,22 +116,13 @@ export default function Footer({ locale = 'en' }) {
         
         {/* Brand Column */}
         <div className="footer-brand-col" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Phase 11.5: badge styling matches the navbar — same border + shadow
-              recipe, scaled up for footer presence. Larger radius (16px) on
-              the larger 64px badge keeps the corner ratio consistent and
-              feels more premium at this size. */}
+          {/* Phase 12: with the rembg-stripped transparent logo, footer mirrors
+              the navbar's clean rendering — no badge, no shadow, just the
+              metallic D floating on the dark footer canvas at 72px tall. */}
           <img
             src="/logo-new.png"
             alt="Drip Street Logo"
-            style={{
-              height: '64px',
-              width: '64px',
-              objectFit: 'cover',
-              borderRadius: '16px',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
-              alignSelf: 'flex-start',
-            }}
+            style={{ height: '72px', width: 'auto', objectFit: 'contain', alignSelf: 'flex-start' }}
           />
           <p style={{ fontSize: '14px', lineHeight: '1.6', opacity: 0.6, margin: 0 }}>
             Minimalist streetwear designed for ultimate confidence, superior fit, and premium everyday aesthetics. Built with high-grade materials.

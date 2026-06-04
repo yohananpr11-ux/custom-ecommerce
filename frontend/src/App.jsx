@@ -4450,25 +4450,16 @@ function MainApp() {
             onClick={(e) => { e.preventDefault(); navigate('/'); }}
             aria-label="Drip Street Home"
           >
-            {/* Phase 11.5: badge styling. The PNG's background is a deep blue,
-                not pure black, so mix-blend-mode couldn't knock it out cleanly
-                — it revealed an ugly seam. Instead we lean into the bounding
-                box: round the corners to 12px (app-icon vibe), add a hair-line
-                white border at 8% alpha for definition, and a soft shadow so
-                the badge floats above the navbar instead of fighting it.
-                objectFit: 'cover' keeps the metallic D centered in the badge. */}
+            {/* Phase 12: rembg stripped the JPG background to true transparency,
+                so the badge styling from 11.5 (rounded box, border, shadow)
+                is no longer needed — the metallic D now floats directly on
+                the brutalist navbar. objectFit: contain keeps the asset's
+                square proportions intact at 56px tall. */}
             <img
               src="/logo-new.png"
               alt={t('logo')}
               className="brand-mark"
-              style={{
-                height: '48px',
-                width: '48px',
-                objectFit: 'cover',
-                borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.08)',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-              }}
+              style={{ height: '56px', width: 'auto', objectFit: 'contain' }}
             />
           </a>
         </div>
