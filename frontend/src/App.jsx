@@ -17,6 +17,10 @@ import './index.css'
 import Footer from './components/Footer'
 import CookieConsent from './components/CookieConsent'
 import BackButton from './components/BackButton'
+import logoPerfected from './assets/logo-perfected.png';
+import perfectFitKeysImg from './assets/perfect-fit-keys.png';
+import PerfectFitKeys from './components/PerfectFitKeys';
+
 
 // Compliance & Legal Pages
 import PrivacyPolicy from './pages/PrivacyPolicy'
@@ -537,8 +541,6 @@ const getSizeGuideContent = (product, locale) => {
 };
 
 function SizeGuideModal({ product, locale, onClose }) {
-  const guide = useMemo(() => getSizeGuideContent(product, locale), [product, locale]);
-
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') onClose();
@@ -554,30 +556,9 @@ function SizeGuideModal({ product, locale, onClose }) {
 
   return (
     <div className="size-guide-overlay" onClick={onClose}>
-      <div className="size-guide-modal" onClick={(event) => event.stopPropagation()} dir={locale === 'he' ? 'rtl' : 'ltr'}>
+      <div className="size-guide-modal size-guide-modal-custom" onClick={(event) => event.stopPropagation()} dir={locale === 'he' ? 'rtl' : 'ltr'} style={{ maxWidth: '900px', width: '90%' }}>
         <button type="button" className="size-guide-close" onClick={onClose} aria-label={locale === 'he' ? 'סגור חלון' : 'Close modal'}>×</button>
-        <div className="size-guide-header">
-          <span>{locale === 'he' ? 'מדריך מידות 📏' : 'Size Guide 📏'}</span>
-          <h3>{guide.title}</h3>
-          <p>{guide.subtitle}</p>
-        </div>
-        <div className="size-guide-table-wrap">
-          <table className="size-guide-table">
-            <thead>
-              <tr>
-                {guide.columns.map((column) => <th key={column}>{column}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {guide.rows.map((row) => (
-                <tr key={row.join('-')}>
-                  {row.map((cell) => <td key={cell}>{cell}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="size-guide-note">{guide.note}</div>
+        <PerfectFitKeys product={product} locale={locale} />
       </div>
     </div>
   );
@@ -1877,6 +1858,14 @@ function MainApp() {
     payplusEnabled: false,
     meshulamEnabled: true,
   })
+
+  const heroTee = useMemo(() => {
+    return products.find(p => p.id === 5) || products.find(p => (p.title || '').toLowerCase().includes('tee'));
+  }, [products]);
+
+  const heroHoodie = useMemo(() => {
+    return products.find(p => p.id === 10) || products.find(p => (p.title || '').toLowerCase().includes('hoodie'));
+  }, [products]);
   const [isPayPalProcessing, setIsPayPalProcessing] = useState(false)
   const [isMeshulamProcessing, setIsMeshulamProcessing] = useState(false)
   const [checkoutForm, setCheckoutForm] = useState({
@@ -4112,84 +4101,84 @@ function MainApp() {
       )}
 
       <section className="hero">
-        <div className="container hero-content">
-          <motion.span className="hero-eyebrow" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            DRIP STREET SIGNATURE DROP
-          </motion.span>
-          <motion.h1 className="hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            PREMIUM STREETWEAR. ZERO GUESSWORK FIT.
-          </motion.h1>
-          <motion.p className="hero-vibe-subtitle" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-            Heavyweight essentials engineered for daily city movement, late-night edge, and effortless rotation.
-          </motion.p>
-          <motion.ul className="hero-bullets" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
-            <li>Premium heavyweight cotton that keeps its shape.</li>
-            <li>Relaxed street fit with clean shoulder structure.</li>
-            <li>High-definition print that stays sharp wash after wash.</li>
-            <li>Built for day-to-night outfits without overthinking it.</li>
-          </motion.ul>
-          <motion.div className="hero-cta-group" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
-            <button className="hero-cta-primary drip-cta" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              Shop The Drop
-            </button>
-            <button className="hero-cta-secondary drip-cta" onClick={() => { setActiveCategory('Shirts'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              Explore Best Sellers
-            </button>
-          </motion.div>
+        <div className="container hero-content-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '30px', position: 'relative', width: '100%' }}>
+          
+          {/* Left Side: Floating Real T-Shirt */}
+          {heroTee && (
+            <motion.div 
+              className="hero-floating-item left-item"
+              initial={{ x: -100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.8 }}
+              onClick={() => navigate(`/product/${heroTee.id}`)}
+              style={{ cursor: 'pointer' }}
+            >
+              <img src={heroTee.imageUrl} alt={heroTee.title} className="hero-product-image" />
+              <div className="hero-product-label">
+                <span>{locale === 'he' ? 'חולצת פרימיום' : 'Premium Tee'}</span>
+                <strong>{locale === 'he' ? 'בדוק מידה 📐' : 'Check Sizing 📐'}</strong>
+              </div>
+            </motion.div>
+          )}
 
-          <motion.div 
-            className="featured-jewelry-banner" 
-            initial={{ scale: 0.95, opacity: 0 }} 
-            animate={{ scale: 1, opacity: 1 }} 
-            transition={{ delay: 0.5 }}
-            onClick={() => navigate('/product/16')}
-            style={{
-              cursor: 'pointer',
-              marginTop: '40px',
-              padding: '20px 24px',
-              background: '#050505',
-              border: '1px solid rgba(255,255,255,0.26)',
-              borderRadius: '2px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '16px',
-              maxWidth: '680px',
-              marginInline: 'auto',
-              textAlign: 'left'
-            }}
-          >
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: 800, color: '#f3f4f6', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                {locale === 'he' ? '✨ קולקציה חדשה: תכשיטי פרימיום' : '✨ NEW COLLECTION: PREMIUM JEWELRY'}
-              </span>
-              <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 700, color: '#f3f4f6', letterSpacing: '-0.01em' }}>
-                {locale === 'he' ? 'שרשרת קובנית עם ליטוש 6 פיאות' : 'Six-sided Grinding Cuban Link Chain'}
-              </h4>
-              <p style={{ margin: 0, fontSize: '13px', color: '#d1d5db', maxWidth: '480px' }}>
-                {locale === 'he' 
-                  ? 'נחתכה במיוחד עם שש פיאות שטוחות ללכידת אור מירבית. פלדת אל-חלד מוצקה בציפוי זהב עמוק.'
-                  : 'Meticulously faceted with six flat-cut facets per link. Solid stainless steel plated in deep gold.'}
-              </p>
-            </div>
-            <button style={{
-              padding: '8px 16px',
-              background: '#f3f4f6',
-              color: '#050505',
-              border: '1px solid #f3f4f6',
-              borderRadius: '2px',
-              fontWeight: 700,
-              fontSize: '12px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}>
-              {locale === 'he' ? 'גלה עכשיו' : 'Discover'}
-            </button>
-          </motion.div>
+          {/* Center: Hero Text Content */}
+          <div className="hero-text-content" style={{ flex: 1, zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            <motion.div className="hero-pill" initial={{ y: 15, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}>
+              <span>DRIP STREET PERFECTED: THE AG-AGENT DROP</span>
+            </motion.div>
+            <motion.h1 className="hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
+              PREMIUM STREETWEAR.<br />ZERO GUESSWORK FIT.
+            </motion.h1>
+            <motion.p className="hero-vibe-subtitle" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
+              {locale === 'he'
+                ? 'בגדי רחוב פרימיום בעיצוב מינימליסטי. נוחות מקסימלית והתאמה מושלמת ללא ניחושים.'
+                : 'Heavyweight essentials engineered for daily city movement, late-night edge, and effortless rotation.'}
+            </motion.p>
+            
+            <motion.div className="hero-cta-group" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
+              <button className="hero-cta-primary drip-cta" onClick={() => { const elem = document.getElementById('perfect-fit-keys'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
+                {locale === 'he' ? 'חשב את המידה שלך 📏' : 'Resolve Your Fit 📏'}
+              </button>
+              <button className="hero-cta-secondary drip-cta" onClick={() => { const elem = document.querySelector('.best-sellers-section'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
+                {locale === 'he' ? 'צפה בקטלוג' : 'Explore Best Sellers'}
+              </button>
+            </motion.div>
+          </div>
+
+          {/* Right Side: Floating Real Hoodie */}
+          {heroHoodie && (
+            <motion.div 
+              className="hero-floating-item right-item"
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.8 }}
+              onClick={() => navigate(`/product/${heroHoodie.id}`)}
+              style={{ cursor: 'pointer' }}
+            >
+              <img src={heroHoodie.imageUrl} alt={heroHoodie.title} className="hero-product-image" />
+              <div className="hero-product-label">
+                <span>{locale === 'he' ? 'קפוצ\'ון אוברסייז' : 'Oversized Hoodie'}</span>
+                <strong>{locale === 'he' ? 'בדוק מידה 📐' : 'Check Sizing 📐'}</strong>
+              </div>
+            </motion.div>
+          )}
+
+        </div>
+
+        {/* Infinite scrolling ticker */}
+        <div className="hero-ticker-container">
+          <div className="hero-ticker-text">
+            <span>AG-AGENT Protocol ACTIVE: System Stabilization & Aesthetic Perfection Implemented.</span>
+            <span> · </span>
+            <span>AG-AGENT Protocol ACTIVE: System Stabilization & Aesthetic Perfection Implemented.</span>
+            <span> · </span>
+            <span>AG-AGENT Protocol ACTIVE: System Stabilization & Aesthetic Perfection Implemented.</span>
+          </div>
         </div>
       </section>
+
+      {/* Perfect Fit Keys Component */}
+      <PerfectFitKeys locale={locale} allProducts={products} />
 
       {!isLoading && hardwareProducts.length > 0 && (
         <section className="hardware-section">
@@ -4317,7 +4306,7 @@ function MainApp() {
                       )}
                       {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
                       {/* Phase 11.1: product card watermark uses the new metallic D. */}
-                      <img src="/logo-new.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
+                      <img src={logoPerfected} aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -4489,7 +4478,7 @@ function MainApp() {
           <div className="side-nav-header">
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
               {/* Phase 11.1: secondary mark in mobile/secondary nav area. */}
-              <img src="/logo-new.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
+              <img src={logoPerfected} alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
               <strong>{t('logo')}</strong>
             </span>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>

@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import logoPerfected from '../assets/logo-perfected.png';
+
 
 const POLICY_CONTENT = {
   shipping: {
@@ -120,7 +122,7 @@ export default function Footer({ locale = 'en' }) {
               the navbar's clean rendering — no badge, no shadow, just the
               metallic D floating on the dark footer canvas at 72px tall. */}
           <img
-            src="/logo-new.png"
+            src={logoPerfected}
             alt="Drip Street Logo"
             style={{ height: '72px', width: 'auto', objectFit: 'contain', alignSelf: 'flex-start' }}
           />
