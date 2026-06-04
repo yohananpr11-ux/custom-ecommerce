@@ -39,6 +39,12 @@ test.describe('Drip Street — Phase 10 checkout flow', () => {
     });
     await page.reload();
 
+    // Phase 11.2: the new metallic D logo must be in the navbar before any
+    // interaction. This is also a smoke check that /logo-new.png is published
+    // and ships in dist/ — a broken path here means the build pipeline lost
+    // the asset on the way to Vite's static handling.
+    await expect(page.locator('img[src="/logo-new.png"]').first()).toBeVisible({ timeout: 15_000 });
+
     // Wait for products to hydrate from the live API (cards have add-to-cart buttons).
     await page.waitForSelector('button.add-to-cart, button.quick-add-btn', { timeout: 30_000 });
 

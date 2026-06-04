@@ -162,7 +162,10 @@
   --holo-4: #a855f7;
   --holo-gradient: linear-gradient(135deg, var(--holo-1) 0%, var(--holo-2) 30%, var(--holo-3) 60%, var(--holo-4) 100%);
   --holo-gradient-wide: linear-gradient(135deg, var(--holo-1) 0%, var(--holo-2) 25%, var(--holo-3) 50%, var(--holo-4) 75%, var(--holo-1) 100%);
-  --drip-cursor: url('/brand/drip-mark.png') 16 16, crosshair;
+  /* Phase 11.2: custom cursor now points to the new brand logo, in line with
+     the rest of the brand-mark migration. The crosshair fallback stays as a
+     safety net for browsers that can't render the URL cursor. */
+  --drip-cursor: url('/logo-new.png') 16 16, crosshair;
 }
 
 h1,
