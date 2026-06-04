@@ -694,10 +694,10 @@ html[dir="ltr"] .checkout-page input {
 
 .hero h1 {
   font-size: clamp(48px, 6vw, 92px);
-  margin: 0 0 20px;
+  margin: 0 auto 28px;
   font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.04em;
   line-height: 1.15;
   color: #f3f4f6;
 }
@@ -706,7 +706,7 @@ html[dir="ltr"] .checkout-page input {
   font-size: 18px;
   color: #d1d5db;
   max-width: 600px;
-  margin: 0 auto 32px;
+  margin: 0 auto 38px;
   line-height: 1.6;
 }
 
@@ -4537,13 +4537,31 @@ button,
   z-index: 2;
 }
 
+.hero-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  background: rgba(56, 189, 248, 0.02);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  color: #94a3b8; /* Subtle muted gray/icy-blue */
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  margin-bottom: 24px;
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.03);
+}
+
 .hero-floating-item {
   width: 220px;
-  background: rgba(10, 10, 10, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 10, 10, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.05); /* Subtle 1px glass border */
   border-radius: 8px;
   padding: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.05); /* Soft ambient shadow */
   backdrop-filter: blur(12px);
   text-align: center;
   transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
@@ -4551,8 +4569,8 @@ button,
 }
 
 .hero-floating-item:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 12px 40px rgba(255, 255, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-color: rgba(56, 189, 248, 0.35); /* Subtle icy blue glow on hover */
+  box-shadow: 0 25px 55px rgba(56, 189, 248, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .hero-floating-item.left-item {
@@ -4565,13 +4583,13 @@ button,
 }
 
 @keyframes floatSneaker {
-  0%, 100% { transform: translateY(0) rotate(-1deg); }
-  50% { transform: translateY(-12px) rotate(1deg); }
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-20px) rotate(1.5deg); } /* Slower, deeper dynamic float */
 }
 
 @keyframes floatHoodie {
-  0%, 100% { transform: translateY(0) rotate(1deg); }
-  50% { transform: translateY(-12px) rotate(-1deg); }
+  0%, 100% { transform: translateY(0) rotate(1.5deg); }
+  50% { transform: translateY(-20px) rotate(-1.5deg); } /* Slower, deeper dynamic float */
 }
 
 .hero-product-image {
