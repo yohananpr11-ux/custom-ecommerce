@@ -116,22 +116,21 @@ export default function Footer({ locale = 'en' }) {
         
         {/* Brand Column */}
         <div className="footer-brand-col" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Phase 11.4: same blending strategy as the navbar — mix-blend-mode
-              lighten removes the JPG's black background against the dark
-              footer canvas, while brightness(0.85) contrast(1.2) tames the
-              blue glow. Footer gets a larger 80px height for the closing
-              brand statement. */}
+          {/* Phase 11.5: badge styling matches the navbar — same border + shadow
+              recipe, scaled up for footer presence. Larger radius (16px) on
+              the larger 64px badge keeps the corner ratio consistent and
+              feels more premium at this size. */}
           <img
             src="/logo-new.png"
             alt="Drip Street Logo"
             style={{
-              height: '80px',
-              width: 'auto',
-              objectFit: 'contain',
+              height: '64px',
+              width: '64px',
+              objectFit: 'cover',
+              borderRadius: '16px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
               alignSelf: 'flex-start',
-              display: 'block',
-              mixBlendMode: 'lighten',
-              filter: 'brightness(0.85) contrast(1.2)',
             }}
           />
           <p style={{ fontSize: '14px', lineHeight: '1.6', opacity: 0.6, margin: 0 }}>
