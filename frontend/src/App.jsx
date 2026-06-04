@@ -4168,11 +4168,20 @@ function MainApp() {
         {/* Infinite scrolling ticker */}
         <div className="hero-ticker-container">
           <div className="hero-ticker-text">
-            <span>AG-AGENT Protocol ACTIVE: System Stabilization & Aesthetic Perfection Implemented.</span>
-            <span> · </span>
-            <span>AG-AGENT Protocol ACTIVE: System Stabilization & Aesthetic Perfection Implemented.</span>
-            <span> · </span>
-            <span>AG-AGENT Protocol ACTIVE: System Stabilization & Aesthetic Perfection Implemented.</span>
+            <span>AG-AGENT PROTOCOL ACTIVE: SYSTEM STABILIZATION & AESTHETIC PERFECTION IMPLEMENTED</span>
+            <span> • </span>
+            <span>AG-AGENT PROTOCOL ACTIVE: SYSTEM STABILIZATION & AESTHETIC PERFECTION IMPLEMENTED</span>
+            <span> • </span>
+            <span>AG-AGENT PROTOCOL ACTIVE: SYSTEM STABILIZATION & AESTHETIC PERFECTION IMPLEMENTED</span>
+            <span> • </span>
+          </div>
+          <div className="hero-ticker-text" aria-hidden="true">
+            <span>AG-AGENT PROTOCOL ACTIVE: SYSTEM STABILIZATION & AESTHETIC PERFECTION IMPLEMENTED</span>
+            <span> • </span>
+            <span>AG-AGENT PROTOCOL ACTIVE: SYSTEM STABILIZATION & AESTHETIC PERFECTION IMPLEMENTED</span>
+            <span> • </span>
+            <span>AG-AGENT PROTOCOL ACTIVE: SYSTEM STABILIZATION & AESTHETIC PERFECTION IMPLEMENTED</span>
+            <span> • </span>
           </div>
         </div>
       </section>
@@ -4450,6 +4459,7 @@ function MainApp() {
               className="brand-mark"
               style={{ height: '56px', width: 'auto', objectFit: 'contain' }}
             />
+            <span className="brand-logo-text">DRIP STREET</span>
           </a>
         </div>
         <div className="search-bar">
