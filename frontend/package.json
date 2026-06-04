@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "brand:assets": "node build-brand-assets.cjs",
     "generate:sitemap": "node scripts/generate-sitemap.cjs",
-    "seo:validate": "node scripts/validate-seo.cjs"
+    "seo:validate": "node scripts/validate-seo.cjs",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@paypal/react-paypal-js": "^9.2.0",
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
