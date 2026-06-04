@@ -4450,11 +4450,24 @@ function MainApp() {
             onClick={(e) => { e.preventDefault(); navigate('/'); }}
             aria-label="Drip Street Home"
           >
+            {/* Phase 11.4: mix-blend-mode: lighten knocks the logo's black bg
+                out against the #050505 navbar (every black pixel < navbar bg,
+                so the navbar shows through). The brightness/contrast filter
+                dims the harsh blue glow and sharpens the metallic core.
+                height: 64px gives the brand the presence the brutalist
+                typography demands; width: auto preserves the 1:1 ratio. */}
             <img
               src="/logo-new.png"
               alt={t('logo')}
               className="brand-mark"
-              style={{ height: '48px', width: '48px', objectFit: 'contain', display: 'block' }}
+              style={{
+                height: '64px',
+                width: 'auto',
+                objectFit: 'contain',
+                display: 'block',
+                mixBlendMode: 'lighten',
+                filter: 'brightness(0.85) contrast(1.2)',
+              }}
             />
           </a>
         </div>
