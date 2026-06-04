@@ -2,12 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Phase 11.1: favicons point to the new metallic D logo. Browsers scale the
+         1024x1024 source down per size; the .ico fallback is kept for legacy
+         Windows shells that don't accept PNG. -->
     <link rel="icon" type="image/x-icon" sizes="any" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/brand/generated/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/brand/generated/favicon-16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/brand/generated/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/brand/generated/android-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/brand/generated/android-512.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/logo-new.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/logo-new.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/logo-new.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/logo-new.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/logo-new.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -22,11 +25,14 @@
     <meta property="og:description" content="Premium minimal streetwear built for confidence. Shop oversized tees, summer tanks, and high-quality basics. Worldwide shipping." />
     <meta property="og:url" content="https://dripstreetshop.com/" />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
+    <!-- Phase 11.1: share image is the new metallic D logo. Absolute URL is
+         required by Open Graph / Twitter Card crawlers. Width=height because
+         the source asset is square — most social platforms accept this. -->
+    <meta property="og:image" content="https://dripstreetshop.com/logo-new.png" />
+    <meta property="og:image:width" content="1024" />
+    <meta property="og:image:height" content="1024" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80" />
+    <meta name="twitter:image" content="https://dripstreetshop.com/logo-new.png" />
   </head>
   <body>
     <div id="root"></div>

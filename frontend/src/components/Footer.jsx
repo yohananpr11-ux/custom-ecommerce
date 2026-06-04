@@ -116,7 +116,15 @@ export default function Footer({ locale = 'en' }) {
         
         {/* Brand Column */}
         <div className="footer-brand-col" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <img src="/logo-horizontal.svg" alt="Drip Street Logo" style={{ height: '24px', alignSelf: 'flex-start', filter: 'invert(1)' }} />
+          {/* Phase 11.1: footer brand mark. The new logo is a square metallic D
+              on a dark ground, so we drop the invert(1) filter that was
+              flipping the old wordmark-on-white SVG. Larger height (56px)
+              gives the brand presence the footer deserves. */}
+          <img
+            src="/logo-new.png"
+            alt="Drip Street Logo"
+            style={{ height: '56px', width: '56px', objectFit: 'contain', alignSelf: 'flex-start', display: 'block' }}
+          />
           <p style={{ fontSize: '14px', lineHeight: '1.6', opacity: 0.6, margin: 0 }}>
             Minimalist streetwear designed for ultimate confidence, superior fit, and premium everyday aesthetics. Built with high-grade materials.
           </p>

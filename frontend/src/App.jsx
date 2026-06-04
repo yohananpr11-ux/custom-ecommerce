@@ -42,21 +42,21 @@ const JEWELRY_UPSELL_MOCK = [
     title: 'Urban Chain Necklace',
     subtitle: 'Stainless steel streetwear layering essential',
     price: 89,
-    imageUrl: '/brand/drip-mark.png',
+    imageUrl: '/logo-new.png',
   },
   {
     id: 'jewel-statement-ring',
     title: 'Statement Signet Ring',
     subtitle: 'Mirror-polish finish with daily-wear comfort',
     price: 74,
-    imageUrl: '/brand/drip-mark.png',
+    imageUrl: '/logo-new.png',
   },
   {
     id: 'jewel-twin-bracelet',
     title: 'Twin Link Bracelet',
     subtitle: 'Adjustable fit for stacked street looks',
     price: 68,
-    imageUrl: '/brand/drip-mark.png',
+    imageUrl: '/logo-new.png',
   },
 ];
 
@@ -688,7 +688,8 @@ const calculateBundlePricing = (cart) => {
 };
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
-const GLOBAL_OG_IMAGE_URL = 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80';
+// Phase 11.1: fallback OG share image is the new metallic D logo.
+const GLOBAL_OG_IMAGE_URL = 'https://dripstreetshop.com/logo-new.png';
 const GLOBAL_ERROR_TOAST_HE = 'A temporary error occurred, please try again';
 const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
@@ -4315,7 +4316,8 @@ function MainApp() {
                         <img loading="lazy" src={product.backImageUrl} alt={`${getProductTitle(product.title, locale)} — back view`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
                       {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
-                      <img src="/brand/drip-mark.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
+                      {/* Phase 11.1: product card watermark uses the new metallic D. */}
+                      <img src="/logo-new.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -4438,7 +4440,23 @@ function MainApp() {
             <span />
             <span />
           </button>
-          <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }} onClick={(e) => { e.preventDefault(); navigate('/'); }}><img src="/brand/drip-mark.png" alt="" aria-hidden="true" className="brand-mark" style={{ height: '42px', width: '42px', objectFit: 'contain', display: 'block' }} /><img src="/logo-wordmark.svg" alt={t('logo')} className="logo-image" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/logo.svg'; }} style={{ height: '38px', width: 'auto', display: 'block' }} /></a>
+          {/* Phase 11.1: header brand logo. The new metallic D combines mark
+              and wordmark visually, so we render a single image. Parent uses
+              display:flex/items-center so the logo aligns cleanly with the
+              right-side nav icons. */}
+          <a
+            href="/"
+            style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }}
+            onClick={(e) => { e.preventDefault(); navigate('/'); }}
+            aria-label="Drip Street Home"
+          >
+            <img
+              src="/logo-new.png"
+              alt={t('logo')}
+              className="brand-mark"
+              style={{ height: '48px', width: '48px', objectFit: 'contain', display: 'block' }}
+            />
+          </a>
         </div>
         <div className="search-bar">
           <input 
@@ -4465,7 +4483,8 @@ function MainApp() {
         <aside className="side-nav-drawer" onClick={(event) => event.stopPropagation()}>
           <div className="side-nav-header">
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
-              <img src="/brand/drip-mark.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
+              {/* Phase 11.1: secondary mark in mobile/secondary nav area. */}
+              <img src="/logo-new.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
               <strong>{t('logo')}</strong>
             </span>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
