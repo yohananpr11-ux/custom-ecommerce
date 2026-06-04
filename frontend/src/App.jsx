@@ -4101,7 +4101,7 @@ function MainApp() {
       )}
 
       <section className="hero">
-        <div className="container hero-content-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '30px', position: 'relative', width: '100%' }}>
+        <div className="container hero-content-wrapper">
           
           {/* Left Side: Floating Real T-Shirt */}
           {heroTee && (
@@ -4122,7 +4122,7 @@ function MainApp() {
           )}
 
           {/* Center: Hero Text Content */}
-          <div className="hero-text-content" style={{ flex: 1, zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+          <div className="hero-text-content">
             <motion.div className="hero-pill" initial={{ y: 15, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}>
               <span>DRIP STREET PERFECTED: THE AG-AGENT DROP</span>
             </motion.div>
