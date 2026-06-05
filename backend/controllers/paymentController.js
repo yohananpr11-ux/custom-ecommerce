@@ -276,15 +276,14 @@ module.exports = function paymentControllerFactory(processPaidOrderFulfillment) 
       if (Number(payload.status) !== 1) {
         await dbRun(`UPDATE orders SET status = 'meshulam_rejected' WHERE id = ?`, [internalOrderId]).catch(() => null);
         const errMsg = payload.err || payload.message || 'Meshulam refused the payment request.';
-        const formattedAmount = await telegram.formatHybridPrice(cleanAmount);
-        await telegram.sendMessage(
-          `❌ <b>התשלום נכשל</b>\n\n`
-          + `<b>ספק:</b> Meshulam\n`
-          + `<b>הזמנה:</b> #${internalOrderId}\n`
-          + `<b>לקוח:</b> ${fullName || 'אנונימי'} (${email || 'לא ידוע'})\n`
-          + `<b>סכום:</b> ${formattedAmount}\n`
-          + `<b>שגיאה:</b> ${errMsg}`
-        ).catch(() => null);
+        await telegram.notifyCheckoutFailed({
+          provider: 'Meshulam',
+          customerName: fullName,
+          customerEmail: email,
+          amount: cleanAmount,
+          orderId: internalOrderId,
+          error: errMsg
+        }).catch(() => null);
         return res.status(502).json({
           ok: false,
           error: 'meshulam_rejected',
@@ -306,15 +305,14 @@ module.exports = function paymentControllerFactory(processPaidOrderFulfillment) 
       console.error('[meshulam] createPaymentProcess failed:', details);
       await dbRun(`UPDATE orders SET status = 'meshulam_failed' WHERE id = ?`, [internalOrderId]).catch(() => null);
       const errString = typeof details === 'string' ? details : JSON.stringify(details);
-      const formattedAmount = await telegram.formatHybridPrice(cleanAmount);
-      await telegram.sendMessage(
-        `❌ <b>התשלום נכשל</b>\n\n`
-        + `<b>ספק:</b> Meshulam\n`
-        + `<b>הזמנה:</b> #${internalOrderId}\n`
-        + `<b>לקוח:</b> ${fullName || 'אנונימי'} (${email || 'לא ידוע'})\n`
-        + `<b>סכום:</b> ${formattedAmount}\n`
-        + `<b>שגיאה:</b> ${errString}`
-      ).catch(() => null);
+      await telegram.notifyCheckoutFailed({
+        provider: 'Meshulam',
+        customerName: fullName,
+        customerEmail: email,
+        amount: cleanAmount,
+        orderId: internalOrderId,
+        error: errString
+      }).catch(() => null);
       return res.status(502).json({ ok: false, error: 'meshulam_failed', details });
     }
   }

@@ -76,11 +76,11 @@ class MeniChatService {
   async escalateToHuman(sessionId, customerName, messageText) {
     db.run("UPDATE chat_sessions SET status = 'escalated' WHERE id = ?", [sessionId]);
     
-    const alertMsg = `🤖 <b>Meni Bot: Customer escalated to human support</b>\n\n` +
-      `<b>Customer:</b> ${customerName}\n` +
-      `<b>Session ID:</b> <code>${sessionId}</code>\n` +
-      `<b>Last message:</b>\n"${messageText}"\n\n` +
-      `<b>Quick reply:</b> <code>/reply ${sessionId} write your response here</code>`;
+    const alertMsg = `🤖 <b>צ'אטבוט מני: לקוח ביקש נציג אנושי</b>\n\n` +
+      `<b>לקוח:</b> ${customerName}\n` +
+      `<b>מזהה שיחה:</b> <code>${sessionId}</code>\n` +
+      `<b>הודעה אחרונה:</b>\n"${messageText}"\n\n` +
+      `<b>מענה מהיר:</b> <code>/reply ${sessionId} [רשום את תגובתך כאן]</code>`;
       
     await telegram.sendMessage(alertMsg);
   }

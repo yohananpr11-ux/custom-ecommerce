@@ -163,11 +163,13 @@ class TelegramService {
   }
 
   async notifyNewOrder(orderId, customerName, totalAmount, items) {
-    const itemsList = items.map(item => `- ${item.quantity}x ${item.title}`).join('\n');
+    const itemsList = Array.isArray(items)
+      ? items.map(item => `- ${item.quantity}x ${item.title || 'פריט'}`).join('\n')
+      : 'אין פריטים רשומים';
     const formattedTotal = await this.formatHybridPrice(totalAmount);
     const message = `🛍️ <b>הזמנה חדשה התקבלה</b>\n\n` +
       `<b>מספר הזמנה:</b> #${orderId}\n` +
-      `<b>לקוח:</b> ${customerName}\n` +
+      `<b>לקוח:</b> ${customerName || 'אנונימי'}\n` +
       `<b>סכום כולל:</b> ${formattedTotal}\n\n` +
       `<b>פריטים:</b>\n${itemsList}\n\n` +
       `ההזמנה נרשמה בהצלחה במערכת.`;
@@ -175,11 +177,34 @@ class TelegramService {
     await this.sendMessage(message);
   }
 
-  async notifyError(context, errorMessage) {
-    const message = `🚨 <b>שגיאת מערכת</b>\n\n` +
-      `<b>הקשר:</b> ${context}\n` +
-      `<b>שגיאה:</b> ${errorMessage}`;
+  async notifyCheckoutFailed({ provider, customerName, customerEmail, amount, orderId, error }) {
+    let message = `❌ <b>הליך הרכישה נכשל</b>\n\n`;
+    if (provider) message += `<b>ספק תשלום:</b> ${provider}\n`;
+    if (orderId) message += `<b>מזהה הזמנה:</b> #${orderId}\n`;
+    if (customerName || customerEmail) {
+      const name = customerName || 'אנונימי';
+      const email = customerEmail || 'לא ידוע';
+      message += `<b>לקוח:</b> ${name} (${email})\n`;
+    }
+    if (amount !== undefined && amount !== null) {
+      const formattedAmount = await this.formatHybridPrice(amount);
+      message += `<b>סכום:</b> ${formattedAmount}\n`;
+    }
+    if (error) message += `<b>שגיאה:</b> ${error}\n`;
     
+    await this.sendMessage(message);
+  }
+
+  async notifyNewLead({ email, promoCode, isResubscribe }) {
+    let message = '';
+    if (isResubscribe) {
+      message = `♻️ <b>ליד נרשם מחדש</b>\n\n` +
+        `<b>אימייל:</b> <code>${escapeHtml(email)}</code>`;
+    } else {
+      message = `🔥 <b>ליד חדש התווסף למועדון</b>\n\n` +
+        `<b>אימייל:</b> <code>${escapeHtml(email)}</code>\n` +
+        `<b>קוד הנחה שנוצר:</b> <code>${escapeHtml(promoCode || '')}</code>`;
+    }
     await this.sendMessage(message);
   }
 
@@ -195,6 +220,18 @@ class TelegramService {
     ].join('\n');
 
     await this.sendMessage(text);
+  }
+
+  async notifySystemError(context, errorMessage) {
+    const message = `🚨 <b>שגיאת מערכת</b>\n\n` +
+      `<b>הקשר:</b> ${context}\n` +
+      `<b>שגיאה:</b> ${errorMessage}`;
+    
+    await this.sendMessage(message);
+  }
+
+  async notifyError(context, errorMessage) {
+    await this.notifySystemError(context, errorMessage);
   }
 }
 
