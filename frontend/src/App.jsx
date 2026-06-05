@@ -97,149 +97,9 @@ class ErrorBoundary extends React.Component {
 }
 
 const translations = {
-  he: {
-    logo: "DRIP STREET",
-    announcement: "משלוח חינם בהזמנה מ-249 ₪ | 3 חולצות ב-229 ₪",
-    search_placeholder: "חפש פריטים...",
-    cart: "סל קניות",
-    hero_title: "DRIP STREET",
-    hero_subtitle: "סטריטוור מינימליסטי ליום יום.",
-    shop_now: "קנה עכשיו",
-    trust_secure: "תשלום מאובטח",
-    trust_shipping: "משלוח מהיר",
-    trust_returns: "החזרות קלות",
-    language_currency: "שפה וערה",
-    add_to_cart: "הוסף לסל",
-    buy_now: "קנה עכשיו",
-    all: "הכל",
-    new_arrivals: "חדש",
-    best_sellers: "הנמכרים ביותר",
-    hoodies: "קפוצ'ונים",
-    tshirts: "חולצות",
-    tank_tops: "גופיות",
-    jewelry: "תכשיטים",
-    fabric_fit: "חומר וגזרה",
-    care_instructions: "טיפול",
-    delivery_info: "משלוח",
-    product_description: "תיאור",
-    material_care: "חומרים וטיפול",
-    shipping_returns: "משלוחים והחזרות",
-    color: "צבע",
-    size: "מידה",
-    quantity: "כמות",
-    configure_product_title: "בחר את ההתאמה המושלמת שלך",
-    configure_product_subtitle: "לפני הוספה לסל, בחר צבע, מידה וכמות בדיוק כמו שמתאים לך.",
-    choose_color: "בחר צבע",
-    choose_size: "בחר מידה",
-    choose_quantity: "בחר כמות",
-    add_selected_to_cart: "הוסף את הבחירה לסל",
-    continue_shopping: "המשך בקנייה",
-    cart_customize: "התאם את הפריט שלך",
-    review_title: "לפני תשלום — בדיקת בחירה",
-    review_subtitle: "אלה הפריטים שבחרת בקפידה. אפשר לעדכן כל פרט לפני ביצוע ההזמנה.",
-    low_stock: "ביקוש גבוה - מלאי מוגבל",
-    select_available_variant: "בחר צבע ומידה זמינים כדי להוסיף לסל",
-    empty_cart_toast: "הסל ריק, הוסף פריטים כדי להמשיך",
-    variant_error_toast: "נמצאה שגיאה בוריאנט. רענן את העמוד ובחר מחדש",
-    checkout: "קופה",
-    checkout_secure: "קופה מאובטחת",
-    shipping_details: "פרטי משלוח",
-    full_name: "שם מלא",
-    email: "אימייל",
-    address: "כתובת (רחוב, עיר, מיקוד)",
-    shipping_name_english_only: "שם מלא חייב להיות באנגלית בלבד.",
-    shipping_address_english_only: "כתובת משלוח חייבת להיות באנגלית בלבד כדי שהמשלוח יגיע נכון.",
-    payment_method: "בחר תשלום",
-    payment_card_apple_google: "כרטיס אשראי / Apple Pay / Google Pay",
-    payment_card_bit: "כרטיס אשראי / ביט",
-    payment_stripe: "כרטיס בינלאומי (Stripe)",
-    payment_paypal: "PayPal",
-    payment_meshulam_card: "כרטיס אשראי ישראלי",
-    payment_meshulam_card_sub: "ויזה · מאסטרקארד · ישראכרט · Apple Pay",
-    payment_meshulam_bit: "תשלום ב-Bit",
-    payment_meshulam_bit_sub: "סריקת QR מהאפליקציה",
-    payment_meshulam_processing: "מעביר אותך לעמוד תשלום מאובטח...",
-    payment_unavailable: "אמצעי התשלום שבחרת לא זמין כרגע. נסה PayPal.",
-    order_summary: "סיכום הזמנה",
-    subtotal: "סכום ביניים",
-    bundle_deal: "🎁 מבצע 3 חולצות",
-    bundle_active: "🎉 מבצע 3 חולצות הופעל!",
-    bundle_hint: "הוסף חולצה נוספת לקבלת מחיר המבצע",
-    shipping: "משלוח",
-    free: "חינם",
-    vat: "מע״מ",
-    total: "לתשלום",
-    complete_order: "בצע הזמנה",
-    success_title: "🎉 התשלום בוצע!",
-    success_desc: "תודה! ההזמנה שלך מעובדת ועל הדרך אליך.",
-    return_home: "חזרה לחנות",
-    shipping_unlocked: "🎉 משלוח חינם!",
-    shipping_hint: "הוסף עוד {amount} למשלוח חינם",
-    cart_empty: "הסל ריק",
-    support_chat: "מני 🤖",
-    support_placeholder: "שאלה קצרה? אני כאן לעזור",
-    escalated_msg: "חיברנו אותך לנציג, תשובה תישלח בקרוב",
-    flash_sale: "מבצע לזמן קצר: קוד {code} נותן {discount}% הנחה",
-    coupon_label: "קופון",
-    contact_title: "צור קשר",
-    contact_name_placeholder: "איך קוראים לך?",
-    contact_email_placeholder: "האימייל שלך",
-    contact_message_placeholder: "איך אפשר לעזור?",
-    contact_send: "שליחה",
-    legal_privacy: "מדיניות פרטיות",
-    legal_terms: "תנאי שימוש",
-    legal_refund: "מדיניות החזרות",
-    legal_contact: "שירות לקוחות",
-    legal_back: "חזרה לחנות",
-    legal_intro: "אנחנו שומרים על פרטיות, שקיפות ושירות הוגן בכל הזמנה.",
-    legal_info_collect_title: "איזה מידע אנחנו אוספים",
-    legal_info_collect_text: "אנחנו אוספים רק פרטים שנדרשים לביצוע הזמנה ושירות לקוחות.",
-    legal_payments_title: "אבטחת תשלומים",
-    legal_payments_text: "התשלום מעובד בצורה מאובטחת דרך ספקי סליקה חיצוניים.",
-    legal_refunds_title: "החלפות והחזרות",
-    legal_refunds_text: "ניתן לפנות לשירות הלקוחות תוך 14 יום מקבלת המשלוח בהתאם למדיניות.",
-    not_found_title: "העמוד לא נמצא",
-    search_aria: "חיפוש מוצרים",
-    open_cart_aria: "פתיחת סל קניות",
-    close_cart_aria: "סגירת סל קניות",
-    toggle_chat_aria: "פתיחת צ׳אט תמיכה",
-    loading: "טוען...",
-    product_not_found: "המוצר לא נמצא",
-    shop_rights: "© 2026 Drip Street. כל הזכויות שמורות.",
-    popup_title: "הצטרפו למועדון שלנו וקבלו 10% הנחה לקנייה הראשונה.",
-    popup_subtitle: "השאירו אימייל וקבלו קוד אישי חד פעמי.",
-    popup_placeholder: "האימייל שלך...",
-    popup_cta: "קבל את ההנחה",
-    popup_dismiss: "לא עכשיו, תודה",
-    popup_success: "תודה! הקוד נשלח לאימייל שלך.",
-    popup_already_registered: "האימייל כבר רשום במערכת",
-    popup_unique_code: "הקוד הייחודי שלך",
-    popup_copy: "העתק קוד",
-    popup_copied: "הועתק!",
-    promo_code: "קוד קופון",
-    promo_apply: "החל",
-    promo_applied: "קוד הופעל",
-    promo_invalid: "קוד לא תקין או שכבר נוצל",
-    rating_label: "מבוסס על בסיס ביקורות",
-    reviews_title: "מה אומרים הלקוחות",
-    trending_title: "טרנדינג עכשיו",
-    why_title: "למה DRIP STREET?",
-    why_shipping: "משלוח לכל העולם",
-    why_shipping_desc: "משלוח בינלאומי מהיר ואמין לכל יעד.",
-    why_secure: "תשלום מאובטח 100%",
-    why_secure_desc: "SSL מוצפן + Stripe, PayPal, ויזה.",
-    why_quality: "איכות פרימיום",
-    why_quality_desc: "בד נוח עם הדפסה חדה שלא דוהה.",
-    why_returns: "אחריות איכות פרימיום",
-    why_returns_desc: "הדפסה מושלמת. פריט פגום יוחלף מיד.",
-    seo_title: "DRIP STREET | סטריטוור מינימליסטי",
-    seo_description: "סטריטוור פרימיום מינימליסטי לחיי היומיום. חולצות אוברסייז, גופיות קיץ ובייסיקס איכותיים. משלוח לכל העולם.",
-    taxes_shipping_note: "מסים ומשלוח יחושבו בקופה",
-    payment_icons_label: "אנחנו מקבלים"
-  },
   en: {
     logo: "DRIP STREET",
-    announcement: "Complimentary shipping from 249 ILS cart subtotal | 3-item bundle from $61",
+    announcement: "Complimentary shipping from $249 cart subtotal | 3-item bundle from $61",
     search_placeholder: "Search items...",
     cart: "Cart",
     hero_title: "DRIP STREET",
@@ -260,66 +120,66 @@ const translations = {
     jewelry: "Jewelry",
     fabric_fit: "Fabric & Fit",
     care_instructions: "Care Instructions",
-    delivery_info: "Delivery Info",
+    delivery_info: "Shipping & Delivery",
     product_description: "Description",
     material_care: "Material & Care",
     shipping_returns: "Shipping & Returns",
     color: "Color",
     size: "Size",
     quantity: "Quantity",
-    configure_product_title: "Choose Your Perfect Fit",
-    configure_product_subtitle: "Before adding to cart, select the color, size, and quantity that suit you best.",
-    choose_color: "Choose color",
-    choose_size: "Choose size",
-    choose_quantity: "Choose quantity",
-    add_selected_to_cart: "Add Selection to Cart",
+    configure_product_title: "CHOOSE YOUR PERFECT FIT",
+    configure_product_subtitle: "Select your preferred color, size, and quantity below.",
+    choose_color: "Choose Color",
+    choose_size: "Choose Size",
+    choose_quantity: "Choose Quantity",
+    add_selected_to_cart: "Add to Cart",
     continue_shopping: "Continue Shopping",
-    cart_customize: "Customize Your Item",
-    review_title: "Before Payment — Final Selection Review",
-    review_subtitle: "These are the exact items you selected. You can refine every detail before completing payment.",
+    cart_customize: "Customize Item",
+    review_title: "Before Checkout - Review Items",
+    review_subtitle: "Review your selected items. You can adjust details before placing your order.",
     low_stock: "High Demand - Limited Stock",
     select_available_variant: "Please select an available color and size",
-    empty_cart_toast: "Your cart is empty, add items to continue",
-    variant_error_toast: "Variant mismatch detected, refresh and select again",
+    empty_cart_toast: "Your cart is empty. Add items to continue.",
+    variant_error_toast: "Variant error. Please refresh and try again.",
     checkout: "Checkout",
     checkout_secure: "Secure Checkout",
     shipping_details: "Shipping Details",
     full_name: "Full Name",
     email: "Email Address",
-    address: "Full Address (Street, City, Zip)",
-    shipping_name_english_only: "Full name must be entered in English.",
-    shipping_address_english_only: "Shipping address must be entered in English so Printify can deliver correctly.",
-    payment_method: "Payment Method",
+    address: "Address (Street, City, Zip)",
+    shipping_name_english_only: "Full name must be in English only.",
+    shipping_address_english_only: "Shipping address must be in English only to ensure proper delivery.",
+    payment_method: "Select Payment Method",
     payment_card_apple_google: "Credit Card / Apple Pay / Google Pay",
-    payment_card_bit: "Card Payment",
-    payment_stripe: "Stripe ($)",
+    payment_card_bit: "Credit Card",
+    payment_stripe: "International Card (Stripe)",
     payment_paypal: "PayPal",
-    payment_meshulam_card: "Credit Card (Israel)",
-    payment_meshulam_card_sub: "Visa · Mastercard · Isracard · Apple Pay",
-    payment_meshulam_bit: "Pay with Bit",
-    payment_meshulam_bit_sub: "Scan QR from the Bit app",
+    payment_meshulam_card: "Credit Card",
+    payment_meshulam_card_sub: "Visa · Mastercard · Apple Pay",
+    payment_meshulam_bit: "Bit Payment",
+    payment_meshulam_bit_sub: "Scan QR from Bit app",
     payment_meshulam_processing: "Redirecting to secure payment page...",
-    payment_unavailable: "Selected payment method is unavailable right now. Please use PayPal.",
+    payment_unavailable: "Selected payment method is currently unavailable. Please use PayPal.",
     order_summary: "Order Summary",
     subtotal: "Subtotal",
-    bundle_deal: "🎁 3-item bundle",
-    bundle_active: "🎉 3-item bundle applied successfully!",
-    bundle_hint: "Add one more item to unlock the bundle price!",
+    bundle_deal: "🎁 3-Item Bundle Deal",
+    bundle_active: "🎉 3-Item Bundle Deal Applied!",
+    bundle_hint: "Add another shirt to unlock the bundle deal price",
     shipping: "Shipping",
-    free: "FREE",
-    vat: "VAT (0% - Osek Patur)",
+    free: "Free",
+    vat: "VAT",
     total: "Total",
     complete_order: "Complete Order",
-    success_title: "Payment Successful! 🎉",
-    success_desc: "Thank you for your order. We are processing it now.",
-    return_home: "Return to Store",
-    shipping_unlocked: "🎉 You've unlocked free shipping",
-    shipping_hint: "Add {amount} more for free shipping!",
+    success_title: "🎉 Payment Complete!",
+    success_desc: "Thank you! Your order is being processed and is on its way.",
+    return_home: "Return to Shop",
+    shipping_unlocked: "🎉 Free Shipping unlocked!",
+    shipping_hint: "Add {amount} more for free shipping",
     cart_empty: "Your cart is empty",
-    support_chat: "Chat with Meni 🤖",
-    support_placeholder: "Ask Meni about sizes, care, or delivery...",
-    escalated_msg: "Escalated to human support. We will reply to your chat shortly.",
-    flash_sale: "Limited offer: Use code {code} for {discount}% off",
+    support_chat: "Meni 🤖",
+    support_placeholder: "Ask a question...",
+    escalated_msg: "Connected to support. We will reply shortly.",
+    flash_sale: "Limited Time Sale: Use code {code} for {discount}% off",
     coupon_label: "Coupon",
     contact_title: "Contact Us",
     contact_name_placeholder: "Your Name",
@@ -329,11 +189,10 @@ const translations = {
     legal_privacy: "Privacy Policy",
     legal_terms: "Terms of Service",
     legal_refund: "Refund Policy",
-    legal_contact: "Contact Support",
-    legal_back: "Back to Store",
-    legal_intro: "We are committed to privacy, transparency, and fair service.",
+    legal_contact: "Customer Support",
+    legal_back: "Back to Shop",
+    legal_intro: "We value your privacy, transparency, and fair service on every order.",
     legal_info_collect_title: "Information We Collect",
-    legal_info_collect_text: "We collect only the information needed to process your order and support requests.",
     legal_payments_title: "Payment Security",
     legal_payments_text: "Payments are securely processed by external payment providers.",
     legal_refunds_title: "Returns & Refunds",
@@ -380,75 +239,16 @@ const translations = {
 };
 
 /** Product title translations from Printify defaults to Hebrew */
-const productTitleMap = {
-  'Unisex Softstyle T-Shirt': 'טי-שירט יוניסקס בייסיק',
-  'Unisex Jersey Short Sleeve Tee': 'טי-שירט פרימיום',
-  'Unisex Heavy Blend™ Hooded Sweatshirt': 'קפוצ\'ון אוברסייז קלאסי',
-  'Gildan 64000': 'טי-שירט Gildan',
-  'Bella+Canvas 3001': 'טי-שירט Bella+Canvas',
-  'Gildan 18500': 'קפוצ\'ון Gildan',
-  'Drum Machine Blueprint': 'טי-שירט Blueprint',
-  'Retro Synth': 'טי-שירט Synth ריטרו',
-  'Circuit Board': 'טי-שירט Circuit Board',
-  'Minimal Grid': 'טי-שירט מינימליסטי',
-};
-
-const hebrewProductTitleRules = [
-  { test: (s) => s.includes('drum machine'), title: 'טי-שירט דראם משין' },
-  { test: (s) => s.includes('retro palm'), title: 'טי-שירט דקלים רטרו' },
-  { test: (s) => s.includes('urban frequency'), title: 'טי-שירט אורבן פריקוונסי' },
-  { test: (s) => s.includes('ramen shop'), title: 'טי-שירט ראמן שופ' },
-  { test: (s) => s.includes('minimal botanical'), title: 'טי-שירט בוטני מינימליסטי' },
-  { test: (s) => s.includes('sunset road'), title: 'טי-שירט סאנסט רואד' },
-  { test: (s) => s.includes('eiffel tower') || s.includes('paris'), title: 'טי-שירט פריז אייפל' },
-  { test: (s) => s.includes('samurai'), title: 'טי-שירט סמוראי' },
-  { test: (s) => s.includes('tank'), title: 'גופיית קיץ מינימליסטית' },
-  { test: (s) => s.includes('hoodie') || s.includes('sweatshirt'), title: 'קפוצ׳ון אוברסייז קלאסי' },
-  { test: (s) => s.includes('tee') || s.includes('t-shirt') || s.includes('shirt'), title: 'טי-שירט יוניסקס פרימיום' },
-];
-
-const hebrewColorMap = {
-  black: 'שחור',
-  white: 'לבן',
-  sportgrey: 'אפור',
-  sportgreyheather: 'אפור',
-  heather: 'אפור',
-  red: 'אדום',
-  navy: 'כחול כהה',
-  blue: 'כחול',
-  green: 'ירוק',
-  sand: 'חול',
-  natural: 'שמנת',
-  tan: 'בז׳',
-  autumn: 'כתום',
-  mauve: 'ורוד מעושן',
-  vintagewhite: 'לבן וינטג׳',
-  canvasred: 'אדום',
-};
-
-function localizeColorName(color, locale) {
-  if (locale !== 'he') return color;
-  const normalized = String(color || '').toLowerCase().replace(/[^a-z]/g, '');
-  return hebrewColorMap[normalized] || color;
+function localizeColorName(color) {
+  return color;
 }
 
-function getProductTitle(title, locale) {
-  if (locale === 'he') {
-    if (productTitleMap[title]) return productTitleMap[title];
-    const normalized = String(title || '').toLowerCase();
-    const rule = hebrewProductTitleRules.find((entry) => entry.test(normalized));
-    if (rule) return rule.title;
-  }
+function getProductTitle(title) {
   return title;
 }
 
-function getCartDisplayTitle(rawTitle, locale) {
-  const text = String(rawTitle || '');
-  if (locale !== 'he') return text;
-  const parts = text.split(' - ');
-  const base = getProductTitle(parts[0] || '', locale);
-  const rest = parts.slice(1).map((part, idx) => (idx === 0 ? localizeColorName(part, locale) : part));
-  return [base, ...rest].join(' - ');
+function getCartDisplayTitle(rawTitle) {
+  return rawTitle;
 }
 
 function splitVariantTitle(rawTitle) {
@@ -460,76 +260,53 @@ function splitVariantTitle(rawTitle) {
   };
 }
 
-function getLocalizedProductDescription(product, locale) {
-  if (locale !== 'he') return product.description || 'Premium quality, clean fit, everyday comfort.';
-  if (isTeeProduct(product)) return 'חולצה איכותית מבד נעים, גזרה מחמיאה ונוחות מקסימלית לשימוש יומיומי.';
-  if (String(product.title || '').toLowerCase().includes('tank')) return 'גופייה קלילה לקיץ, נוחה ונעימה עם מראה נקי ומדויק.';
-  return 'קפוצ׳ון איכותי עם בד נעים, ישיבה טובה ונוחות גבוהה לכל היום.';
+function getLocalizedProductDescription(product) {
+  return product.description || 'Premium quality, clean fit, everyday comfort.';
 }
 
-function getLocalizedFabric(product, locale) {
-  if (locale !== 'he') return product.fabric || 'Premium cotton blend';
-  if (String(product.title || '').toLowerCase().includes('tank')) return 'בד קליל ונושם שמתאים במיוחד לעונות חמות.';
-  return 'בד איכותי, נעים למגע, עם גזרה מחמיאה ונוחה.';
+function getLocalizedFabric(product) {
+  return product.fabric || 'Premium cotton blend';
 }
 
-function getLocalizedCare(product, locale) {
-  if (locale !== 'he') return product.careInstructions || 'Machine wash cold.';
-  return 'כביסה עדינה במים קרים, להפוך את הפריט לפני כביסה, ללא גיהוץ ישיר על ההדפס.';
+function getLocalizedCare(product) {
+  return product.careInstructions || 'Machine wash cold.';
 }
 
-function getLocalizedDelivery(product, locale) {
+function getLocalizedDelivery(product) {
   const operational = product && product.operationalNotice ? product.operationalNotice : null;
   if (operational) {
     const [prodMin, prodMax] = operational.productionRangeDays || [2, 5];
     const [shipMin, shipMax] = operational.shippingRangeDays || [7, 14];
-    if (locale !== 'he') {
-      return `Live fulfillment window: ${prodMin}-${prodMax} business days production + ${shipMin}-${shipMax} business days shipping.`;
-    }
-    return `נתוני זמינות חיים: ייצור ${prodMin}-${prodMax} ימי עסקים ומשלוח ${shipMin}-${shipMax} ימי עסקים.`;
+    return `Live fulfillment window: ${prodMin}-${prodMax} business days production + ${shipMin}-${shipMax} business days shipping.`;
   }
-
-  if (locale !== 'he') return product.deliveryInfo || 'Standard delivery.';
-  return product.deliveryInfo || 'זמני משלוח מתעדכנים לפי זמינות בזמן אמת.';
+  return product.deliveryInfo || 'Standard delivery.';
 }
 
 const isJewelryProduct = (product = {}) => deriveProductCategory(product) === 'Jewelry';
 
-const getSizeGuideContent = (product, locale) => {
+const getSizeGuideContent = (product) => {
   const jewelry = isJewelryProduct(product);
 
   if (jewelry) {
     return {
-      title: locale === 'he' ? 'מדריך מידות לתכשיטים' : 'Jewelry Size Guide',
-      subtitle: locale === 'he'
-        ? 'בחר אורך שרשרת לפי נקודת הישיבה הרצויה על הצוואר והחזה.'
-        : 'Choose your chain length based on where you want it to sit.',
-      note: locale === 'he'
-        ? 'למראה שכבות דרמטי, 22-24 אינץ׳ הם האורך המומלץ.'
-        : 'For layered looks, 22-24 inches usually works best.',
-      columns: locale === 'he'
-        ? ['אורך', 'סגנון ישיבה', 'למי זה מתאים']
-        : ['Length', 'Fit Style', 'Best For'],
+      title: 'Jewelry Size Guide',
+      subtitle: 'Choose your chain length based on where you want it to sit.',
+      note: 'For layered looks, 22-24 inches usually works best.',
+      columns: ['Length', 'Fit Style', 'Best For'],
       rows: [
-        ['18" / 45cm', locale === 'he' ? 'צמוד לבסיס הצוואר' : 'Close neckline', locale === 'he' ? 'מראה נקי' : 'Clean minimal look'],
-        ['20" / 50cm', locale === 'he' ? 'על עצם הבריח' : 'At collarbone', locale === 'he' ? 'אורך יומיומי' : 'Everyday classic'],
-        ['22" / 55cm', locale === 'he' ? 'מתחת לעצם הבריח' : 'Below collarbone', locale === 'he' ? 'לוק סטריט' : 'Streetwear presence'],
-        ['24" / 60cm', locale === 'he' ? 'אמצע חזה עליון' : 'Upper chest', locale === 'he' ? 'שכבות בולטות' : 'Layered statement'],
+        ['18" / 45cm', 'Close neckline', 'Clean minimal look'],
+        ['20" / 50cm', 'At collarbone', 'Everyday classic'],
+        ['22" / 55cm', 'Below collarbone', 'Streetwear presence'],
+        ['24" / 60cm', 'Upper chest', 'Layered statement'],
       ],
     };
   }
 
   return {
-    title: locale === 'he' ? 'מדריך מידות לביגוד' : 'Apparel Size Guide',
-    subtitle: locale === 'he'
-      ? 'מדוד חולצה מועדפת והשווה לטבלה להתאמה מדויקת.'
-      : 'Measure a favorite tee and compare for the best fit.',
-    note: locale === 'he'
-      ? 'אם אתה בין מידות, למראה אוברסייז בחר מידה אחת למעלה.'
-      : 'Between sizes? Size up for an oversized silhouette.',
-    columns: locale === 'he'
-      ? ['מידה', 'חזה', 'אורך גוף', 'כתפיים']
-      : ['Size', 'Chest', 'Body Length', 'Shoulders'],
+    title: 'Apparel Size Guide',
+    subtitle: 'Measure a favorite tee and compare for the best fit.',
+    note: 'Between sizes? Size up for an oversized silhouette.',
+    columns: ['Size', 'Chest', 'Body Length', 'Shoulders'],
     rows: [
       ['S', '96-101 cm', '69 cm', '43 cm'],
       ['M', '102-107 cm', '72 cm', '46 cm'],
@@ -1900,8 +1677,10 @@ function MainApp() {
   const locale = 'en';
   const setLocale = () => {};
   const toggleLocale = () => {};
-  const [currency, setCurrency] = useState('USD')
-  const [exchangeRate, setExchangeRate] = useState(3.75)
+  const currency = 'ILS';
+  const setCurrency = () => {};
+  const exchangeRate = 3.75;
+  const setExchangeRate = () => {};
   const [isHeaderScrolled, setIsHeaderScrolled] = useState(false)
 
   // Glass header deepens after first scroll
@@ -2330,8 +2109,8 @@ function MainApp() {
     return text;
   };
 
-  const curSym = currency === 'USD' ? '$' : '₪';
-  const displayVal = (nisValue) => (currency === 'USD' ? (nisValue / exchangeRate) : nisValue);
+  const curSym = '$';
+  const displayVal = (nisValue) => nisValue;
   const isPayPalAvailable = Boolean(checkoutConfig.paypalEnabled && paypalClientId);
   const isStripeAvailable = Boolean(checkoutConfig.stripeEnabled);
   const isPayPlusAvailable = Boolean(checkoutConfig.payplusEnabled);

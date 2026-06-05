@@ -30,6 +30,7 @@
 
 const axios = require('axios');
 const db = require('../db');
+const telegram = require('../services/telegram');
 
 const SANDBOX_URL = 'https://sandbox.meshulam.co.il/api/light/server/1.0/createPaymentProcess';
 const PRODUCTION_URL = 'https://meshulam.co.il/api/light/server/1.0/createPaymentProcess';
@@ -274,10 +275,20 @@ module.exports = function paymentControllerFactory(processPaidOrderFulfillment) 
       const payload = response.data || {};
       if (Number(payload.status) !== 1) {
         await dbRun(`UPDATE orders SET status = 'meshulam_rejected' WHERE id = ?`, [internalOrderId]).catch(() => null);
+        const errMsg = payload.err || payload.message || 'Meshulam refused the payment request.';
+        const formattedAmount = await telegram.formatHybridPrice(cleanAmount);
+        await telegram.sendMessage(
+          `❌ <b>התשלום נכשל</b>\n\n`
+          + `<b>ספק:</b> Meshulam\n`
+          + `<b>הזמנה:</b> #${internalOrderId}\n`
+          + `<b>לקוח:</b> ${fullName || 'אנונימי'} (${email || 'לא ידוע'})\n`
+          + `<b>סכום:</b> ${formattedAmount}\n`
+          + `<b>שגיאה:</b> ${errMsg}`
+        ).catch(() => null);
         return res.status(502).json({
           ok: false,
           error: 'meshulam_rejected',
-          details: payload.err || payload.message || 'Meshulam refused the payment request.',
+          details: errMsg,
           raw: payload,
         });
       }
@@ -294,6 +305,16 @@ module.exports = function paymentControllerFactory(processPaidOrderFulfillment) 
       const details = err.response ? err.response.data : err.message;
       console.error('[meshulam] createPaymentProcess failed:', details);
       await dbRun(`UPDATE orders SET status = 'meshulam_failed' WHERE id = ?`, [internalOrderId]).catch(() => null);
+      const errString = typeof details === 'string' ? details : JSON.stringify(details);
+      const formattedAmount = await telegram.formatHybridPrice(cleanAmount);
+      await telegram.sendMessage(
+        `❌ <b>התשלום נכשל</b>\n\n`
+        + `<b>ספק:</b> Meshulam\n`
+        + `<b>הזמנה:</b> #${internalOrderId}\n`
+        + `<b>לקוח:</b> ${fullName || 'אנונימי'} (${email || 'לא ידוע'})\n`
+        + `<b>סכום:</b> ${formattedAmount}\n`
+        + `<b>שגיאה:</b> ${errString}`
+      ).catch(() => null);
       return res.status(502).json({ ok: false, error: 'meshulam_failed', details });
     }
   }
