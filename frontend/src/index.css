@@ -823,7 +823,7 @@ html[dir="ltr"] .checkout-page input {
   object-fit: cover;
   display: block;
   filter: grayscale(1) contrast(1.02);
-  transition: filter 0.2s ease;
+  transition: filter 0.4s ease;
 }
 
 .hardware-card:hover .hardware-image-btn img {
@@ -1105,14 +1105,16 @@ html[dir="ltr"] .checkout-page input {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: opacity 0.4s ease, transform 0.5s ease;
+  transition: opacity 0.4s ease, transform 0.5s ease, filter 0.4s ease;
   position: absolute;
   top: 0;
   left: 0;
+  filter: grayscale(1) contrast(1.02);
 }
 
 .product-card:hover .product-image {
   transform: scale(1.05);
+  filter: grayscale(0) contrast(1.02);
 }
 
 .product-image.back-img {
@@ -3827,10 +3829,12 @@ button,
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform 0.4s ease;
+  filter: grayscale(1) contrast(1.02);
+  transition: transform 0.4s ease, filter 0.4s ease;
 }
 .trending-card:hover .trending-card-img-wrap img {
   transform: scale(1.04);
+  filter: grayscale(0) contrast(1.02);
 }
 
 .trending-card-info {

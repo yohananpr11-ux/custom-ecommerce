@@ -9,14 +9,14 @@ function getProductSizingSpecs(product) {
   const title = (product.title || '').toLowerCase();
   
   // 1. Hoodies
-  if (title.includes('hoodie') || title.includes('sweatshirt')) {
+  if (title.includes('hoodie') || title.includes('sweatshirt') || title.includes('hooded')) {
     return {
       type: 'hoodie',
       nameLabel: 'Unisex Heavy Blend Hoodie',
       fabric: product.fabric || '50% Cotton / 50% Polyester Heavy Blend Fleece',
       care: product.careInstructions || 'Machine wash warm, inside out, with like colors. Tumble dry medium.',
       delivery: product.deliveryInfo || 'Standard express delivery.',
-      headers: ['Size', 'Width (רוחב)', 'Length (אורך)', 'Sleeve (שרוול)'],
+      headers: ['Size', 'Width', 'Length', 'Sleeve'],
       rows: [
         { size: 'S', width: '51 cm', length: '69 cm', sleeve: '84 cm' },
         { size: 'M', width: '56 cm', length: '71 cm', sleeve: '86 cm' },
@@ -53,7 +53,7 @@ function getProductSizingSpecs(product) {
         fabric: product.fabric || 'Solid 316L Stainless Steel / Double-Polished Mirror Finish',
         care: product.careInstructions || 'Waterproof. Resistant to sweat and chlorine. Avoid scraping against abrasive metals.',
         delivery: product.deliveryInfo || 'Standard express delivery.',
-        headers: ['Size', 'Length (אורך)', 'Best For (מתאים ל-)'],
+        headers: ['Size', 'Length', 'Best For'],
         rows: [
           { size: '7"', length: '18 cm', fit: 'Standard/Slim wrist' },
           { size: '8"', length: '20 cm', fit: 'Relaxed/Thicker wrist' },
@@ -72,7 +72,7 @@ function getProductSizingSpecs(product) {
         fabric: product.fabric || 'Implanted 316L Surgical Steel / Onyx Cubic Zirconia',
         care: product.careInstructions || 'Sterilize with alcohol periodically. 100% hypoallergenic.',
         delivery: product.deliveryInfo || 'Standard express delivery.',
-        headers: ['Size', 'Diameter (קוטר)', 'Visual Profile'],
+        headers: ['Size', 'Diameter', 'Visual Profile'],
         rows: [
           { size: '6mm', length: '0.6 cm', profile: 'Subtle daily accent' },
           { size: '8mm', length: '0.8 cm', profile: 'Bold statement profile' },
@@ -90,12 +90,12 @@ function getProductSizingSpecs(product) {
       fabric: product.fabric || '316L Stainless Steel / Gold Vacuum IP Plating (resistant to tarnishing)',
       care: product.careInstructions || 'Safe in water, shower, and ocean. Wipe dry with a microfiber cloth after contact.',
       delivery: product.deliveryInfo || 'Standard express delivery.',
-      headers: ['Size', 'Length (אורך)', 'Hang Style (מיקום ישיבה)'],
+      headers: ['Size', 'Length', 'Hang Style'],
       rows: [
-        { size: '18"', length: '45 cm', fit: 'Collarbone frame (צמוד לצוואר)' },
-        { size: '20"', length: '50 cm', fit: 'Standard neck drop (בסיס הצוואר)' },
-        { size: '22"', length: '55 cm', fit: 'Mid-chest layering (מרכז החזה)' },
-        { size: '24"', length: '60 cm', fit: 'Deep streetwear hang (חזה נמוך)' },
+        { size: '18"', length: '45 cm', fit: 'Collarbone frame' },
+        { size: '20"', length: '50 cm', fit: 'Standard neck drop' },
+        { size: '22"', length: '55 cm', fit: 'Mid-chest layering' },
+        { size: '24"', length: '60 cm', fit: 'Deep streetwear hang' },
       ],
       calculator: (height, weight) => {
         if (height < 170) return '20"';
@@ -113,7 +113,7 @@ function getProductSizingSpecs(product) {
     fabric: product.fabric || '100% Ring-Spun Combed Cotton, 180 GSM (Softstyle)',
     care: product.careInstructions || 'Machine wash cold, inside out. Avoid tumble drying to maintain fit and print lifespan.',
     delivery: product.deliveryInfo || 'Standard express delivery.',
-    headers: ['Size', 'Width (רוחב)', 'Length (אורך)', 'Fit Vibe'],
+    headers: ['Size', 'Width', 'Length', 'Fit Vibe'],
     rows: [
       { size: 'S', width: '46 cm', length: '71 cm', fit: 'Standard / Slim' },
       { size: 'M', width: '51 cm', length: '74 cm', fit: 'Perfect Daily' },
@@ -131,7 +131,7 @@ function getProductSizingSpecs(product) {
   };
 }
 
-export default function PerfectFitKeys({ product, locale = 'he', allProducts = [] }) {
+export default function PerfectFitKeys({ product, allProducts = [] }) {
   // If product is not provided (e.g. on homepage), allow selecting between major categories using real products
   const [selectedHomeProductId, setSelectedHomeProductId] = useState(null);
 
@@ -142,9 +142,15 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
         return allProducts.find(p => p.id === selectedHomeProductId) || allProducts[0];
       }
       // Default to the Hoodie (ID 10) or T-Shirt (ID 5)
-      const hoodie = allProducts.find(p => (p.title || '').toLowerCase().includes('hoodie'));
+      const hoodie = allProducts.find(p => {
+        const title = (p.title || '').toLowerCase();
+        return title.includes('hoodie') || title.includes('sweatshirt');
+      });
       if (hoodie) return hoodie;
-      const tee = allProducts.find(p => (p.title || '').toLowerCase().includes('tee') || (p.title || '').toLowerCase().includes('t-shirt'));
+      const tee = allProducts.find(p => {
+        const title = (p.title || '').toLowerCase();
+        return title.includes('tee') || title.includes('t-shirt');
+      });
       if (tee) return tee;
       return allProducts[0];
     }
@@ -166,8 +172,6 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
     }
   };
 
-  const isRtl = locale === 'he';
-
   if (!activeProduct || !specs) {
     return null;
   }
@@ -176,19 +180,17 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
   const selectors = allProducts.filter(p => [5, 10, 16].includes(Number(p.id)));
 
   return (
-    <section className="perfect-fit-keys-section" id="perfect-fit-keys" dir={isRtl ? 'rtl' : 'ltr'}>
+    <section className="perfect-fit-keys-section" id="perfect-fit-keys" dir="ltr">
       <div className="container">
         
         {/* Title Block */}
         <div className="section-title-block">
           <div className="badge-pill">
-            <span>{isRtl ? '📏 מפתחות ההתאמה המושלמת' : '📏 PERFECT FIT KEYS'}</span>
+            <span>📏 PERFECT FIT KEYS</span>
           </div>
-          <h2>{isRtl ? 'סל המידות המדויק' : 'PERFECT FIT ASSISTANT'}</h2>
+          <h2>PERFECT FIT ASSISTANT</h2>
           <p>
-            {isRtl 
-              ? 'ביטלנו את משחקי הניחושים. הנתונים הבאים נמשכים ישירות מהמפרט הטכני של הספק עבור הפריט הנוכחי.'
-              : 'Zero guesswork fit. Sizing metrics pulled live from the supplier specifications of the viewed item.'}
+            Zero guesswork fit. Sizing metrics pulled live from the supplier specifications of the viewed item.
           </p>
         </div>
 
@@ -198,9 +200,13 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
             {selectors.map(p => {
               const isActive = activeProduct.id === p.id;
               const title = (p.title || '').toLowerCase();
-              let btnLabel = isRtl ? 'חולצת פרימיום' : 'Premium Tee';
-              if (title.includes('hoodie')) btnLabel = isRtl ? 'קפוצ\'ון אוברסייז' : 'Oversized Hoodie';
-              if (title.includes('chain')) btnLabel = isRtl ? 'שרשרת קובנית' : 'Cuban Chain';
+              
+              let btnLabel = 'Premium Tee';
+              if (title.includes('hoodie') || title.includes('sweatshirt') || title.includes('hooded')) {
+                btnLabel = 'Oversized Hoodie';
+              } else if (title.includes('chain') || title.includes('necklace') || title.includes('link')) {
+                btnLabel = 'Cuban Chain';
+              }
               
               return (
                 <button
@@ -222,7 +228,7 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
           {/* Sizing Specifications Card */}
           <div className="fit-card specs-card">
             <h3 className="specs-title">
-              <span>💎</span> {isRtl ? 'מפרט חומרים ומידות' : 'Materials & Sizing Specs'}
+              <span>💎</span> Materials & Sizing Specs
             </h3>
             
             <div className="product-identity-badge">
@@ -232,13 +238,13 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
 
             {/* Fabric Composition */}
             <div className="spec-info-row">
-              <span className="spec-label">{isRtl ? 'הרכב הבד / חומר:' : 'Fabric & Material:'}</span>
+              <span className="spec-label">Fabric & Material:</span>
               <p className="spec-val">{specs.fabric}</p>
             </div>
 
             {/* Care Instructions */}
             <div className="spec-info-row">
-              <span className="spec-label">{isRtl ? 'הנחיות טיפול וכביסה:' : 'Care Instructions:'}</span>
+              <span className="spec-label">Care Instructions:</span>
               <p className="spec-val">{specs.care}</p>
             </div>
 
@@ -268,18 +274,16 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
           {/* Interactive Calculator Card */}
           <div className="fit-card calculator-card">
             <h3 className="specs-title">
-              <span>🔑</span> {isRtl ? 'מחשבון התאמה דינמי' : 'Dynamic Sizing Engine'}
+              <span>🔑</span> Dynamic Sizing Engine
             </h3>
             <p className="calc-desc">
-              {isRtl
-                ? 'הזן את הגובה והמשקל שלך כדי לקבל המלצה מדויקת המבוססת על מידות המוצר.'
-                : 'Input your height and weight to resolve your absolute size recommendation.'}
+              Input your height and weight to resolve your absolute size recommendation.
             </p>
 
             <form onSubmit={handleCalculate} className="calc-form">
               <div className="form-group">
                 <label>
-                  {isRtl ? 'גובה (ס"מ):' : 'Height (cm):'} <strong>{height} cm</strong>
+                  Height (cm): <strong>{height} cm</strong>
                 </label>
                 <input
                   type="range"
@@ -293,7 +297,7 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
 
               <div className="form-group">
                 <label>
-                  {isRtl ? 'משקל (ק"ג):' : 'Weight (kg):'} <strong>{weight} kg</strong>
+                  Weight (kg): <strong>{weight} kg</strong>
                 </label>
                 <input
                   type="range"
@@ -306,18 +310,16 @@ export default function PerfectFitKeys({ product, locale = 'he', allProducts = [
               </div>
 
               <button type="submit" className="calc-submit-btn">
-                {isRtl ? 'חשב מידה מומלצת ⚡' : 'Calculate Fit size ⚡'}
+                Calculate Fit size ⚡
               </button>
             </form>
 
             {calculatedSize && (
               <div className="calc-result-overlay">
-                <span>{isRtl ? 'המידה המומלצת שלך:' : 'Your Recommended Fit:'}</span>
+                <span>Your Recommended Fit:</span>
                 <div className="result-size-badge">{calculatedSize}</div>
                 <p className="result-note">
-                  {isRtl
-                    ? '*ההמלצה מתייחסת לגזרה יוקרטית ונוחה המבוססת על המלאי הנוכחי.'
-                    : '*Based on our signature streetwear silhouette and current catalog measurements.'}
+                  *Based on our signature streetwear silhouette and current catalog measurements.
                 </p>
               </div>
             )}

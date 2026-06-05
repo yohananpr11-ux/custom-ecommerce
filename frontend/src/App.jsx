@@ -1897,16 +1897,12 @@ function MainApp() {
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
-  const [locale, setLocale] = useState(() => localStorage.getItem('drip_street_locale') || 'en');
+  const locale = 'en';
+  const setLocale = () => {};
+  const toggleLocale = () => {};
   const [currency, setCurrency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
   const [isHeaderScrolled, setIsHeaderScrolled] = useState(false)
-
-  const toggleLocale = () => {
-    const nextLocale = locale === 'he' ? 'en' : 'he';
-    setLocale(nextLocale);
-    localStorage.setItem('drip_street_locale', nextLocale);
-  };
 
   // Glass header deepens after first scroll
   useEffect(() => {
@@ -4473,9 +4469,6 @@ function MainApp() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="lang-toggle-btn hide-on-mobile" onClick={toggleLocale}>
-            {locale === 'he' ? 'EN' : 'עב'}
-          </button>
           <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={() => navigate('/cart')}>
             <span>🛒 {t('cart')}</span>
             {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
@@ -4507,11 +4500,7 @@ function MainApp() {
                 {cat === 'All' ? t('all') : cat === 'New Arrivals' ? t('new_arrivals') : cat === 'Hoodies' ? t('hoodies') : cat === 'Shirts' ? t('tshirts') : cat === 'Tank Tops' ? t('tank_tops') : cat === 'Jewelry' ? t('jewelry') : cat}
               </button>
             ))}
-            <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button type="button" className="side-nav-link" onClick={() => { toggleLocale(); closeMobileNav(); }} style={{ textAlign: locale === 'he' ? 'right' : 'left', display: 'flex', alignItems: 'center', gap: '8px', color: '#888' }}>
-                🌐 {locale === 'he' ? 'English (EN)' : 'עברית (HE)'}
-              </button>
-            </div>
+
           </div>
         </aside>
       </div>
