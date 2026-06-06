@@ -13,7 +13,17 @@ const HARDWARE_ITEMS = [
     spu: 'CJLX1574470',
     title: 'HEAVYWEIGHT CUBAN CHAIN',
     price: 149,
-    imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/0c8b4b03-98f2-40e2-b759-ea11059fd16b.jpg',
+    images: [
+      'https://cf.cjdropshipping.com/0c8b4b03-98f2-40e2-b759-ea11059fd16b.jpg',
+      'https://cf.cjdropshipping.com/7ebbea07-4e8f-4a13-bd5c-b0d38fcc6674.jpg',
+      'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
+      'https://cf.cjdropshipping.com/927156b9-7607-4fdc-a468-9991b4f0d081.jpg',
+      'https://cf.cjdropshipping.com/397f6cfd-1283-42e8-819a-0247af66e194.jpg',
+      'https://cf.cjdropshipping.com/70e4eda3-3dd7-4ffd-abef-f4c75ce97133.jpg',
+      'https://cf.cjdropshipping.com/2ae7190d-7790-4fe5-9685-e0179d6f4cbf.jpg',
+      'https://cf.cjdropshipping.com/343007a8-81ed-411e-b60d-63f08b3183d4.jpg'
+    ]
   },
   {
     id: 18,
@@ -21,20 +31,47 @@ const HARDWARE_ITEMS = [
     title: 'TITANIUM BRAIDED PENDANT',
     price: 139,
     imageUrl: 'https://cf.cjdropshipping.com/quick/product/88af505d-2f06-4dc1-a84b-6cc0530a5c89.jpg',
+    images: [
+      'https://cf.cjdropshipping.com/quick/product/88af505d-2f06-4dc1-a84b-6cc0530a5c89.jpg',
+      'https://cf.cjdropshipping.com/quick/product/5dc781e8-dec2-41ba-9be8-a56030ed5e99.jpg',
+      'https://cf.cjdropshipping.com/quick/product/a6c57b04-3681-491f-b173-0c230ca0e33b.jpg',
+      'https://cf.cjdropshipping.com/quick/product/979b7792-1844-4d86-b2c2-e21e403a4f15.jpg',
+      'https://cf.cjdropshipping.com/quick/product/ab570464-be14-4c6f-aae7-dab9f6ba90c4.jpg'
+    ]
   },
   {
     id: 19,
     spu: 'CJZBLXSL06697',
     title: 'COLD WIND CUBAN BRACELET',
     price: 119,
-    imageUrl: 'https://cf.cjdropshipping.com/2054/4883093832835.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/2054/2352174826971.jpg',
+    images: [
+      'https://cf.cjdropshipping.com/2054/2352174826971.jpg',
+      'https://cf.cjdropshipping.com/abdd9fb4-c597-4452-9836-6a16d70cfca0.jpg',
+      'https://cf.cjdropshipping.com/2054/4883093832835.jpg',
+      'https://cf.cjdropshipping.com/2054/8263353655468.jpg',
+      'https://cf.cjdropshipping.com/2054/3272995108089.jpg',
+      'https://cf.cjdropshipping.com/2054/204161648596.jpg',
+      'https://cf.cjdropshipping.com/2054/3563237393048.jpg',
+      'https://cf.cjdropshipping.com/4187ed51-dcee-488c-b5ac-b8c0ef366dc0.jpg',
+      'https://oss-cf.cjdropshipping.com/product/2023/10/05/02/bcc064cd-b869-42b9-8fd2-9e7d1799d713.png',
+      'https://oss-cf.cjdropshipping.com/product/2024/03/03/03/cf0fe005-a846-424b-b3fb-24358c5b43c3.jpg',
+      'https://oss-cf.cjdropshipping.com/product/2024/03/03/03/e705343a-da8b-426a-9cd2-4b481917a299.jpg'
+    ]
   },
   {
     id: 20,
     spu: 'CJLX1022452',
     title: 'ESSENTIAL STEEL STUDS',
     price: 79,
-    imageUrl: 'https://cf.cjdropshipping.com/1614328451320.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/1614328451324.jpg',
+    images: [
+      'https://cf.cjdropshipping.com/1614328451324.jpg',
+      'https://cf.cjdropshipping.com/1614328451361.jpg',
+      'https://cf.cjdropshipping.com/1614328451320.jpg',
+      'https://cf.cjdropshipping.com/1614328451362.jpg',
+      'https://cf.cjdropshipping.com/1614328451364.jpg'
+    ]
   },
   {
     id: 21,
@@ -42,6 +79,15 @@ const HARDWARE_ITEMS = [
     title: 'ONYX ZIRCON STUDS',
     price: 89,
     imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
+    images: [
+      'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
+      'https://cf.cjdropshipping.com/041d1f61-cc82-4ba0-a4d3-2746d154d7c4.jpg',
+      'https://cf.cjdropshipping.com/1f59d679-1f7f-4076-b331-82479c85d47f.jpg',
+      'https://cf.cjdropshipping.com/7fb713c9-7ea4-41c4-b8ea-76b801ae6972.jpg',
+      'https://cf.cjdropshipping.com/1aaa6a98-0d4f-4030-a18a-77d04dcc8959.jpg',
+      'https://cf.cjdropshipping.com/4a6b8632-68fd-4903-8d43-8d73c0b3bb32.jpg',
+      'https://cf.cjdropshipping.com/2589292b-7808-42da-af6c-5815d5621013.jpg'
+    ]
   },
 ];
 
@@ -163,10 +209,13 @@ async function seedHardwareCatalog({ verbose = false } = {}) {
     await dbRun('DELETE FROM product_variants WHERE productId = ?', [item.id]);
     await dbRun('DELETE FROM products WHERE id = ?', [item.id]);
 
+    const allImages = item.images || [imageUrl];
+    const imagesJson = JSON.stringify({ allImages, variantImageMap: {} });
+
     await dbRun(
       `INSERT INTO products (id, title, description, price, priceUSD, imageUrl, images, type, printifyId, supplier_id, stock)
-       VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-      [item.id, item.title, description, item.price, null, imageUrl, 'dropship', item.spu, 'dropship', 999]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [item.id, item.title, description, item.price, null, imageUrl, imagesJson, 'dropship', item.spu, 'dropship', 999]
     );
 
     await dbRun(

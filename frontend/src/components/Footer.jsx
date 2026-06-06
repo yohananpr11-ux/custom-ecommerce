@@ -30,44 +30,17 @@ const POLICY_CONTENT = {
   },
 };
 
-function PolicyModal({ policy, locale, onClose }) {
+function PolicyModal({ policy, onClose }) {
   const base = POLICY_CONTENT[policy];
   if (!base) return null;
 
-  const localized = locale === 'he'
-    ? {
-        shipping: {
-          title: 'מדיניות משלוחים',
-          blocks: [
-            { heading: 'זמן הכנה', copy: 'כל הזמנה עוברת הכנה ובקרת איכות לפני יציאה. ברוב המקרים המשלוח יוצא תוך 2-5 ימי עסקים.' },
-            { heading: 'טווחי הגעה', copy: 'זמני הגעה תלויים ביעד ובתהליכי מכס. לרוב ההגעה נעה בין 6-20 ימי עסקים.' },
-            { heading: 'מעקב ותמיכה', copy: 'לינק מעקב נשלח מיד לאחר סריקה של חברת השילוח. אם אין התקדמות יותר מ-72 שעות, שירות הלקוחות מטפל מיידית.' },
-          ],
-        },
-        refund: {
-          title: 'מדיניות החזרים',
-          blocks: [
-            { heading: 'אחריות איכות', copy: 'אם פריט הגיע פגום או עם הדפס לא תקין, נציע החלפה או החזר מלא לאחר בדיקה.' },
-            { heading: 'חלון פתיחת פנייה', copy: 'אפשר לפתוח פנייה עד 30 יום ממועד המסירה עם מספר הזמנה ותמונות ברורות.' },
-            { heading: 'מקרים ללא החזר', copy: 'מאחר והפריטים מיוצרים לפי הזמנה, לא ניתן לבצע החזר על בחירת מידה שגויה או שינוי דעת לאחר תחילת ייצור.' },
-          ],
-        },
-        terms: {
-          title: 'תנאי שימוש',
-          blocks: [
-            { heading: 'הסכמת הזמנה', copy: 'ביצוע הזמנה מהווה הסכמה לתהליך הייצור, התנאים המסחריים ומדיניות המשלוחים.' },
-            { heading: 'דיוק תצוגת מוצרים', copy: 'אנחנו שומרים על אחידות גבוהה, אך ייתכנו הבדלים קלים בגוון בין מסכים ובין אצוות הדפסה.' },
-            { heading: 'הגבלת אחריות', copy: 'האחריות שלנו מוגבלת לערך הפריט ששולם, ואינה כוללת עיכובים של גורמי שילוח או מכס.' },
-          ],
-        },
-      }[policy]
-    : base;
+  const localized = base;
 
   return (
     <div className="footer-policy-overlay" onClick={onClose}>
-      <div className="footer-policy-modal" onClick={(event) => event.stopPropagation()} dir={locale === 'he' ? 'rtl' : 'ltr'}>
-        <button type="button" className="footer-policy-close" onClick={onClose} aria-label={locale === 'he' ? 'סגור' : 'Close'}>×</button>
-        <span className="footer-policy-chip">{locale === 'he' ? 'מדיניות' : 'Policy'}</span>
+      <div className="footer-policy-modal" onClick={(event) => event.stopPropagation()} dir="ltr">
+        <button type="button" className="footer-policy-close" onClick={onClose} aria-label="Close">×</button>
+        <span className="footer-policy-chip">Policy</span>
         <h3>{localized.title}</h3>
         <div className="footer-policy-grid">
           {localized.blocks.map((block) => (
@@ -85,23 +58,12 @@ function PolicyModal({ policy, locale, onClose }) {
 export default function Footer({ locale = 'en' }) {
   const [activePolicy, setActivePolicy] = useState(null);
 
-  const copy = useMemo(() => {
-    if (locale === 'he') {
-      return {
-        newsletterTitle: 'מועדון DRIP STREET',
-        newsletterSubtitle: 'הצטרפו לעדכונים, דרופים מוקדמים וקוד הטבה להזמנה הראשונה.',
-        newsletterPlaceholder: 'כתובת האימייל שלך',
-        newsletterCta: 'הצטרף',
-      };
-    }
-
-    return {
-      newsletterTitle: 'Join the Club',
-      newsletterSubtitle: 'Subscribe for exclusive releases, early access, and 10% off your first order.',
-      newsletterPlaceholder: 'Your email address',
-      newsletterCta: 'Join',
-    };
-  }, [locale]);
+  const copy = {
+    newsletterTitle: 'Join the Club',
+    newsletterSubtitle: 'Subscribe for exclusive releases, early access, and 10% off your first order.',
+    newsletterPlaceholder: 'Your email address',
+    newsletterCta: 'Join',
+  };
 
   const handleNewsletterSubmit = (e) => {
     e.preventDefault();

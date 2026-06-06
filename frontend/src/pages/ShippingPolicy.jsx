@@ -60,7 +60,7 @@ export default function ShippingPolicy() {
             3. Shipping Rates & Discounts
           </h2>
           <p style={{ margin: 0 }}>
-            Shipping is calculated at checkout based on your destination and order value. We provide <strong>FREE SHIPPING</strong> on orders with a cart subtotal of ₪249 or more.
+            Shipping is calculated at checkout based on your destination and order value. We provide <strong>FREE SHIPPING</strong> on orders with a cart subtotal of $249 or more.
           </p>
         </section>
 
