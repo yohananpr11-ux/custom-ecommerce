@@ -4991,3 +4991,41 @@ button,
     padding: 8px;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Uniform Grayscale-to-Color Hover Effect for all product cards globally
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Default State: Grayscale */
+.product-card .product-image,
+.best-seller-card .best-seller-image-btn img,
+.hardware-card .hardware-image-btn img,
+.trending-card .trending-card-img-wrap img,
+.cart-recommendation-card img,
+.cart-upsell-card .cart-upsell-image-wrap img,
+.hero-floating-item .hero-product-image {
+  filter: grayscale(1) contrast(1.02) !important;
+  transition: filter 0.4s ease, transform 0.4s ease, opacity 0.4s ease !important;
+}
+
+/* 2. Hover State: Full Color */
+.product-card:hover .product-image,
+.product-card .product-image:hover,
+.best-seller-card:hover .best-seller-image-btn img,
+.best-seller-card .best-seller-image-btn:hover img,
+.best-seller-card .best-seller-image-btn img:hover,
+.hardware-card:hover .hardware-image-btn img,
+.hardware-card .hardware-image-btn:hover img,
+.hardware-card .hardware-image-btn img:hover,
+.trending-card:hover .trending-card-img-wrap img,
+.trending-card .trending-card-img-wrap:hover img,
+.trending-card .trending-card-img-wrap img:hover,
+.cart-recommendation-card:hover img,
+.cart-recommendation-card img:hover,
+.cart-upsell-card:hover .cart-upsell-image-wrap img,
+.cart-upsell-card .cart-upsell-image-wrap:hover img,
+.cart-upsell-card .cart-upsell-image-wrap img:hover,
+.hero-floating-item:hover .hero-product-image,
+.hero-floating-item .hero-product-image:hover {
+  filter: grayscale(0) contrast(1.02) !important;
+}
