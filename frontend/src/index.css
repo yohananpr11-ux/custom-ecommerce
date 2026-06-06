@@ -5060,3 +5060,9 @@ button,
     justify-content: center;
   }
 }
+
+/* Specific cropping position for Titanium Braided Pendant (Product 18) */
+.hardware-card img.crop-pendant {
+  object-position: top center !important;
+}
+

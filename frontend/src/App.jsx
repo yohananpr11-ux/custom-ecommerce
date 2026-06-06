@@ -1629,10 +1629,12 @@ function HardwareCard({ product, locale, currency, exchangeRate, curSym, navigat
           src={product.imageUrl}
           alt={getProductTitle(product.title, locale)}
           loading="lazy"
+          className={product.id === 18 ? "crop-pendant" : ""}
           onError={(e) => setImageFallback(e)}
           style={{
             filter: hovered ? 'grayscale(0) contrast(1.02)' : 'grayscale(1) contrast(1.02)',
-            transition: 'filter 0.4s ease, transform 0.4s ease'
+            transition: 'filter 0.4s ease, transform 0.4s ease',
+            objectPosition: product.id === 18 ? 'top center' : 'center'
           }}
         />
       </button>
