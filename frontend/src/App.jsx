@@ -458,6 +458,37 @@ const ENGLISH_SHIPPING_TEXT_REGEX = /^[A-Za-z0-9\s.,'\-/#()]+$/;
 const normalizeValue = (value) => String(value || '').trim().toLowerCase();
 const normalizeSizeLabel = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
 
+const normalizeArrayField = (value) => {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value.filter((v) => v != null);
+  if (typeof value === 'string' && value.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((v) => v != null) : [value];
+    } catch { return [value]; }
+  }
+  return [value];
+};
+
+const PLACEHOLDER_IMG = '/placeholder.png';
+
+function extractProductImageUrl(product) {
+  if (!product) return PLACEHOLDER_IMG;
+  const raw =
+    product.imageUrl ??
+    product.image ??
+    (Array.isArray(product.images) ? product.images[0] : null);
+  if (!raw) return PLACEHOLDER_IMG;
+  if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+    try {
+      const arr = JSON.parse(raw);
+      const first = Array.isArray(arr) ? arr[0] : null;
+      return typeof first === 'string' && first ? first : PLACEHOLDER_IMG;
+    } catch { return PLACEHOLDER_IMG; }
+  }
+  return typeof raw === 'string' && raw.trim() ? raw : PLACEHOLDER_IMG;
+}
+
 const triggerHapticTap = () => {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
   if (!window.matchMedia('(max-width: 768px)').matches) return;
@@ -1431,11 +1462,11 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           <div className="pdp-purchase-panel">
             <div className="pdp-price">{curSym}{(displayPrice || 0).toFixed(2)}</div>
 
-            {Array.isArray(product?.colors) && product.colors.length > 0 && (
+            {normalizeArrayField(product?.colors).length > 0 && (
               <div className="pdp-section">
                 <h3>{t('color')}</h3>
                 <div className="pdp-options">
-                  {(product?.colors || []).map(c => (
+                  {normalizeArrayField(product?.colors).map(c => (
                     <button
                       key={c?.name || ''}
                       className={`color-btn ${selectedColor === c?.name ? 'active' : ''}`}

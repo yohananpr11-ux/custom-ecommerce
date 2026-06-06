@@ -340,8 +340,8 @@ a,
 .header {
   padding: 16px max(20px, calc((100% - 1200px) / 2)) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   position: sticky;
   top: 0;
@@ -361,12 +361,23 @@ a,
 }
 
 .header-leading {
+  grid-column: 1;
+  justify-self: start;
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
+.search-bar {
+  grid-column: 2;
+  justify-self: center;
+  display: flex;
+  justify-content: center;
+}
+
 .header-trailing {
+  grid-column: 3;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -5050,36 +5061,15 @@ button,
 }
 
 
-/* Navbar Search Bar — visually centered BETWEEN the logo and the cart.
-   Uses flex + space-between so the free space gets split equally into the
-   two gaps surrounding the search bar. Result: distance(logo→search) ==
-   distance(search→cart), regardless of logo or cart width.
-   (Note: 1fr auto 1fr would center on the *page*, which leaves an
-   asymmetric visual gap because the logo is wider than the cart.) */
+/* Navbar layout: 3-column grid (1fr auto 1fr) defined on base .header above.
+   Logo fills col-1 (start-aligned), search is auto-width col-2 (centered
+   to the page), trailing icons fill col-3 (end-aligned).
+   Responsive input width controlled below. */
 @media (min-width: 769px) {
-  .storefront-header,
-  header.header.storefront-header {
-    display: flex !important;
-    flex-direction: row !important;
-    justify-content: space-between !important;
-    align-items: center !important;
-    gap: 0 !important;
-  }
-  .storefront-header > .header-leading,
-  .storefront-header > .header-trailing {
-    flex: 0 0 auto !important;
-    display: flex;
-    align-items: center;
-  }
-  .storefront-header > .header-leading { gap: 14px; }
-  .storefront-header > .header-trailing { gap: 16px; }
-  .storefront-header > .search-bar {
-    flex: 0 1 480px !important;
-    width: 100%;
+  .storefront-header > .search-bar input {
+    width: 300px;
     max-width: 480px;
-    min-width: 280px;
-    display: flex;
-    justify-content: center;
+    min-width: 200px;
   }
 }
 
