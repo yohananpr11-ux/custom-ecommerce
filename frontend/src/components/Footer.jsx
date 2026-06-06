@@ -69,7 +69,7 @@ export default function Footer({ locale = 'en' }) {
     e.preventDefault();
     const email = e.target.querySelector('input')?.value;
     if (email) {
-      alert(`Thank you for subscribing, ${email}! Welcome to the club.`);
+      window.dispatchEvent(new CustomEvent('app:toast', { detail: { message: `Welcome to the club! Check ${email} for your 10% off code.` } }));
       e.target.reset();
     }
   };

@@ -2148,14 +2148,18 @@ function MainApp() {
       showToast(event.detail && event.detail.message ? event.detail.message : GLOBAL_ERROR_TOAST_HE);
     };
 
+    const handleAppToast = (e) => showToast(e.detail?.message || '');
+
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
     window.addEventListener('error', handleWindowError);
     window.addEventListener('app:error-toast', handleBoundaryToast);
+    window.addEventListener('app:toast', handleAppToast);
 
     return () => {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       window.removeEventListener('error', handleWindowError);
       window.removeEventListener('app:error-toast', handleBoundaryToast);
+      window.removeEventListener('app:toast', handleAppToast);
     };
   }, []);
 
