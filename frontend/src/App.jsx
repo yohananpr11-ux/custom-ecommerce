@@ -468,13 +468,13 @@ const extractImageUrl = (value) => {
   if (!value) return null;
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    return trimmed ? trimmed : null;
+    return (trimmed && trimmed !== 'undefined') ? trimmed : null;
   }
   if (typeof value === 'object') {
-    const candidate = value.src || value.url || value.image_url || value.imageUrl;
+    const candidate = value.src || value.url || value.image_url || value.imageUrl || value.swatch;
     if (typeof candidate === 'string') {
       const trimmed = candidate.trim();
-      return trimmed ? trimmed : null;
+      return (trimmed && trimmed !== 'undefined') ? trimmed : null;
     }
   }
   return null;
@@ -1077,7 +1077,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     );
     if (mappedVariantImages.length > 0) return mappedVariantImages;
 
-    const imagesByColor = product.imagesByColor && typeof product.imagesByColor === 'object'
+    const imagesByColor = (product.type !== 'dropship' && product.supplier_id !== 'dropship' && product.imagesByColor && typeof product.imagesByColor === 'object')
       ? product.imagesByColor
       : null;
 
@@ -1092,7 +1092,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       }
     }
 
-    if (selectedVariant?.imageUrl || selectedVariant?.image_url) {
+    if (product.type !== 'dropship' && product.supplier_id !== 'dropship' && (selectedVariant?.imageUrl || selectedVariant?.image_url)) {
       const variantImage = extractImageUrl(selectedVariant.imageUrl || selectedVariant.image_url);
       if (variantImage) return [variantImage];
     }
@@ -1238,9 +1238,11 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       );
     }
 
+    const imageSrc = extractImageUrl(asset.src) || GLOBAL_IMAGE_FALLBACK;
+
     return (
       <GuardedProductImage
-        src={asset.src}
+        src={imageSrc}
         alt={`${product.title} ${asset.label}`}
         className={variant === 'thumb' ? 'pdp-thumb-img' : 'pdp-image'}
         loading={variant === 'main' ? 'eager' : 'lazy'}
@@ -2331,7 +2333,7 @@ function MainApp() {
     );
     if (mappedVariantImages.length > 0) return mappedVariantImages[0];
 
-    const imagesByColor = quickAddProduct.imagesByColor && typeof quickAddProduct.imagesByColor === 'object'
+    const imagesByColor = (quickAddProduct.type !== 'dropship' && quickAddProduct.supplier_id !== 'dropship' && quickAddProduct.imagesByColor && typeof quickAddProduct.imagesByColor === 'object')
       ? quickAddProduct.imagesByColor
       : null;
 
