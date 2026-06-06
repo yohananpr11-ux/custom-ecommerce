@@ -1538,7 +1538,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         
         <div className="pdp-info-wrapper">
           <div className="pdp-info">
-            <h1>{getProductTitle(product.title, locale)}</h1>
+            <h1>{getProductTitle(product?.title || '', locale)}</h1>
             <StarRating score={4.9} count={47} t={t} />
 
             <div className="pdp-accordion">
@@ -1585,8 +1585,8 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       {showStickyCta && (
         <div className="sticky-buy-bar">
           <div className="sticky-buy-meta">
-            <strong>{getProductTitle(product.title, locale)}</strong>
-            <span>{curSym}{displayPrice.toFixed(2)}</span>
+            <strong>{getProductTitle(product?.title || '', locale)}</strong>
+            <span>{curSym}{(Number(displayPrice) || 0).toFixed(2)}</span>
           </div>
           <button
             className="sticky-buy-btn"
@@ -4302,7 +4302,7 @@ function MainApp() {
         {t('announcement')}
       </div>
 
-      <header className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}`}>
         <div className="header-leading">
           <button className="nav-toggle" type="button" aria-label="Open navigation" onClick={openMobileNav}>
             <span />

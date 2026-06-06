@@ -5050,20 +5050,34 @@ button,
 }
 
 
-/* Perfect Horizontal Centering of Navbar Search Bar on Desktop */
+/* Navbar Search Bar — visually centered BETWEEN the logo and the cart.
+   Uses flex + space-between so the free space gets split equally into the
+   two gaps surrounding the search bar. Result: distance(logo→search) ==
+   distance(search→cart), regardless of logo or cart width.
+   (Note: 1fr auto 1fr would center on the *page*, which leaves an
+   asymmetric visual gap because the logo is wider than the cart.) */
 @media (min-width: 769px) {
-  .header-leading {
-    flex: 1;
-    display: flex;
-    justify-content: flex-start;
+  .storefront-header,
+  header.header.storefront-header {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 0 !important;
   }
-  .header-trailing {
-    flex: 1;
+  .storefront-header > .header-leading,
+  .storefront-header > .header-trailing {
+    flex: 0 0 auto !important;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
   }
-  .search-bar {
-    flex: 0 0 auto;
+  .storefront-header > .header-leading { gap: 14px; }
+  .storefront-header > .header-trailing { gap: 16px; }
+  .storefront-header > .search-bar {
+    flex: 0 1 480px !important;
+    width: 100%;
+    max-width: 480px;
+    min-width: 280px;
     display: flex;
     justify-content: center;
   }
@@ -5072,5 +5086,22 @@ button,
 /* Specific cropping position for Titanium Braided Pendant (Product 18) */
 .hardware-card img.crop-pendant {
   object-position: top center !important;
+}
+
+/* Silver-glow hover — stamped at high specificity so nothing overrides.
+   Applies to items 20 & 21 (the silver studs). Pairs with the React-driven
+   inline filter as a defensive double-bind: even if the inline style is
+   stripped or React's hovered state misfires, the CSS hover still lands. */
+.hardware-card img.silver-glow,
+.hardware-card .hardware-image-btn img.silver-glow {
+  transition: filter 0.4s ease, transform 0.4s ease, box-shadow 0.4s ease !important;
+}
+.hardware-card:hover img.silver-glow,
+.hardware-card .hardware-image-btn:hover img.silver-glow,
+.hardware-card img.silver-glow:hover {
+  filter: grayscale(0) brightness(1.18) contrast(1.04)
+          drop-shadow(0 0 12px rgba(220, 230, 240, 0.55))
+          drop-shadow(0 0 24px rgba(180, 200, 220, 0.35)) !important;
+  transform: scale(1.06) !important;
 }
 
