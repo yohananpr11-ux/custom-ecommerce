@@ -366,6 +366,12 @@ a,
   gap: 14px;
 }
 
+.header-trailing {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .nav-toggle {
   width: 48px;
   height: 48px;
@@ -5034,4 +5040,23 @@ button,
 .hero-floating-item .hero-product-image:hover {
   filter: grayscale(0) !important;
   transform: scale(1.05) !important;
+}
+
+/* Perfect Horizontal Centering of Navbar Search Bar on Desktop */
+@media (min-width: 769px) {
+  .header-leading {
+    flex: 1;
+    display: flex;
+    justify-content: flex-start;
+  }
+  .header-trailing {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .search-bar {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+  }
 }
