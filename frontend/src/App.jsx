@@ -1611,6 +1611,106 @@ function ProductDetailRoute(props) {
   return <ProductDetailPage productId={parsed} {...props} />;
 }
 
+// ─── Custom Grayscale-to-Color hoverable cards ──────────────────────────────
+function HardwareCard({ product, locale, currency, exchangeRate, curSym, navigate }) {
+  const [hovered, setHovered] = useState(false);
+  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+  return (
+    <article
+      className="hardware-card"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button type="button" className="hardware-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
+        <img
+          src={product.imageUrl}
+          alt={getProductTitle(product.title, locale)}
+          loading="lazy"
+          onError={(e) => setImageFallback(e)}
+          style={{
+            filter: hovered ? 'grayscale(0) contrast(1.02)' : 'grayscale(1) contrast(1.02)',
+            transition: 'filter 0.4s ease, transform 0.4s ease'
+          }}
+        />
+      </button>
+      <div className="hardware-meta">
+        <h3>{getProductTitle(product.title, locale)}</h3>
+        <span>{curSym}{displayPrice.toFixed(2)}</span>
+      </div>
+      <button type="button" className="hardware-cta" onClick={() => navigate(`/product/${product.id}`)}>
+        View Item
+      </button>
+    </article>
+  );
+}
+
+function BestSellerCard({ product, locale, currency, exchangeRate, curSym, navigate, openQuickAdd }) {
+  const [hovered, setHovered] = useState(false);
+  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+  return (
+    <article
+      className="best-seller-card"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button type="button" className="best-seller-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
+        <img
+          loading="lazy"
+          src={product.imageUrl}
+          alt={getProductTitle(product.title, locale)}
+          onError={(e) => setImageFallback(e)}
+          style={{
+            filter: hovered ? 'grayscale(0) contrast(1.02)' : 'grayscale(1) contrast(1.02)',
+            transition: 'filter 0.4s ease, transform 0.4s ease'
+          }}
+        />
+      </button>
+      <div className="best-seller-content">
+        <h3>{getProductTitle(product.title, locale)}</h3>
+        <span>{curSym}{displayPrice.toFixed(2)}</span>
+        <div className="best-seller-actions">
+          <button type="button" className="quick-add-btn" onClick={() => openQuickAdd(product)}>Quick Add</button>
+          <button type="button" className="best-seller-link-btn" onClick={() => navigate(`/product/${product.id}`)}>View Product</button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function TrendingCard({ product, locale, currency, exchangeRate, curSym, navigate }) {
+  const [hovered, setHovered] = useState(false);
+  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+  return (
+    <button
+      type="button"
+      className="trending-card"
+      onClick={() => navigate(`/product/${product.id}`)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="trending-card-img-wrap">
+        <img
+          loading="lazy"
+          src={product.imageUrl}
+          alt={getProductTitle(product.title, locale)}
+          onError={(e) => setImageFallback(e)}
+          style={{
+            filter: hovered ? 'grayscale(0) contrast(1.02)' : 'grayscale(1) contrast(1.02)',
+            transition: 'filter 0.4s ease, transform 0.4s ease'
+          }}
+        />
+      </div>
+      <div className="trending-card-info">
+        <span className="trending-card-title">{getProductTitle(product.title, locale)}</span>
+        <span className="trending-card-price">{curSym}{displayPrice.toFixed(2)}</span>
+      </div>
+    </button>
+  );
+}
+
 function MainApp() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -3972,23 +4072,17 @@ function MainApp() {
               <p>Five precision jewelry statements built for brutal everyday rotation.</p>
             </div>
             <div className="hardware-grid">
-              {hardwareProducts.map((product) => {
-                const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-                return (
-                  <article key={`hardware-${product.id}`} className="hardware-card">
-                    <button type="button" className="hardware-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
-                      <img src={product.imageUrl} alt={getProductTitle(product.title, locale)} loading="lazy" onError={(e) => setImageFallback(e)} />
-                    </button>
-                    <div className="hardware-meta">
-                      <h3>{getProductTitle(product.title, locale)}</h3>
-                      <span>{curSym}{displayPrice.toFixed(2)}</span>
-                    </div>
-                    <button type="button" className="hardware-cta" onClick={() => navigate(`/product/${product.id}`)}>
-                      View Item
-                    </button>
-                  </article>
-                );
-              })}
+              {hardwareProducts.map((product) => (
+                <HardwareCard
+                  key={`hardware-${product.id}`}
+                  product={product}
+                  locale={locale}
+                  currency={currency}
+                  exchangeRate={exchangeRate}
+                  curSym={curSym}
+                  navigate={navigate}
+                />
+              ))}
             </div>
           </div>
         </section>
@@ -4001,24 +4095,18 @@ function MainApp() {
             <p className="text-gray-300">Most-loved pieces customers keep reordering for fit, quality, and everyday styling.</p>
           </div>
           <div className="best-sellers-grid">
-            {bestSellerProducts.map((product) => {
-              const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-              return (
-                <article key={`bestseller-${product.id}`} className="best-seller-card">
-                  <button type="button" className="best-seller-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
-                    <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
-                  </button>
-                  <div className="best-seller-content">
-                    <h3>{getProductTitle(product.title, locale)}</h3>
-                    <span>{curSym}{displayPrice.toFixed(2)}</span>
-                    <div className="best-seller-actions">
-                      <button type="button" className="quick-add-btn" onClick={() => openQuickAdd(product)}>Quick Add</button>
-                      <button type="button" className="best-seller-link-btn" onClick={() => navigate(`/product/${product.id}`)}>View Product</button>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
+            {bestSellerProducts.map((product) => (
+              <BestSellerCard
+                key={`bestseller-${product.id}`}
+                product={product}
+                locale={locale}
+                currency={currency}
+                exchangeRate={exchangeRate}
+                curSym={curSym}
+                navigate={navigate}
+                openQuickAdd={openQuickAdd}
+              />
+            ))}
           </div>
         </section>
       )}
@@ -4138,25 +4226,17 @@ function MainApp() {
         <section className="trending-section container">
           <h2 className="trending-title">{t('trending_title')}</h2>
           <div className="trending-scroll">
-            {products.slice(0, 6).map((product) => {
-              const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-              return (
-                <button
-                  key={`trend-${product.id}`}
-                  type="button"
-                  className="trending-card"
-                  onClick={() => navigate(`/product/${product.id}`)}
-                >
-                  <div className="trending-card-img-wrap">
-                    <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
-                  </div>
-                  <div className="trending-card-info">
-                    <span className="trending-card-title">{getProductTitle(product.title, locale)}</span>
-                    <span className="trending-card-price">{curSym}{displayPrice.toFixed(2)}</span>
-                  </div>
-                </button>
-              );
-            })}
+            {products.slice(0, 6).map((product) => (
+              <TrendingCard
+                key={`trend-${product.id}`}
+                product={product}
+                locale={locale}
+                currency={currency}
+                exchangeRate={exchangeRate}
+                curSym={curSym}
+                navigate={navigate}
+              />
+            ))}
           </div>
         </section>
       )}
