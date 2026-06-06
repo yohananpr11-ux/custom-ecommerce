@@ -1023,10 +1023,11 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         // Fire analytics view_item
         trackViewItem(data, currency);
 
-        // Select first non-black color safely
-        if (data && Array.isArray(data.colors) && data.colors.length > 0) {
-          const nonBlackColor = data.colors.find(c => c && c.name && c.name.toLowerCase() !== 'black');
-          setSelectedColor(nonBlackColor ? nonBlackColor.name : (data.colors[0]?.name || ''));
+        // Select first non-black color safely; normalizeArrayField handles JSON-string fields from DB
+        const dataColors = normalizeArrayField(data?.colors);
+        if (data && dataColors.length > 0) {
+          const nonBlackColor = dataColors.find(c => c && c.name && c.name.toLowerCase() !== 'black');
+          setSelectedColor(nonBlackColor ? nonBlackColor.name : (dataColors[0]?.name || ''));
         } else {
           setSelectedColor('');
         }
@@ -1665,7 +1666,7 @@ function HardwareCard({ product, locale, currency, exchangeRate, curSym, navigat
     >
       <button type="button" className="hardware-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
         <img
-          src={product.imageUrl}
+          src={extractProductImageUrl(product)}
           alt={getProductTitle(product.title, locale)}
           loading="lazy"
           className={`${product.id === 18 ? "crop-pendant" : ""} ${[20, 21].includes(Number(product.id)) ? "silver-glow" : ""}`.trim()}
@@ -1705,7 +1706,7 @@ function BestSellerCard({ product, locale, currency, exchangeRate, curSym, navig
       <button type="button" className="best-seller-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
         <img
           loading="lazy"
-          src={product.imageUrl}
+          src={extractProductImageUrl(product)}
           alt={getProductTitle(product.title, locale)}
           onError={(e) => setImageFallback(e)}
           style={{
@@ -1741,7 +1742,7 @@ function TrendingCard({ product, locale, currency, exchangeRate, curSym, navigat
       <div className="trending-card-img-wrap">
         <img
           loading="lazy"
-          src={product.imageUrl}
+          src={extractProductImageUrl(product)}
           alt={getProductTitle(product.title, locale)}
           onError={(e) => setImageFallback(e)}
           style={{
@@ -4219,7 +4220,7 @@ function MainApp() {
                       onClick={() => navigate(`/product/${product.id}`)}
                       style={{ cursor: 'pointer' }}
                     >
-                      <img loading={productIndex === 0 ? 'eager' : 'lazy'} src={product.imageUrl} alt={getProductTitle(product.title, locale)} className="product-image front-img" onError={(e) => setImageFallback(e)} />
+                      <img loading={productIndex === 0 ? 'eager' : 'lazy'} src={extractProductImageUrl(product)} alt={getProductTitle(product.title, locale)} className="product-image front-img" onError={(e) => setImageFallback(e)} />
                       {product.backImageUrl && (
                         <img loading="lazy" src={product.backImageUrl} alt={`${getProductTitle(product.title, locale)} — back view`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
@@ -4493,11 +4494,11 @@ function MainApp() {
                     <p>{t('loading')}</p>
                   ) : (
                     <>
-                      {Array.isArray(quickAddProduct.colors) && quickAddProduct.colors.length > 0 && (
+                      {normalizeArrayField(quickAddProduct.colors).length > 0 && (
                         <div className="quick-config-group">
                           <label>{t('choose_color')}</label>
                           <div className="quick-config-swatches">
-                            {quickAddProduct.colors.map((colorOption) => (
+                            {normalizeArrayField(quickAddProduct.colors).map((colorOption) => (
                               <button
                                 key={colorOption.name}
                                 type="button"
