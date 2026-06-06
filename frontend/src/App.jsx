@@ -546,10 +546,11 @@ const findMatchingVariant = (variants, selectedColor, selectedSize) => {
   const normalizedSize = normalizeSizeLabel(selectedSize);
 
   return variants.find((variant) => (
-    normalizeValue(variant.color) === normalizedColor
+    variant
+    && normalizeValue(variant.color) === normalizedColor
     && normalizeSizeLabel(variant.size) === normalizedSize
-    && Number(variant.isEnabled) !== 0
-    && Number(variant.isAvailable) !== 0
+    && Number(variant.isEnabled || 0) !== 0
+    && Number(variant.isAvailable || 0) !== 0
   )) || null;
 };
 
@@ -559,9 +560,10 @@ const findFirstAvailableVariantForColor = (variants, selectedColor) => {
   const normalizedColor = normalizeValue(selectedColor);
 
   return variants.find((variant) => (
-    normalizeValue(variant.color) === normalizedColor
-    && Number(variant.isEnabled) !== 0
-    && Number(variant.isAvailable) !== 0
+    variant
+    && normalizeValue(variant.color) === normalizedColor
+    && Number(variant.isEnabled || 0) !== 0
+    && Number(variant.isAvailable || 0) !== 0
   )) || null;
 };
 
@@ -947,13 +949,14 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         return res.json();
       })
       .then(data => {
-        // Build imagesByColor mapping from variants and images
-        if (data.variants && data.images && data.type !== 'dropship' && data.supplier_id !== 'dropship') {
+        // Build imagesByColor mapping from variants and images safely
+        if (data && Array.isArray(data.variants) && Array.isArray(data.images) && data.type !== 'dropship' && data.supplier_id !== 'dropship') {
           const imagesByColor = {};
           const variantIdToColor = {};
           
           // Map variant IDs to colors
           data.variants.forEach(v => {
+            if (!v) return;
             const vid = v.printifyVariantId || v.variantId || v.id;
             if (vid) {
               variantIdToColor[vid] = v.color;
@@ -962,18 +965,16 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           
           // Group images by variant ID (extracted from URL path)
           const imagesByVariantId = {};
-          if (Array.isArray(data.images)) {
-            data.images.forEach(img => {
-              const imgSrc = typeof img === 'string' ? img : (img?.src || '');
-              if (!imgSrc) return;
-              const variantMatch = imgSrc.match(/\/mockup\/[^/]+\/(\d+)\//);
-              if (variantMatch) {
-                const variantId = variantMatch[1];
-                if (!imagesByVariantId[variantId]) imagesByVariantId[variantId] = [];
-                imagesByVariantId[variantId].push(img);
-              }
-            });
-          }
+          data.images.forEach(img => {
+            const imgSrc = typeof img === 'string' ? img : (img?.src || '');
+            if (!imgSrc) return;
+            const variantMatch = imgSrc.match(/\/mockup\/[^/]+\/(\d+)\//);
+            if (variantMatch) {
+              const variantId = variantMatch[1];
+              if (!imagesByVariantId[variantId]) imagesByVariantId[variantId] = [];
+              imagesByVariantId[variantId].push(img);
+            }
+          });
           
           // Map images to colors
           Object.entries(imagesByVariantId).forEach(([variantId, images]) => {
@@ -991,13 +992,19 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         // Fire analytics view_item
         trackViewItem(data, currency);
 
-        // Select first non-black color
-        if (data.colors && data.colors.length > 0) {
-          const nonBlackColor = data.colors.find(c => c.name.toLowerCase() !== 'black');
-          setSelectedColor(nonBlackColor ? nonBlackColor.name : data.colors[0].name);
+        // Select first non-black color safely
+        if (data && Array.isArray(data.colors) && data.colors.length > 0) {
+          const nonBlackColor = data.colors.find(c => c && c.name && c.name.toLowerCase() !== 'black');
+          setSelectedColor(nonBlackColor ? nonBlackColor.name : (data.colors[0]?.name || ''));
+        } else {
+          setSelectedColor('');
         }
-        const orderedSizes = getOrderedDisplaySizes(data.sizes || []);
-        if (orderedSizes.length > 0) setSelectedSize(orderedSizes[0]);
+        const orderedSizes = getOrderedDisplaySizes(data?.sizes || []);
+        if (orderedSizes.length > 0) {
+          setSelectedSize(orderedSizes[0]);
+        } else {
+          setSelectedSize('');
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -1007,8 +1014,8 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       });
   }, [productId]);
 
-  const productVariants = product && Array.isArray(product.variants) ? product.variants : [];
-  const productSizes = product && Array.isArray(product.sizes) ? product.sizes : [];
+  const productVariants = product && Array.isArray(product?.variants) ? product.variants : [];
+  const productSizes = product && Array.isArray(product?.sizes) ? product.sizes : [];
   const orderedDisplaySizes = useMemo(() => getOrderedDisplaySizes(productSizes), [productSizes]);
 
   const selectedVariant = useMemo(() => (
@@ -1020,9 +1027,10 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     const sizes = new Set();
     productVariants.forEach((variant) => {
       if (
+        variant &&
         normalizeValue(variant.color) === normalizedColor
-        && Number(variant.isEnabled) !== 0
-        && Number(variant.isAvailable) !== 0
+        && Number(variant.isEnabled || 0) !== 0
+        && Number(variant.isAvailable || 0) !== 0
         && (!isClothingSize(normalizeSizeLabel(variant.size)) || (SIZE_RANK[normalizeSizeLabel(variant.size)] || Number.MAX_SAFE_INTEGER) <= MAX_ALLOWED_SIZE_RANK)
       ) {
         sizes.add(normalizeSizeLabel(variant.size));
@@ -1044,13 +1052,13 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   const activeImages = useMemo(() => {
     if (!product) return [];
 
-    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
     
     // Safely extract product images array
     let productImages = [];
-    if (Array.isArray(product.images)) {
+    if (Array.isArray(product?.images)) {
       productImages = product.images;
-    } else if (typeof product.images === 'string') {
+    } else if (typeof product?.images === 'string') {
       try {
         const parsed = JSON.parse(product.images);
         if (Array.isArray(parsed)) {
@@ -1061,13 +1069,13 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           productImages = [product.images];
         }
       } catch {
-        if (product.images.includes(',')) {
+        if (product?.images?.includes(',')) {
           productImages = product.images.split(',').map(s => s.trim()).filter(Boolean);
         } else {
           productImages = [product.images];
         }
       }
-    } else if (product.images) {
+    } else if (product?.images) {
       productImages = [product.images];
     }
 
@@ -1077,7 +1085,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     );
     if (mappedVariantImages.length > 0) return mappedVariantImages;
 
-    const imagesByColor = (product.type !== 'dropship' && product.supplier_id !== 'dropship' && product.imagesByColor && typeof product.imagesByColor === 'object')
+    const imagesByColor = (product?.type !== 'dropship' && product?.supplier_id !== 'dropship' && product?.imagesByColor && typeof product.imagesByColor === 'object')
       ? product.imagesByColor
       : null;
 
@@ -1092,8 +1100,8 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       }
     }
 
-    if (product.type !== 'dropship' && product.supplier_id !== 'dropship' && (selectedVariant?.imageUrl || selectedVariant?.image_url)) {
-      const variantImage = extractImageUrl(selectedVariant.imageUrl || selectedVariant.image_url);
+    if (product?.type !== 'dropship' && product?.supplier_id !== 'dropship' && (selectedVariant?.imageUrl || selectedVariant?.image_url)) {
+      const variantImage = extractImageUrl(selectedVariant?.imageUrl || selectedVariant?.image_url);
       if (variantImage) return [variantImage];
     }
 
@@ -1103,10 +1111,10 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     }
 
     const fallbackImage = pickFirstImageUrl(
-      product.imageUrl,
-      product.image_url,
-      product.backImageUrl,
-      product.backImage_url,
+      product?.imageUrl,
+      product?.image_url,
+      product?.backImageUrl,
+      product?.backImage_url,
       GLOBAL_IMAGE_FALLBACK
     );
     return [fallbackImage || GLOBAL_IMAGE_FALLBACK];
@@ -1204,10 +1212,10 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     return () => observer.disconnect();
   }, [isMobileViewport]);
 
-  const selectedVariantStock = selectedVariant && Number.isFinite(Number(selectedVariant.stockQty))
-    ? Number(selectedVariant.stockQty)
+  const selectedVariantStock = selectedVariant && Number.isFinite(Number(selectedVariant?.stockQty))
+    ? Number(selectedVariant?.stockQty)
     : null;
-  const isOutOfStock = selectedVariantStock === 0 || (selectedVariant && Number(selectedVariant.isAvailable) === 0);
+  const isOutOfStock = selectedVariantStock === 0 || (selectedVariant && Number(selectedVariant?.isAvailable || 0) === 0);
   const hasLiveInventory = Boolean(product?.operationalNotice?.isLiveInventory);
   const isLowStock = hasLiveInventory && selectedVariantStock !== null && selectedVariantStock > 0 && selectedVariantStock < LOW_STOCK_THRESHOLD;
 
@@ -1243,7 +1251,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     return (
       <GuardedProductImage
         src={imageSrc}
-        alt={`${product.title} ${asset.label}`}
+        alt={`${product?.title || ''} ${asset?.label || ''}`}
         className={variant === 'thumb' ? 'pdp-thumb-img' : 'pdp-image'}
         loading={variant === 'main' ? 'eager' : 'lazy'}
         fetchPriority={variant === 'main' ? 'high' : 'auto'}
@@ -1308,23 +1316,23 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
   const handleAdd = (mode = 'cart') => {
     let variantId = null;
-    if (product.variants && product.variants.length > 0) {
+    if (Array.isArray(product?.variants) && product.variants.length > 0) {
       const matchedVariant = findMatchingVariant(product.variants, selectedColor, selectedSize);
-      if (!matchedVariant || !matchedVariant.id) {
+      if (!matchedVariant || !matchedVariant?.id) {
         showToast(t('select_available_variant'));
         return false;
       }
       variantId = matchedVariant.id;
     }
     
-    const variantTitle = [product.title];
+    const variantTitle = [product?.title || ''];
     if (selectedColor) variantTitle.push(selectedColor);
     if (selectedSize) variantTitle.push(selectedSize);
     
     addToCart({
       ...product,
       title: variantTitle.join(' - '),
-      cartId: `${product.id}-${selectedColor}-${selectedSize}`,
+      cartId: `${product?.id}-${selectedColor}-${selectedSize}`,
       selectedColor,
       selectedSize,
       variantId
@@ -1333,23 +1341,23 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     return true;
   };
 
-  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / 3.75)) : product.price;
+  const displayPrice = currency === 'USD' ? (product?.priceUSD || (product?.price / 3.75)) : product?.price;
 
   const absoluteImageUrl = activeImages[0]
-    ? (activeImages[0].startsWith('http') ? activeImages[0] : `https://dripstreetshop.com${activeImages[0]}`)
+    ? (typeof activeImages[0] === 'string' && activeImages[0].startsWith('http') ? activeImages[0] : `https://dripstreetshop.com${activeImages[0]}`)
     : GLOBAL_OG_IMAGE_URL;
 
   const jsonLd = {
     "@context": "https://schema.org/",
     "@type": "Product",
-    "name": getProductTitle(product.title, locale),
-    "image": activeImages.map(img => img.startsWith('http') ? img : `https://dripstreetshop.com${img}`),
+    "name": getProductTitle(product?.title || '', locale),
+    "image": activeImages.map(img => (typeof img === 'string' && img.startsWith('http')) ? img : `https://dripstreetshop.com${img}`),
     "description": getLocalizedProductDescription(product, locale),
     "offers": {
       "@type": "Offer",
-      "url": `https://dripstreetshop.com/product/${product.id}`,
+      "url": `https://dripstreetshop.com/product/${product?.id}`,
       "priceCurrency": currency,
-      "price": Number(displayPrice.toFixed(2)),
+      "price": Number((displayPrice || 0).toFixed(2)),
       "availability": isOutOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock"
     }
   };
@@ -1357,16 +1365,16 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   return (
     <>
       <Helmet>
-        <title>{`${getProductTitle(product.title, locale)} | Drip Street`}</title>
+        <title>{`${getProductTitle(product?.title || '', locale)} | Drip Street`}</title>
         <meta name="description" content={getLocalizedProductDescription(product, locale)} />
-        <link rel="canonical" href={`https://dripstreetshop.com/product/${product.id}`} />
-        <meta property="og:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <link rel="canonical" href={`https://dripstreetshop.com/product/${product?.id}`} />
+        <meta property="og:title" content={`${getProductTitle(product?.title || '', locale)} | Drip Street`} />
         <meta property="og:description" content={getLocalizedProductDescription(product, locale)} />
-        <meta property="og:url" content={`https://dripstreetshop.com/product/${product.id}`} />
+        <meta property="og:url" content={`https://dripstreetshop.com/product/${product?.id}`} />
         <meta property="og:type" content="product" />
         <meta property="og:image" content={absoluteImageUrl} />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <meta name="twitter:title" content={`${getProductTitle(product?.title || '', locale)} | Drip Street`} />
         <meta name="twitter:description" content={getLocalizedProductDescription(product, locale)} />
         <meta name="twitter:image" content={absoluteImageUrl} />
         <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>
@@ -1421,27 +1429,27 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           )}
 
           <div className="pdp-purchase-panel">
-            <div className="pdp-price">{curSym}{displayPrice.toFixed(2)}</div>
+            <div className="pdp-price">{curSym}{(displayPrice || 0).toFixed(2)}</div>
 
-            {product.colors && product.colors.length > 0 && (
+            {Array.isArray(product?.colors) && product.colors.length > 0 && (
               <div className="pdp-section">
                 <h3>{t('color')}</h3>
                 <div className="pdp-options">
-                  {product.colors.map(c => (
+                  {(product?.colors || []).map(c => (
                     <button
-                      key={c.name}
-                      className={`color-btn ${selectedColor === c.name ? 'active' : ''}`}
-                      style={{ backgroundColor: c.hex }}
-                      onClick={() => setSelectedColor(c.name)}
-                      aria-label={`${t('color')} ${localizeColorName(c.name, locale)}`}
-                      title={c.name}
+                      key={c?.name || ''}
+                      className={`color-btn ${selectedColor === c?.name ? 'active' : ''}`}
+                      style={{ backgroundColor: c?.hex || 'transparent' }}
+                      onClick={() => setSelectedColor(c?.name || '')}
+                      aria-label={`${t('color')} ${localizeColorName(c?.name || '', locale)}`}
+                      title={c?.name || ''}
                     />
                   ))}
                 </div>
               </div>
             )}
 
-            {orderedDisplaySizes.length > 0 && (
+            {Array.isArray(orderedDisplaySizes) && orderedDisplaySizes.length > 0 && (
               <div className="pdp-section">
                 <div className="pdp-section-headline">
                   <h3>{t('size')}</h3>
@@ -1452,8 +1460,8 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
                 {isOutOfStock && <div className="low-stock-badge out-of-stock">{locale === 'he' ? 'אזל מהמלאי' : 'Out of stock'}</div>}
                 {!isOutOfStock && isLowStock && <div className="low-stock-badge"><span className="stock-pulse-dot" />{t('low_stock')}</div>}
                 <div className="pdp-options premium-size-grid">
-                  {orderedDisplaySizes.map((sizeOption) => {
-                    const unavailable = availableSizesForColor.size > 0 && !availableSizesForColor.has(sizeOption);
+                  {(orderedDisplaySizes || []).map((sizeOption) => {
+                    const unavailable = (availableSizesForColor?.size || 0) > 0 && !availableSizesForColor?.has(sizeOption);
                     return (
                       <button
                         key={sizeOption}
@@ -1629,10 +1637,14 @@ function HardwareCard({ product, locale, currency, exchangeRate, curSym, navigat
           src={product.imageUrl}
           alt={getProductTitle(product.title, locale)}
           loading="lazy"
-          className={product.id === 18 ? "crop-pendant" : ""}
+          className={`${product.id === 18 ? "crop-pendant" : ""} ${[20, 21].includes(Number(product.id)) ? "silver-glow" : ""}`.trim()}
           onError={(e) => setImageFallback(e)}
           style={{
-            filter: hovered ? 'grayscale(0) contrast(1.02)' : 'grayscale(1) contrast(1.02)',
+            filter: hovered
+              ? ([20, 21].includes(Number(product.id))
+                ? 'grayscale(0) brightness(1.15) drop-shadow(0 0 10px rgba(255,255,255,0.12)) contrast(1.02)'
+                : 'grayscale(0) contrast(1.02)')
+              : 'grayscale(1) contrast(1.02)',
             transition: 'filter 0.4s ease, transform 0.4s ease',
             objectPosition: product.id === 18 ? 'top center' : 'center'
           }}
@@ -2390,10 +2402,10 @@ function MainApp() {
     setIsQuickAddLoading(true);
     let resolvedProduct = product;
 
-    const hasDetailedVariants = Array.isArray(product.variants) && product.variants.length > 0;
+    const hasDetailedVariants = Array.isArray(product?.variants) && product.variants.length > 0;
     if (!hasDetailedVariants) {
       try {
-        const response = await fetch(`${API_BASE}/api/products/${product.id}`);
+        const response = await fetch(`${API_BASE}/api/products/${product?.id}`);
         if (response.ok) {
           const detail = await response.json();
           if (detail && detail.id) resolvedProduct = detail;
@@ -2403,11 +2415,11 @@ function MainApp() {
       }
     }
 
-    const defaultVariant = Array.isArray(resolvedProduct.variants) && resolvedProduct.variants.length > 0
-      ? resolvedProduct.variants.find((variant) => Number(variant.isEnabled) !== 0 && Number(variant.isAvailable) !== 0)
+    const defaultVariant = Array.isArray(resolvedProduct?.variants) && resolvedProduct.variants.length > 0
+      ? resolvedProduct.variants.find((variant) => variant && Number(variant?.isEnabled || 0) !== 0 && Number(variant?.isAvailable || 0) !== 0)
       : null;
-    const defaultColor = defaultVariant?.color || resolvedProduct.colors?.[0]?.name || '';
-    const variants = Array.isArray(resolvedProduct.variants) ? resolvedProduct.variants : [];
+    const defaultColor = defaultVariant?.color || resolvedProduct?.colors?.[0]?.name || '';
+    const variants = Array.isArray(resolvedProduct?.variants) ? resolvedProduct.variants : [];
     let defaultSize = getOrderedDisplaySizes(resolvedProduct.sizes || [])[0] || '';
 
     if (defaultColor && variants.length > 0) {

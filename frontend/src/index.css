@@ -5042,6 +5042,14 @@ button,
   transform: scale(1.05) !important;
 }
 
+/* Special hover effect with brightness and shadow glow for items 20 and 21 */
+.hardware-card:hover img.silver-glow,
+.hardware-card img.silver-glow:hover {
+  filter: grayscale(0) brightness(1.15) drop-shadow(0 0 10px rgba(255,255,255,0.12)) !important;
+  transform: scale(1.05) !important;
+}
+
+
 /* Perfect Horizontal Centering of Navbar Search Bar on Desktop */
 @media (min-width: 769px) {
   .header-leading {
