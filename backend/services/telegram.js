@@ -4,6 +4,31 @@ const path = require('path');
 const dotenv = require('dotenv');
 const DEFAULT_MENI_CHAT_ID = '644275080';
 
+const EXCHANGE_RATE_API_URL = 'https://api.exchangerate-api.com/v4/latest/USD';
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+let cachedRate = 3.75;
+let lastFetchedAt = 0;
+
+async function getLiveExchangeRate() {
+  const now = Date.now();
+  if (now - lastFetchedAt < CACHE_TTL_MS) {
+    return cachedRate;
+  }
+  try {
+    const response = await axios.get(EXCHANGE_RATE_API_URL, { timeout: 5000 });
+    const rate = response.data && response.data.rates && response.data.rates.ILS;
+    if (typeof rate === 'number' && rate > 0) {
+      cachedRate = rate;
+      lastFetchedAt = now;
+      console.log(`[exchange-rate] Updated live USD to ILS rate: ${rate}`);
+    }
+  } catch (err) {
+    console.warn(`[exchange-rate] Failed to fetch live rate: ${err.message}. Using cached/fallback rate: ${cachedRate}`);
+  }
+  return cachedRate;
+}
+
 const escapeHtml = (value) => String(value || '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -94,7 +119,7 @@ class TelegramService {
     return null;
   }
 
-  async sendMessage(text) {
+  async sendMessage(text, retries = 3, delayMs = 1000) {
     if (!this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN') {
       console.warn('⚠️ Telegram token not configured. Skipping message:', text);
       return { ok: false, skipped: true, reason: 'token_not_configured' };
@@ -107,65 +132,106 @@ class TelegramService {
       return { ok: false, skipped: true, reason: 'chat_id_not_configured' };
     }
 
-    try {
-      const response = await axios.post(`${this.baseUrl}/sendMessage`, {
-        chat_id: resolvedChatId,
-        text: text,
-        parse_mode: 'HTML'
-      });
-      console.log('✅ Telegram alert sent.');
-      return { ok: true, status: response.status };
-    } catch (error) {
-      const details = error.response && error.response.data ? error.response.data : error.message;
-      console.error('❌ Failed to send Telegram alert:', details);
-      return { ok: false, skipped: false, reason: 'telegram_api_error', details };
+    for (let attempt = 1; attempt <= retries; attempt += 1) {
+      try {
+        const response = await axios.post(`${this.baseUrl}/sendMessage`, {
+          chat_id: resolvedChatId,
+          text: text,
+          parse_mode: 'HTML'
+        }, { timeout: 8000 });
+        console.log(`✅ Telegram alert sent (attempt ${attempt}/${retries}).`);
+        return { ok: true, status: response.status };
+      } catch (error) {
+        const details = error.response && error.response.data ? error.response.data : error.message;
+        console.warn(`⚠️ Telegram alert attempt ${attempt}/${retries} failed:`, details);
+        if (attempt === retries) {
+          console.error('❌ Failed to send Telegram alert after max retries:', details);
+          return { ok: false, skipped: false, reason: 'telegram_api_error', details };
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs * Math.pow(2, attempt - 1)));
+      }
     }
   }
 
+  async formatHybridPrice(usdAmount) {
+    const numericUsd = Number(usdAmount);
+    if (!Number.isFinite(numericUsd)) return String(usdAmount);
+    const rate = await getLiveExchangeRate();
+    const ilsAmount = numericUsd * rate;
+    const usdFormatted = numericUsd % 1 === 0 ? String(numericUsd) : numericUsd.toFixed(2);
+    return `$${usdFormatted} (כ-₪${Math.round(ilsAmount)})`;
+  }
+
   async notifyNewOrder(orderId, customerName, totalAmount, items) {
-    const itemsList = items.map(item => `- ${item.quantity}x ${item.title}`).join('\n');
-    const numericTotal = Number(totalAmount);
-    const formattedTotal = Number.isFinite(numericTotal) ? numericTotal.toFixed(2) : String(totalAmount);
-    const message = `🛍️ <b>New Order Received</b>\n\n` +
-      `<b>Order Number:</b> #${orderId}\n` +
-      `<b>Customer:</b> ${customerName}\n` +
-      `<b>Total Amount:</b> ${formattedTotal}\n\n` +
-      `<b>Items:</b>\n${itemsList}\n\n` +
-      `The order was successfully recorded in the system.`;
+    const itemsList = Array.isArray(items)
+      ? items.map(item => `- ${item.quantity}x ${item.title || 'פריט'}`).join('\n')
+      : 'אין פריטים רשומים';
+    const formattedTotal = await this.formatHybridPrice(totalAmount);
+    const message = `🛍️ <b>הזמנה חדשה התקבלה</b>\n\n` +
+      `<b>מספר הזמנה:</b> #${orderId}\n` +
+      `<b>לקוח:</b> ${customerName || 'אנונימי'}\n` +
+      `<b>סכום כולל:</b> ${formattedTotal}\n\n` +
+      `<b>פריטים:</b>\n${itemsList}\n\n` +
+      `ההזמנה נרשמה בהצלחה במערכת.`;
       
     await this.sendMessage(message);
   }
 
-  async notifyError(context, errorMessage) {
-    const message = `🚨 <b>System Error</b>\n\n` +
-      `<b>Context:</b> ${context}\n` +
-      `<b>Error:</b> ${errorMessage}`;
+  async notifyCheckoutFailed({ provider, customerName, customerEmail, amount, orderId, error }) {
+    let message = `❌ <b>הליך הרכישה נכשל</b>\n\n`;
+    if (provider) message += `<b>ספק תשלום:</b> ${provider}\n`;
+    if (orderId) message += `<b>מזהה הזמנה:</b> #${orderId}\n`;
+    if (customerName || customerEmail) {
+      const name = customerName || 'אנונימי';
+      const email = customerEmail || 'לא ידוע';
+      message += `<b>לקוח:</b> ${name} (${email})\n`;
+    }
+    if (amount !== undefined && amount !== null) {
+      const formattedAmount = await this.formatHybridPrice(amount);
+      message += `<b>סכום:</b> ${formattedAmount}\n`;
+    }
+    if (error) message += `<b>שגיאה:</b> ${error}\n`;
     
     await this.sendMessage(message);
   }
 
-  async notifySupportMessage(name, email, message) {
-    if (!this.token || !this.chatId) return;
+  async notifyNewLead({ email, promoCode, isResubscribe }) {
+    let message = '';
+    if (isResubscribe) {
+      message = `♻️ <b>ליד נרשם מחדש</b>\n\n` +
+        `<b>אימייל:</b> <code>${escapeHtml(email)}</code>`;
+    } else {
+      message = `🔥 <b>ליד חדש התווסף למועדון</b>\n\n` +
+        `<b>אימייל:</b> <code>${escapeHtml(email)}</code>\n` +
+        `<b>קוד הנחה שנוצר:</b> <code>${escapeHtml(promoCode || '')}</code>`;
+    }
+    await this.sendMessage(message);
+  }
 
-    const safeName = String(name || 'Unknown').trim();
-    const safeEmail = String(email || 'Unknown').trim();
+  async notifySupportMessage(name, email, message) {
+    const safeName = String(name || 'אנונימי').trim();
+    const safeEmail = String(email || 'לא ידוע').trim();
     const safeMessage = String(message || '').trim();
     const text = [
-      '📩 <b>Support Request</b>',
-      `<b>Name:</b> ${escapeHtml(safeName)}`,
-      `<b>Email:</b> ${escapeHtml(safeEmail)}`,
-      `<b>Message:</b> ${escapeHtml(safeMessage)}`,
+      '📩 <b>פניית תמיכה חדשה</b>',
+      `<b>שם:</b> ${escapeHtml(safeName)}`,
+      `<b>אימייל:</b> ${escapeHtml(safeEmail)}`,
+      `<b>הודעה:</b> ${escapeHtml(safeMessage)}`,
     ].join('\n');
 
-    try {
-      await axios.post(`${this.baseUrl}/sendMessage`, {
-        chat_id: this.chatId,
-        text: text,
-        parse_mode: 'HTML'
-      });
-    } catch (error) {
-      console.error('Failed to send Telegram support message:', error.message);
-    }
+    await this.sendMessage(text);
+  }
+
+  async notifySystemError(context, errorMessage) {
+    const message = `🚨 <b>שגיאת מערכת</b>\n\n` +
+      `<b>הקשר:</b> ${context}\n` +
+      `<b>שגיאה:</b> ${errorMessage}`;
+    
+    await this.sendMessage(message);
+  }
+
+  async notifyError(context, errorMessage) {
+    await this.notifySystemError(context, errorMessage);
   }
 }
 

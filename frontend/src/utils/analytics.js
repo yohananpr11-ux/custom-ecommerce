@@ -164,13 +164,14 @@ export function trackViewItem(product, currency) {
   try {
     const value = Number(product.price) || 0;
     const id = String(product.id);
-    devLog('ViewContent', { id, title: product.title, value, currency });
+    const activeCurrency = 'USD';
+    devLog('ViewContent', { id, title: product.title, value, currency: activeCurrency });
 
     if (!isPlaceholderId(GA4_ID) && typeof window.gtag === 'function') {
       window.gtag('event', 'view_item', {
-        currency,
+        currency: activeCurrency,
         value,
-        items: [{ item_id: id, item_name: product.title, price: value, currency }],
+        items: [{ item_id: id, item_name: product.title, price: value, currency: activeCurrency }],
       });
     }
     if (!isPlaceholderId(META_PIXEL_ID) && typeof window.fbq === 'function') {
@@ -179,7 +180,7 @@ export function trackViewItem(product, currency) {
         content_name: product.title,
         content_type: 'product',
         value,
-        currency,
+        currency: activeCurrency,
       });
     }
     if (!isPlaceholderId(TIKTOK_PIXEL_ID) && window.ttq && typeof window.ttq.track === 'function') {
@@ -188,7 +189,7 @@ export function trackViewItem(product, currency) {
         content_name: product.title,
         content_type: 'product',
         value,
-        currency,
+        currency: activeCurrency,
       });
     }
   } catch (err) {
@@ -207,13 +208,14 @@ export function trackAddToCart(product, currency) {
     const unitPrice = Number(product.price) || 0;
     const value = unitPrice * quantity;
     const id = String(product.id);
-    devLog('AddToCart', { id, title: product.title, quantity, value, currency });
+    const activeCurrency = 'USD';
+    devLog('AddToCart', { id, title: product.title, quantity, value, currency: activeCurrency });
 
     if (!isPlaceholderId(GA4_ID) && typeof window.gtag === 'function') {
       window.gtag('event', 'add_to_cart', {
-        currency,
+        currency: activeCurrency,
         value,
-        items: [{ item_id: id, item_name: product.title, price: unitPrice, quantity, currency }],
+        items: [{ item_id: id, item_name: product.title, price: unitPrice, quantity, currency: activeCurrency }],
       });
     }
     if (!isPlaceholderId(META_PIXEL_ID) && typeof window.fbq === 'function') {
@@ -223,7 +225,7 @@ export function trackAddToCart(product, currency) {
         content_type: 'product',
         contents: [{ id, quantity, item_price: unitPrice }],
         value,
-        currency,
+        currency: activeCurrency,
       });
     }
     if (!isPlaceholderId(TIKTOK_PIXEL_ID) && window.ttq && typeof window.ttq.track === 'function') {
@@ -234,7 +236,7 @@ export function trackAddToCart(product, currency) {
         quantity,
         price: unitPrice,
         value,
-        currency,
+        currency: activeCurrency,
       });
     }
   } catch (err) {
@@ -249,22 +251,22 @@ export function trackAddToCart(product, currency) {
 export function trackInitiateCheckout(info) {
   try {
     const value = Number(info && info.value) || 0;
-    const currency = (info && info.currency) || 'ILS';
+    const activeCurrency = 'USD';
     const itemCount = Number(info && info.itemCount) || 0;
-    devLog('InitiateCheckout', { value, currency, itemCount });
+    devLog('InitiateCheckout', { value, currency: activeCurrency, itemCount });
 
     if (!isPlaceholderId(GA4_ID) && typeof window.gtag === 'function') {
-      window.gtag('event', 'begin_checkout', { currency, value });
+      window.gtag('event', 'begin_checkout', { currency: activeCurrency, value });
     }
     if (!isPlaceholderId(META_PIXEL_ID) && typeof window.fbq === 'function') {
       window.fbq('track', 'InitiateCheckout', {
         value,
-        currency,
+        currency: activeCurrency,
         num_items: itemCount,
       });
     }
     if (!isPlaceholderId(TIKTOK_PIXEL_ID) && window.ttq && typeof window.ttq.track === 'function') {
-      window.ttq.track('InitiateCheckout', { value, currency, quantity: itemCount });
+      window.ttq.track('InitiateCheckout', { value, currency: activeCurrency, quantity: itemCount });
     }
   } catch (err) {
     console.warn('[analytics] initiate_checkout failed:', err);
@@ -279,25 +281,25 @@ export function trackPurchase(info) {
   try {
     const orderId = String((info && info.orderId) || '');
     const value = Number(info && info.value) || 0;
-    const currency = (info && info.currency) || 'ILS';
-    devLog('Purchase', { orderId, value, currency });
+    const activeCurrency = 'USD';
+    devLog('Purchase', { orderId, value, currency: activeCurrency });
 
     if (!isPlaceholderId(GA4_ID) && typeof window.gtag === 'function') {
       window.gtag('event', 'purchase', {
         transaction_id: orderId,
-        currency,
+        currency: activeCurrency,
         value,
       });
     }
     if (!isPlaceholderId(META_PIXEL_ID) && typeof window.fbq === 'function') {
       window.fbq('track', 'Purchase', {
         value,
-        currency,
+        currency: activeCurrency,
         content_type: 'product',
       });
     }
     if (!isPlaceholderId(TIKTOK_PIXEL_ID) && window.ttq && typeof window.ttq.track === 'function') {
-      window.ttq.track('CompletePayment', { value, currency, order_id: orderId });
+      window.ttq.track('CompletePayment', { value, currency: activeCurrency, order_id: orderId });
     }
   } catch (err) {
     console.warn('[analytics] purchase failed:', err);

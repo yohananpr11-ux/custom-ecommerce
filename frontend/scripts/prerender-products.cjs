@@ -91,7 +91,7 @@ function buildMeta(product) {
     'offers': {
       '@type': 'Offer',
       'url': url,
-      'priceCurrency': 'ILS',
+      'priceCurrency': 'USD',
       'price': hasPrice ? price.toFixed(2) : undefined,
       'availability': 'https://schema.org/InStock',
     },

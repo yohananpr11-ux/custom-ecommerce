@@ -87,9 +87,9 @@ async function handleManual(orderId, items) {
   const ref = `MANUAL-${orderId}`;
   await writeItemStatus(items.map(i => i.id), 'submitted', ref);
   await telegram.sendMessage(
-    `📦 <b>Manual fulfillment required</b>\n` +
-    `Order #${orderId} has ${items.length} item(s) with <code>supplier_id='manual'</code>.\n` +
-    `Please fulfill these items manually and update the status.`
+    `📦 <b>נדרש טיפול ידני בהזמנה</b>\n` +
+    `הזמנה #${orderId} מכילה ${items.length} פריטים עם <code>supplier_id='manual'</code>.\n` +
+    `אנא בצע מילוי ידני לפריטים אלו ועדכן את הסטטוס.`
   ).catch(() => null);
   return { supplier: 'manual', ref, count: items.length };
 }
@@ -152,9 +152,9 @@ async function routeOrderToSupplier(orderId, shippingDestination, items) {
       const { supplier, ref, count } = result.value;
       console.log(`[fulfillment] ✓ ${supplier}: ${count} item(s) → ${ref}`);
       await telegram.sendMessage(
-        `✅ <b>Fulfillment submitted</b>\n` +
-        `Order #${orderId} · supplier=<code>${supplier}</code>\n` +
-        `Items: ${count} · Ref: <code>${ref}</code>`
+        `✅ <b>ההזמנה נשלחה לספק</b>\n` +
+        `הזמנה #${orderId} · ספק: <code>${supplier}</code>\n` +
+        `פריטים: ${count} · מזהה ספק: <code>${ref}</code>`
       ).catch(() => null);
     } else {
       const err = result.reason;

@@ -543,21 +543,23 @@ const getPaidRevenueTotal = () => new Promise((resolve, reject) => {
   });
 });
 
-const sendPaymentNotification = async ({ provider, orderId, amountText }) => {
+const sendPaymentNotification = async ({ provider, orderId, amount }) => {
   try {
     const totalPaid = await getPaidRevenueTotal();
     const itemSummary = await getOrderItemSummary(orderId);
+    const formattedAmount = await telegram.formatHybridPrice(amount);
+    const formattedTotalPaid = await telegram.formatHybridPrice(totalPaid);
     await telegram.sendMessage(
-      `🛍️ <b>NEW ORDER RECEIVED</b>\n\n`
-      + `<b>Order:</b> #${orderId}\n`
-      + `<b>Provider:</b> ${provider}\n`
-      + `<b>Total:</b> ${amountText}\n`
-      + `<b>Items:</b> ${itemSummary.totalItems}\n`
-      + `<b>Top Item:</b> ${itemSummary.firstItemLabel}\n`
-      + `<b>Total Revenue:</b> ₪${totalPaid.toFixed(2)}`
+      `🛍️ <b>הזמנה חדשה התקבלה</b>\n\n`
+      + `<b>הזמנה:</b> #${orderId}\n`
+      + `<b>ספק תשלום:</b> ${provider}\n`
+      + `<b>סכום:</b> ${formattedAmount}\n`
+      + `<b>פריטים:</b> ${itemSummary.totalItems}\n`
+      + `<b>פריט מוביל:</b> ${itemSummary.firstItemLabel}\n`
+      + `<b>סה"כ הכנסות:</b> ${formattedTotalPaid}`
     );
   } catch (err) {
-    await telegram.sendMessage(`⚠️ <b>Payment captured but cumulative total calculation failed</b>\nOrder #${orderId}`).catch(() => null);
+    await telegram.sendMessage(`⚠️ <b>התשלום נקלט אך חישוב סך ההכנסות המצטבר נכשל</b>\nהזמנה #${orderId}`).catch(() => null);
   }
 };
 
@@ -596,7 +598,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   }));
 
   if (isSimulationOrder(order)) {
-    await telegram.sendMessage(`🧪 <b>Simulation:</b> Order #${orderId} marked as paid via ${providerTag} without sending to Printify.`).catch(() => null);
+    await telegram.sendMessage(`🧪 <b>סימולציה:</b> הזמנה #${orderId} סומנה כמשולמת דרך ${providerTag} מבלי להישלח ל-Printify.`).catch(() => null);
     
     // Increment attempts
     await dbRunAsync(`UPDATE orders SET emailAttempts = COALESCE(emailAttempts, 0) + 1 WHERE id = ?`, [orderId]).catch(() => null);
@@ -659,7 +661,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
       `UPDATE order_items SET fulfillment_status = 'failed', fulfillment_ref = ? WHERE orderId = ? AND fulfillment_status = 'processing'`,
       [`ERR: ${pErr.message.slice(0, 200)}`, orderId]
     ).catch(() => null);
-    await telegram.sendMessage(`🚨 <b>Production submission failed</b>\nOrder #${orderId} was paid but fulfillment routing failed: ${pErr.message.slice(0, 200)}`).catch(() => null);
+    await telegram.sendMessage(`🚨 <b>שליחת הזמנה לייצור נכשלה</b>\nהזמנה #${orderId} שולמה אך ניתוב המילוי נכשל: ${pErr.message.slice(0, 200)}`).catch(() => null);
   }
 };
 
@@ -814,7 +816,7 @@ app.all('/api/admin/register-telegram-webhook', async (req, res) => {
 
 app.get('/api/admin/test-telegram', async (req, res) => {
   const timestamp = new Date().toISOString();
-  const message = `🧪 <b>Telegram Test</b>\n\nServer test message at: ${timestamp}`;
+  const message = `🧪 <b>בדיקת טלגרם</b>\n\nהודעת בדיקת שרת ב: ${timestamp}`;
   const result = await telegram.sendMessage(message);
 
   if (!result || !result.ok) {
@@ -855,13 +857,13 @@ app.post('/api/analytics/visit', express.json(), async (req, res) => {
     if (!lastNotifiedAt || now - lastNotifiedAt > VISIT_CACHE_TTL_MS) {
       visitNotificationCache.set(cacheKey, now);
 
-      const msg = `👀 <b>New Store Visit</b>\n\n`
-        + `<b>Path:</b> ${path || '/'}\n`
-        + `<b>Locale/Currency:</b> ${locale || '-'} / ${currency || '-'}\n`
-        + `<b>Country:</b> ${country}\n`
-        + `<b>Source:</b> ${source || 'web'}\n`
+      const msg = `👀 <b>ביקור חדש בחנות</b>\n\n`
+        + `<b>נתיב:</b> ${path || '/'}\n`
+        + `<b>שפה/מטבע:</b> ${locale || '-'} / ${currency || '-'}\n`
+        + `<b>מדינה:</b> ${country}\n`
+        + `<b>מקור:</b> ${source || 'web'}\n`
         + `<b>IP:</b> ${ip}\n`
-        + `<b>UA:</b> ${ua}`;
+        + `<b>דפדפן (UA):</b> ${ua}`;
 
       let telegramResult;
       try {
@@ -967,9 +969,7 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     }
 
     await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
-    const isILS = String(session.currency || '').toLowerCase() === 'ils';
-    const amountText = isILS ? `₪${amount.toFixed(2)}` : `$${amount.toFixed(2)}`;
-    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText });
+    await sendPaymentNotification({ provider: 'Stripe', orderId, amount });
     const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [orderId]);
     const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [orderId]);
     if (paidOrder) {
@@ -1050,7 +1050,13 @@ app.post('/api/webhooks/payplus', express.raw({ type: 'application/json' }), asy
 
     await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
     const orderTotalAmount = await getOrderTotalAmount(orderId);
-    await sendPaymentNotification({ provider: 'PayPlus/Grow', orderId, amountText: `₪${orderTotalAmount.toFixed(2)}` });
+    await sendPaymentNotification({ provider: 'PayPlus/Grow', orderId, amount: orderTotalAmount });
+
+    const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [orderId]);
+    const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [orderId]);
+    if (paidOrder) {
+      telegram.notifyNewOrder(orderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
+    }
 
     await processPaidOrderFulfillment(orderId, 'PayPlus');
   }
@@ -1104,10 +1110,10 @@ app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res
         try {
           const count = await printify.syncProducts();
           const eventInfo = `Printify event: ${type}`;
-          await telegram.sendMessage(`✅ <b>Automatic Printify Sync Complete</b>\n\n${eventInfo}\n${count} products synced successfully.`);
+          await telegram.sendMessage(`🔄 <b>סנכרון Printify אוטומטי הושלם</b>\n\n${eventInfo}\n${count} מוצרים סונכרנו בהצלחה.`);
         } catch (err) {
           console.error('❌ Auto-sync failed:', err.message);
-          await telegram.sendMessage(`⚠️ <b>Automatic Printify Sync Failed</b>\nEvent: ${type}\nError: ${err.message}`);
+          await telegram.sendMessage(`🚨 <b>סנכרון Printify אוטומטי נכשל</b>\nאירוע: ${type}\nשגיאה: ${err.message}`);
         }
       });
     }
@@ -1447,15 +1453,15 @@ app.post('/api/leads', async (req, res) => {
         } else {
           console.warn(`[leads] welcome email failed to deliver to ${email} (ok: false)`);
           const errorMsg = resObj?.error?.message || resObj?.reason || 'Unknown delivery failure';
-          await telegram.sendMessage(`⚠️ <b>Welcome email delivery failed</b>\nLead: ${email}\nError: ${errorMsg}`).catch(() => null);
+          await telegram.sendMessage(`⚠️ <b>משלוח אימייל ברוך הבא נכשל</b>\nליד: ${email}\nשגיאה: ${errorMsg}`).catch(() => null);
         }
       })
       .catch(async (err) => {
         console.error(`[leads] welcome email system error for ${email}:`, err.message);
-        await telegram.sendMessage(`⚠️ <b>Welcome email system error</b>\nLead: ${email}\nError: ${err.message}`).catch(() => null);
+        await telegram.sendMessage(`⚠️ <b>שגיאת מערכת בשליחת אימייל ברוך הבא</b>\nליד: ${email}\nשגיאה: ${err.message}`).catch(() => null);
       });
 
-    await telegram.sendMessage(`🔥 <b>New Lead</b>: ${email} | <b>Code Generated</b>: ${promoCode}`).catch(() => null);
+    await telegram.notifyNewLead({ email, promoCode }).catch(() => null);
 
     return res.json({ success: true, promoCode });
   } catch (err) {
@@ -1779,7 +1785,7 @@ app.post('/api/admin/design/:jobId/publish', async (req, res) => {
     );
 
     await telegram
-      .sendMessage(`✅ <b>Design #${jobId} published</b>\n${job.title}\nLive at /product/${productInsert.lastID}`)
+      .sendMessage(`✅ <b>עיצוב #${jobId} פורסם בהצלחה</b>\n${job.title}\nזמין בכתובת /product/${productInsert.lastID}`)
       .catch(() => null);
 
     return res.json({
@@ -1857,7 +1863,7 @@ app.post('/api/admin/design/:jobId/reject', async (req, res) => {
   );
 
   await telegram
-    .sendMessage(`❌ Design #${jobId} rejected and removed from Printify.`)
+    .sendMessage(`❌ עיצוב #${jobId} נדחה והוסר מ-Printify.`)
     .catch(() => null);
 
   return res.json({ success: true, jobId, status: 'rejected' });
@@ -2379,7 +2385,7 @@ app.post('/api/resubscribe', async (req, res) => {
     );
 
     console.log(`✉️ [Resubscribe] Opt-in completed for ${email}`);
-    await telegram.sendMessage(`🔥 <b>Lead Resubscribed</b>\nEmail: <code>${email}</code>`).catch(() => null);
+    await telegram.notifyNewLead({ email, isResubscribe: true }).catch(() => null);
 
     return res.json({ success: true, message: 'Resubscribed successfully.' });
   } catch (err) {
@@ -2429,9 +2435,9 @@ app.post('/api/webhooks/resend', express.raw({type: 'application/json'}), async 
           
           let alertMsg = '';
           if (type === 'email.bounced') {
-            alertMsg = `⚠️ <b>Email Bounced (Resend)</b>\nRecipient: <code>${email}</code>\nSubject: ${data.subject || 'N/A'}\nStatus: Marked as unsubscribed/bounced locally.`;
+            alertMsg = `⚠️ <b>אימייל חזר (Resend)</b>\nנמען: <code>${email}</code>\nנושא: ${data.subject || 'N/A'}\nסטטוס: סומן כמנוי שהוסר/חזר מקומית.`;
           } else {
-            alertMsg = `⚠️ <b>Spam Complaint (Resend)</b>\nRecipient: <code>${email}</code>\nSubject: ${data.subject || 'N/A'}\nStatus: Marked as unsubscribed locally.`;
+            alertMsg = `⚠️ <b>תלונת ספאם (Resend)</b>\nנמען: <code>${email}</code>\nנושא: ${data.subject || 'N/A'}\nסטטוס: סומן כמנוי שהוסר מקומית.`;
           }
           await telegram.sendMessage(alertMsg).catch(() => null);
         }
@@ -2681,6 +2687,14 @@ app.post('/api/paypal/create-order', async (req, res) => {
     });
   } catch (err) {
     console.error('PayPal create-order failed:', err.response?.data || err.message);
+    const details = err.response?.data || err.message;
+    const errString = typeof details === 'string' ? details : JSON.stringify(details);
+    await telegram.notifyCheckoutFailed({
+      provider: 'PayPal (Create Order)',
+      customerName,
+      customerEmail,
+      error: errString
+    }).catch(() => null);
     const errMessage = String(err.message || '');
     const statusCode = errMessage.includes('Variant mismatch')
       || errMessage.includes('valid product id')
@@ -2756,11 +2770,7 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       await consumeLeadPromoCode(existingOrder.promoCode);
     }
 
-    const amountText = captureCurrency === 'USD'
-      ? `$${captureValue.toFixed(2)}`
-      : `₪${captureValue.toFixed(2)}`;
-
-    await sendPaymentNotification({ provider: 'PayPal', orderId: localOrderId, amountText });
+    await sendPaymentNotification({ provider: 'PayPal', orderId: localOrderId, amount: captureValue });
     const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
     const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [localOrderId]);
     if (paidOrder) {
@@ -2778,6 +2788,13 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     });
   } catch (err) {
     console.error('PayPal capture-order failed:', err.response?.data || err.message);
+    const details = err.response?.data || err.message;
+    const errString = typeof details === 'string' ? details : JSON.stringify(details);
+    await telegram.notifyCheckoutFailed({
+      provider: 'PayPal (Capture Order)',
+      orderId: orderID,
+      error: errString
+    }).catch(() => null);
     return res.status(500).json({ error: 'Failed to capture PayPal order' });
   }
 });
@@ -2832,6 +2849,12 @@ app.post('/api/checkout/stripe', async (req, res) => {
     res.json({ success: true, paymentUrl: session.url });
   } catch (err) {
     console.error(err);
+    await telegram.notifyCheckoutFailed({
+      provider: 'Stripe',
+      customerName,
+      customerEmail,
+      error: err.message || 'Unknown Error'
+    }).catch(() => null);
     const statusCode = String(err.message || '').includes('Shipping') || String(err.message || '').includes('Valid email') ? 400 : 500;
     res.status(statusCode).json({ error: err.message || 'Failed to initialize Stripe checkout' });
   }
@@ -2907,10 +2930,25 @@ app.post('/api/checkout/payplus', async (req, res) => {
     } else {
       console.error('PayPlus API response failed:', response.data);
       const errMsg = response.data?.results?.description || 'Failed to generate PayPlus link';
+      await telegram.notifyCheckoutFailed({
+        provider: 'PayPlus',
+        customerName,
+        customerEmail,
+        amount: pricing?.totalAmount,
+        error: errMsg
+      }).catch(() => null);
       res.status(400).json({ error: errMsg });
     }
   } catch (err) {
     console.error('PayPlus checkout initialization error:', err.response?.data || err.message);
+    const details = err.response?.data || err.message;
+    const errString = typeof details === 'string' ? details : JSON.stringify(details);
+    await telegram.notifyCheckoutFailed({
+      provider: 'PayPlus',
+      customerName,
+      customerEmail,
+      error: errString
+    }).catch(() => null);
     const statusCode = String(err.message || '').includes('Shipping') || String(err.message || '').includes('Valid email') ? 400 : 500;
     res.status(statusCode).json({ error: err.message || 'Failed to initialize PayPlus checkout' });
   }
@@ -2960,8 +2998,8 @@ app.post('/api/webhooks/telegram', async (req, res) => {
       const had = currentActiveCoupon ? currentActiveCoupon.code : null;
       currentActiveCoupon = null;
       await telegram.sendMessage(had
-        ? `🧹 Coupon <code>${had}</code> cleared.`
-        : `ℹ️ No active coupon to clear.`).catch(() => null);
+        ? `🧹 קופון <code>${had}</code> הוסר.`
+        : `ℹ️ אין קופון פעיל להסרה.`).catch(() => null);
       return res.json({ received: true, action: 'coupon_cleared', code: had });
     }
 
@@ -2974,11 +3012,11 @@ app.post('/api/webhooks/telegram', async (req, res) => {
       const hours = couponMatch[2] ? parseInt(couponMatch[2], 10) : 1;
 
       if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
-        await telegram.sendMessage(`⚠️ Invalid discount: <b>${pct}</b>. Use 1-100.`).catch(() => null);
+        await telegram.sendMessage(`⚠️ אחוז הנחה לא תקין: <b>${pct}</b>. השתמש בערך בין 1 ל-100.`).catch(() => null);
         return res.json({ received: true, error: 'invalid_pct' });
       }
       if (!Number.isFinite(hours) || hours < 1 || hours > 168) {
-        await telegram.sendMessage(`⚠️ Invalid duration: <b>${hours}h</b>. Use 1-168 hours.`).catch(() => null);
+        await telegram.sendMessage(`⚠️ משך זמן לא תקין: <b>${hours}שעות</b>. השתמש בערך בין 1 ל-168 שעות.`).catch(() => null);
         return res.json({ received: true, error: 'invalid_hours' });
       }
 
@@ -2990,15 +3028,15 @@ app.post('/api/webhooks/telegram', async (req, res) => {
         if (currentActiveCoupon && currentActiveCoupon.code === code) {
           currentActiveCoupon = null;
           console.log(`Coupon ${code} expired.`);
-          telegram.sendMessage(`⏰ Coupon <code>${code}</code> expired automatically.`).catch(() => null);
+          telegram.sendMessage(`⏰ תוקף הקופון <code>${code}</code> פג אוטומטית.`).catch(() => null);
         }
       }, hours * 60 * 60 * 1000);
 
-      const reply = `✅ <b>Coupon Created</b>\n\n`
-        + `<b>Code:</b> <code>${code}</code>\n`
-        + `<b>Discount:</b> ${pct}% off\n`
-        + `<b>Valid for:</b> ${hours} hour${hours !== 1 ? 's' : ''}\n\n`
-        + `Tap the code above to copy, then paste at checkout.`;
+      const reply = `✅ <b>קופון נוצר בהצלחה</b>\n\n`
+        + `<b>קוד:</b> <code>${code}</code>\n`
+        + `<b>הנחה:</b> ${pct}% הנחה\n`
+        + `<b>בתוקף ל:</b> ${hours} שעות\n\n`
+        + `לחץ על הקוד למעלה להעתקה, והזן אותו בקופה.`;
 
       await telegram.sendMessage(reply).catch(() => null);
       return res.json({ received: true, coupon: code, discount: pct, hours });
@@ -3166,7 +3204,7 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           } else {
             console.warn(`⚠️ [Retry Recovery] Email attempt failed for order #${order.id}`);
             if (nextAttemptCount >= 5) {
-              await telegram.sendMessage(`🚨 <b>Email Delivery Permanently Failed</b>\nOrder #${order.id} for ${order.customerName} has reached 5 delivery attempts and will not be retried automatically. Please verify customer email manually: <code>${order.customerEmail}</code>`).catch(() => null);
+              await telegram.sendMessage(`🚨 <b>משלוח אימייל נכשל לצמיתות</b>\nהזמנה #${order.id} עבור ${order.customerName} הגיעה ל-5 ניסיונות משלוח ולא תבוצע שוב אוטומטית. אנא אמת את אימייל הלקוח ידנית: <code>${order.customerEmail}</code>`).catch(() => null);
             }
           }
         } catch (itemErr) {
@@ -3216,7 +3254,7 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           } else {
             console.warn(`⚠️ [Retry Recovery] Welcome email attempt failed for lead #${lead.id}`);
             if (nextAttemptCount >= 5) {
-              await telegram.sendMessage(`🚨 <b>Welcome Email Permanently Failed</b>\nLead #${lead.id} (${lead.email}) has reached 5 delivery attempts and will not be retried automatically. Please verify manually.`).catch(() => null);
+              await telegram.sendMessage(`🚨 <b>אימייל ברוך הבא נכשל לצמיתות</b>\nליד #${lead.id} (${lead.email}) הגיע ל-5 ניסיונות משלוח ולא יבוצע שוב אוטומטית. אנא אמת ידנית.`).catch(() => null);
             }
           }
         } catch (leadErr) {
@@ -3323,7 +3361,7 @@ app.listen(PORT, () => {
       }
     } catch (err) {
       console.error('⚠️ Sync failed:', err.message);
-      telegram.sendMessage(`⚠️ <b>Printify Sync Error</b>\n\nTime: ${new Date().toLocaleString('he-IL')}\nError: ${err.message}`).catch(console.error);
+      telegram.sendMessage(`🚨 <b>שגיאת סנכרון Printify</b>\n\nזמן: ${new Date().toLocaleString('he-IL')}\nשגיאה: ${err.message}`).catch(console.error);
       console.log('🔄 Triggering safe catalog fallback seeder after sync failure...');
       await seedFallbackCatalog();
       return 0;
@@ -3451,6 +3489,6 @@ if (!isProduction) {
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Exception:', err);
-  telegram.sendMessage(`🚨 <b>Critical Server Error</b>\n\nRoute: ${req.url}\nError: ${err.message}`).catch(console.error);
+  telegram.sendMessage(`🚨 <b>שגיאת שרת קריטית</b>\n\nנתיב: ${req.url}\nשגיאה: ${err.message}`).catch(console.error);
   res.status(500).json({ error: 'Internal Server Error' });
 });

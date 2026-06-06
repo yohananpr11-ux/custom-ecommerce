@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import LegalPageLayout from '../components/LegalPageLayout';
 
-const vision = 'בדריפסטריט אנחנו מאמינים שסטייל אמיתי לא צריך להתאמץ. החזון שלנו פשוט: לייצר ולאצור פריטי סטריטוור מינימליסטיים, נקיים וממכרים שיושבים בול מהרגע הראשון. בלי לוגואים מוגזמים או טרנדים חולפים – רק גזרות מדויקות, חומרים איכותיים ואסתטיקה שמשתלבת בטבעיות בחיים האורבניים, מבוקר עד לילה. אנחנו כאן בשביל אלה שמבינים שפשטות היא התחכום האולטימטיבי, ושבגדים טובים נועדו לתת לך את הביטחון להיות בדיוק מי שאתה.';
+const vision = 'At Drip Street, we believe that true style should be effortless. Our vision is simple: to create and curate minimalist, clean, and addictive streetwear pieces that fit perfectly from the very first moment. No over-the-top logos or fleeting trends – just precise cuts, premium materials, and an aesthetic that blends naturally into urban life, from morning till night. We are here for those who understand that simplicity is the ultimate sophistication, and that good clothes are designed to give you the confidence to be exactly who you are.';
 
 const pillarCards = [
   {
@@ -60,7 +60,7 @@ export default function About() {
           <h3 style={{ margin: '0 0 14px', color: 'var(--color-white)', fontSize: '16px', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
             Brand Vision
           </h3>
-          <p dir="rtl" style={{ margin: 0, fontSize: '18px', lineHeight: 2, color: 'rgba(255,255,255,0.9)' }}>
+          <p style={{ margin: 0, fontSize: '18px', lineHeight: 2, color: 'rgba(255,255,255,0.9)' }}>
             {vision}
           </p>
         </section>
