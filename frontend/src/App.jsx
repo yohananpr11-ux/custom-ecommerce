@@ -1633,8 +1633,6 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         </div>
       )}
       {isSizeGuideOpen && <SizeGuideModal product={product} locale={locale} onClose={() => setIsSizeGuideOpen(false)} />}
-      <Footer locale={locale} />
-      <CookieConsent />
     </>
   );
 }
