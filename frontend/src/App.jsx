@@ -948,7 +948,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       })
       .then(data => {
         // Build imagesByColor mapping from variants and images
-        if (data.variants && data.images) {
+        if (data.variants && data.images && data.type !== 'dropship' && data.supplier_id !== 'dropship') {
           const imagesByColor = {};
           const variantIdToColor = {};
           
