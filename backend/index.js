@@ -19,7 +19,6 @@ const feedsRouter = require('./routes/feeds');
 const cartsRouter = require('./routes/carts');
 const marketingWebhooksRouter = require('./routes/marketing-webhooks');
 const adminReportsRouter = require('./routes/admin-reports');
-const paymentRoutesFactory = require('./routes/paymentRoutes');
 const { seedHardwareCatalog } = require('./seed_cj_product.cjs');
 // Phase 3: Multi-Vendor fulfillment router
 const fulfillment = require('./services/fulfillment');
@@ -340,6 +339,39 @@ const expandOrderUnitsForBundle = (items = []) => {
   return units.sort((a, b) => b.unitPrice - a.unitPrice);
 };
 
+// Pure, side-effect-free check: does a PayPal capture response satisfy the
+// expectation snapshotted server-side at order-creation time? Extracted so
+// it can be unit-tested with zero network/DB calls, and so the real capture
+// route (below) and the test suite are provably running the same logic.
+const validatePaypalCaptureAgainstExpectation = ({
+  captureStatus,
+  captureCurrency,
+  captureValue,
+  expectedCurrency,
+  expectedAmount,
+  tolerance = 0.02,
+}) => {
+  if (captureStatus !== 'COMPLETED') {
+    return { ok: false, reason: 'not_completed' };
+  }
+  // expectedAmount == null catches both null and undefined explicitly —
+  // Number(null) coerces to 0, which is a finite number, so checking
+  // Number.isFinite(Number(expectedAmount)) alone would treat a genuinely
+  // missing expectation as "expected amount is zero" and let a $0 capture
+  // pass. A stored 0 (if that's ever legitimate) still passes correctly.
+  if (!expectedCurrency || expectedAmount == null || !Number.isFinite(Number(expectedAmount))) {
+    return { ok: false, reason: 'missing_expectation' };
+  }
+  if (String(captureCurrency || '').toUpperCase() !== String(expectedCurrency).toUpperCase()) {
+    return { ok: false, reason: 'currency_mismatch' };
+  }
+  const numericCaptureValue = Number(captureValue);
+  if (!Number.isFinite(numericCaptureValue) || Math.abs(numericCaptureValue - Number(expectedAmount)) > tolerance) {
+    return { ok: false, reason: 'amount_mismatch' };
+  }
+  return { ok: true };
+};
+
 const calculateOrderPricing = (items = [], couponCode = null) => {
   const teeUnits = expandOrderUnitsForBundle(items);
   const teeCount = teeUnits.length;
@@ -486,9 +518,14 @@ const resolveValidatedOrderItems = async (items = []) => {
       }
     }
 
+    // SECURITY: price must always come from the trusted product/variant record
+    // in the database — never from the client-supplied rawItem.price. A prior
+    // version fell back to trusting the client price for any item without a
+    // matched variant (e.g. jewelry SKUs with no color/size), allowing an
+    // attacker to check out at an arbitrary price.
     const resolvedPrice = (resolvedVariant && Number.isFinite(Number(resolvedVariant.price)))
       ? Number(resolvedVariant.price)
-      : Number(rawItem && rawItem.price);
+      : Number(product.price);
 
     validatedItems.push({
       ...rawItem,
@@ -565,21 +602,33 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   const order = await dbGetAsync(`SELECT * FROM orders WHERE id = ?`, [orderId]);
   if (!order) return;
 
+  // Phase 3.4 (hardened): atomic claim via a single UPDATE...RETURNING. This
+  // both claims eligible rows and reports exactly which ones THIS invocation
+  // won, in one statement — SQLite serializes writers, so once one
+  // invocation's UPDATE commits, a second concurrent invocation's WHERE
+  // clause matches zero of those same rows (they're no longer NULL/pending).
+  // Replaces a prior SELECT-then-UPDATE-by-id pattern where two concurrent
+  // invocations could both see the same "pending" rows before either UPDATE
+  // landed, and both proceed to dispatch the same items. Verified: reverting
+  // to that old pattern makes tests/fulfillment-concurrency.test.js fail
+  // (double-dispatch reproduced), confirming this fix and that test are real.
+  const claimed = await dbAllAsync(
+    `UPDATE order_items
+     SET fulfillment_status = 'processing'
+     WHERE orderId = ? AND (fulfillment_status IS NULL OR fulfillment_status = 'pending')
+     RETURNING id`,
+    [orderId]
+  );
+  if (!claimed.length) return;
+
+  const claimedIds = claimed.map((row) => row.id);
   const items = await dbAllAsync(
     `SELECT oi.*, p.title, oi.supplier_id, p.printifyId AS printifyProductId, pv.printifyVariantId
      FROM order_items oi
      LEFT JOIN products p ON p.id = oi.productId
      LEFT JOIN product_variants pv ON pv.id = oi.variantId
-     WHERE oi.orderId = ? AND (oi.fulfillment_status IS NULL OR oi.fulfillment_status = 'pending')`,
-    [orderId]
-  );
-  if (!items.length) return;
-
-  // Phase 3.4: Atomic lock — prevents double-fulfillment from concurrent webhook triggers
-  const itemIds = items.map(i => i.id);
-  await dbRunAsync(
-    `UPDATE order_items SET fulfillment_status = 'processing' WHERE id IN (${itemIds.map(() => '?').join(',')})`,
-    itemIds
+     WHERE oi.id IN (${claimedIds.map(() => '?').join(',')})`,
+    claimedIds
   );
 
   const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
@@ -690,6 +739,7 @@ const parsePrintifyPayload = (rawBody) => {
 // Temporary Admin Endpoint: Register Printify webhooks from Render env vars.
 // Keep this route high in the file to avoid being shadowed by other routing logic.
 const registerWebhooksHandler = async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
   const PRINTIFY_API_TOKEN = process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_TOKEN;
   const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
   const WEBHOOK_URL = process.env.PRINTIFY_WEBHOOK_URL
@@ -778,6 +828,7 @@ app.all('/api/admin/register-webhooks', registerWebhooksHandler);
 // One-off admin endpoint: tells Telegram to deliver bot updates to OUR /api/webhooks/telegram.
 // Visit once after deploy. Reads TELEGRAM_BOT_TOKEN from env so the token is never typed into a browser bar.
 app.all('/api/admin/register-telegram-webhook', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     return res.status(400).json({ success: false, error: 'TELEGRAM_BOT_TOKEN is not configured on the server' });
@@ -813,6 +864,7 @@ app.all('/api/admin/register-telegram-webhook', async (req, res) => {
 });
 
 app.get('/api/admin/test-telegram', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
   const timestamp = new Date().toISOString();
   const message = `🧪 <b>Telegram Test</b>\n\nServer test message at: ${timestamp}`;
   const result = await telegram.sendMessage(message);
@@ -928,13 +980,18 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
   const sig = req.headers['stripe-signature'];
   let event;
 
+  // SECURITY: never accept an unsigned payload as a real event. The previous
+  // fallback trusted req.body verbatim whenever STRIPE_WEBHOOK_SECRET was
+  // unset (e.g. because Stripe checkout is currently disabled pending an IL
+  // merchant account) — that let anyone POST a forged "payment succeeded"
+  // event to this URL and trigger real fulfillment for an unpaid order.
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    console.error('[Stripe Webhook] Rejected: STRIPE_WEBHOOK_SECRET is not configured on the server');
+    return res.status(503).json({ error: 'Stripe webhook is not configured on the server' });
+  }
+
   try {
-    // If we have a real secret, verify the signature. Otherwise, mock verification for testing.
-    if (process.env.STRIPE_WEBHOOK_SECRET) {
-      event = stripe.webhooks.constructEvent(payload, sig, process.env.STRIPE_WEBHOOK_SECRET);
-    } else {
-      event = JSON.parse(payload.toString('utf8'));
-    }
+    event = stripe.webhooks.constructEvent(payload, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
@@ -1128,10 +1185,6 @@ app.use('/api/feed', feedsRouter);
 app.use('/api/carts', cartsRouter);
 app.use('/api/marketing', marketingWebhooksRouter);
 app.use('/api/admin', adminReportsRouter);
-// Meshulam (Grow) payment routes — webhook reuses the shared fulfillment trigger
-// defined below so successful payments flow straight into CJ Dropshipping.
-app.use('/api/payment', paymentRoutesFactory(processPaidOrderFulfillment));
-
 
 // Pulse Check Route
 app.get('/', (req, res) => {
@@ -1382,6 +1435,7 @@ app.get('/api/products/:id', (req, res) => {
 
 // Get last sync status
 app.get('/api/admin/sync-status', (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
   const db = require('./db');
   db.all("SELECT type, COUNT(*) as count, MAX(id) as latestId FROM products GROUP BY type", [], (err, rows) => {
     const stats = {};
@@ -1865,6 +1919,7 @@ app.post('/api/admin/design/:jobId/reject', async (req, res) => {
 
 // Admin Printify Sync
 app.post('/api/admin/printify-sync', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
   try {
     const printifySyncEnabled = isPrintifySyncEnabled();
     if (!printifySyncEnabled) {
@@ -1882,6 +1937,7 @@ app.post('/api/admin/printify-sync', async (req, res) => {
 
 // Admin Force Price Update
 app.post('/api/admin/update-prices', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
   try {
     await pricingEngine.runPricingUpdate();
     res.json({ success: true, message: 'Prices updated to target values.' });
@@ -1892,6 +1948,7 @@ app.post('/api/admin/update-prices', async (req, res) => {
 
 // Admin Manually Trigger Email Retry Recovery
 app.post('/api/admin/retry-emails', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
   try {
     const force = req.body?.force === true;
     console.log(`⏰ [Admin Manual Trigger] Running email recovery... (force: ${force})`);
@@ -2652,6 +2709,17 @@ app.post('/api/paypal/create-order', async (req, res) => {
       : discountedTotal;
 
     const amount = totalInRequestedCurrency.toFixed(2);
+
+    // SECURITY: snapshot exactly what we're asking PayPal to charge, before
+    // ever calling PayPal. Capture-time verification checks against this
+    // stored value instead of trusting the capture response's own currency
+    // or recomputing a USD amount with whatever exchange rate happens to be
+    // live at capture time (which could differ from the rate used here).
+    await dbRunAsync(
+      `UPDATE orders SET expected_payment_currency = ?, expected_payment_amount = ? WHERE id = ?`,
+      [requestedCurrency, Number(amount), orderId]
+    );
+
     const accessToken = await getPayPalAccessToken();
     const paypalOrder = await createPayPalOrder(accessToken, {
       intent: 'CAPTURE',
@@ -2721,7 +2789,10 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Could not map PayPal order to local order' });
     }
 
-    const existingOrder = await dbGetAsync(`SELECT id, status, totalAmount, promoCode FROM orders WHERE id = ?`, [localOrderId]);
+    const existingOrder = await dbGetAsync(
+      `SELECT id, status, totalAmount, promoCode, expected_payment_currency, expected_payment_amount FROM orders WHERE id = ?`,
+      [localOrderId]
+    );
     if (!existingOrder) {
       return res.status(404).json({ success: false, error: 'Order not found' });
     }
@@ -2730,17 +2801,40 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       return res.json({ success: true, duplicate: true, orderId: localOrderId });
     }
 
+    // SECURITY: verify against the expected currency/amount snapshotted
+    // server-side at order-creation time (see /api/paypal/create-order) —
+    // never derive the expected currency from the capture response itself,
+    // and never recompute a USD amount using whatever exchange rate happens
+    // to be live right now (it may have moved since the order was created).
+    // Same function the test suite exercises directly with zero network/DB.
     const captureCurrency = String(capture?.amount?.currency_code || '').toUpperCase();
     const captureValue = Number(capture?.amount?.value || 0);
-    const exchangeRate = pricingEngine.exchangeRateUSDILS || 3.75;
-    const expectedValue = captureCurrency === 'USD'
-      ? (Number(existingOrder.totalAmount || 0) / exchangeRate)
-      : Number(existingOrder.totalAmount || 0);
+    const verdict = validatePaypalCaptureAgainstExpectation({
+      captureStatus: captureData.status,
+      captureCurrency,
+      captureValue,
+      expectedCurrency: existingOrder.expected_payment_currency,
+      expectedAmount: existingOrder.expected_payment_amount,
+    });
 
-    if (!Number.isFinite(captureValue) || Math.abs(captureValue - expectedValue) > 0.02) {
+    if (!verdict.ok) {
+      if (verdict.reason === 'missing_expectation') {
+        console.error(`[PayPal capture] Order #${localOrderId} has no stored expected_payment_currency/amount — refusing to trust capture response. Legacy order created before this safeguard existed.`);
+        return res.status(409).json({
+          success: false,
+          error: 'This order predates payment verification tracking and cannot be safely captured automatically. Contact support.',
+        });
+      }
+      if (verdict.reason === 'currency_mismatch') {
+        console.error(`[PayPal capture] Currency mismatch for order #${localOrderId}: expected ${existingOrder.expected_payment_currency}, PayPal captured in ${captureCurrency}`);
+        return res.status(400).json({
+          success: false,
+          error: 'Captured currency does not match the expected payment currency',
+        });
+      }
       return res.status(400).json({
         success: false,
-        error: 'Captured amount mismatch',
+        error: verdict.reason === 'not_completed' ? 'PayPal payment is not completed' : 'Captured amount mismatch',
       });
     }
 
@@ -2863,7 +2957,7 @@ app.post('/api/checkout/payplus', async (req, res) => {
     };
     
     // Create local pending order and calculate pricing in NIS
-    const { orderId, pricing } = await createPendingOrder(shippingInput, items, couponCode);
+    const { orderId, pricing, items: validatedItems } = await createPendingOrder(shippingInput, items, couponCode);
 
     // Call PayPlus REST API to generate secure payment page link
     const payplusPayload = {
@@ -2880,7 +2974,9 @@ app.post('/api/checkout/payplus', async (req, res) => {
         email: customerEmail,
         phone: body.phone || '',
       },
-      items: items.map(item => ({
+      // Use the server-validated items (trusted title/price) for the payment
+      // page's line-item display, not the raw client-supplied cart payload.
+      items: validatedItems.map(item => ({
         name: item.title,
         quantity: item.quantity,
         price: item.price,
@@ -3232,11 +3328,26 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
 };
 
 // Start background cron jobs
-pricingEngine.start();
+// Only actually start the server/cron jobs when this file is run directly
+// (node index.js — exactly how npm start and Render both launch it). When
+// required as a module (tests), this is skipped entirely so a test can
+// import pure helpers/`app` without side effects: no real port bound, no
+// cron jobs, no external calls.
+// DISABLE_BACKGROUND_JOBS=true additionally skips pricingEngine.start() and
+// the auto-sync/catalog-seed/cron block below, even when run directly — for
+// hermetic verification runs that must make zero outbound network calls.
+const backgroundJobsDisabled = process.env.DISABLE_BACKGROUND_JOBS === 'true';
+if (require.main === module) {
+if (!backgroundJobsDisabled) pricingEngine.start();
 
 app.listen(PORT, () => {
   console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
-  
+
+  if (backgroundJobsDisabled) {
+    console.log('⏭️ DISABLE_BACKGROUND_JOBS=true — skipping auto-sync, catalog seeding, and all cron registrations.');
+    return;
+  }
+
   // ---- AUTO-SYNC INITIALIZATION ----
   const seedFallbackCatalog = () => {
     return new Promise((resolve) => {
@@ -3438,6 +3549,7 @@ app.listen(PORT, () => {
     console.warn('⚠️ Cron not available (dev environment):', cronErr.message);
   }
 });
+}
 
 // Conditional Mounting: dev/test routes are only loaded outside production.
 // Guards: NODE_ENV must not be 'production', AND RENDER env var must not be set
@@ -3454,3 +3566,6 @@ app.use((err, req, res, next) => {
   telegram.sendMessage(`🚨 <b>Critical Server Error</b>\n\nRoute: ${req.url}\nError: ${err.message}`).catch(console.error);
   res.status(500).json({ error: 'Internal Server Error' });
 });
+
+// Exported for tests only (no effect when run directly via `node index.js`).
+module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment };
