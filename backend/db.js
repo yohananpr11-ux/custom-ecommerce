@@ -1,7 +1,12 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-const dbPath = path.resolve(__dirname, 'ecommerce.db');
+// DB_PATH override lets a persistent-disk mount (production) or an isolated
+// throwaway file (tests) replace the default in-repo location without any
+// change to default behavior when unset.
+const dbPath = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.resolve(__dirname, 'ecommerce.db');
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
@@ -245,6 +250,14 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('orders', 'shippingCost', 'REAL DEFAULT 0'),
     addColumnIfMissing('orders', 'locale', "TEXT DEFAULT 'he'"),
     addColumnIfMissing('orders', 'currency', "TEXT DEFAULT 'ILS'"),
+    // Immutable expected-payment snapshot, set once at PayPal order-creation
+    // time and never recomputed — capture-time verification compares against
+    // these stored values instead of trusting the capture response's own
+    // currency or re-deriving an amount with a possibly-different exchange
+    // rate. NULL on orders created before this column existed (legacy orders
+    // fail closed at capture time rather than being silently trusted).
+    addColumnIfMissing('orders', 'expected_payment_currency', 'TEXT'),
+    addColumnIfMissing('orders', 'expected_payment_amount', 'REAL'),
     // design_jobs
     addColumnIfMissing('design_jobs', 'lastError', 'TEXT'),
     // product_variants
