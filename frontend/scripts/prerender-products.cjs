@@ -24,37 +24,117 @@
 
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 
 const DIST_DIR     = path.join(__dirname, '..', 'dist');
 const TEMPLATE     = path.join(DIST_DIR, 'index.html');
-const API_BASE     = process.env.PRERENDER_API_BASE || 'https://custom-ecommerce-qp30.onrender.com';
 const SITE_BASE    = process.env.PRERENDER_SITE_BASE || 'https://dripstreetshop.com';
 const FALLBACK_OG  = 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80';
-const FETCH_TIMEOUT_MS = 15000;
+const DEFAULT_FETCH_TIMEOUT_MS = 15000;
 
-function fetchProducts() {
-  return new Promise((resolve, reject) => {
-    const req = https.get(`${API_BASE}/api/products`, (res) => {
-      if (res.statusCode !== 200) {
-        return reject(new Error(`API returned HTTP ${res.statusCode}`));
-      }
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          resolve(Array.isArray(parsed) ? parsed : []);
-        } catch (e) {
-          reject(new Error(`Bad JSON from API: ${e.message}`));
-        }
-      });
-    });
-    req.on('error', reject);
-    req.setTimeout(FETCH_TIMEOUT_MS, () => {
-      req.destroy(new Error(`API call timed out after ${FETCH_TIMEOUT_MS}ms`));
-    });
-  });
+// PRERENDER_REQUIRE_API=true is a strict, all-or-nothing mode for hermetic
+// CI/test runs: the API (redirected via PRERENDER_API_BASE, see below) is
+// the ONLY source of truth. No products_fallback.json fallback, no
+// accepting an empty/failed fetch, no silently-successful prerender missing
+// the seeded fixture — any failure (missing API base, unreachable API,
+// timeout, non-2xx, invalid JSON, unexpected payload shape, or zero valid
+// products) exits non-zero. Default (unset) behavior is completely
+// unchanged: try the API, fall back to products_fallback.json if the fetch
+// failed or returned nothing, and if even that's absent, log and exit 0
+// with nothing prerendered — matching this script's original,
+// production-safe design.
+const REQUIRE_API = process.env.PRERENDER_REQUIRE_API === 'true';
+
+if (REQUIRE_API && !(process.env.PRERENDER_API_BASE && process.env.PRERENDER_API_BASE.trim())) {
+  console.error('[prerender-products] FATAL: PRERENDER_REQUIRE_API=true requires PRERENDER_API_BASE to be explicitly set.');
+  process.exit(1);
+}
+
+/**
+ * Validates and normalizes an API base URL via the URL parser (rejects
+ * anything that isn't a well-formed http:/https: origin) and strips any
+ * trailing slash, so `${API_BASE}/api/...` call sites can never produce an
+ * accidental "//".
+ */
+function normalizeApiBase(raw) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (e) {
+    throw new Error(`invalid API base URL "${raw}": ${e.message}`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`invalid API base URL "${raw}": protocol must be http: or https:, got "${parsed.protocol}"`);
+  }
+  return parsed.origin + parsed.pathname.replace(/\/+$/, '');
+}
+
+const RAW_API_BASE = process.env.PRERENDER_API_BASE || 'https://custom-ecommerce-qp30.onrender.com';
+let API_BASE;
+try {
+  API_BASE = normalizeApiBase(RAW_API_BASE);
+} catch (err) {
+  console.error(`[prerender-products] FATAL: ${err.message}`);
+  process.exit(1);
+}
+
+/** Validated, bounded fetch timeout — never hangs CI indefinitely. */
+function parseTimeoutMs(raw, defaultMs) {
+  if (raw === undefined || raw === '') return defaultMs;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`invalid PRERENDER_API_TIMEOUT_MS "${raw}" (must be a positive number of milliseconds)`);
+  }
+  return n;
+}
+
+let API_TIMEOUT_MS;
+try {
+  API_TIMEOUT_MS = parseTimeoutMs(process.env.PRERENDER_API_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);
+} catch (err) {
+  console.error(`[prerender-products] FATAL: ${err.message}`);
+  process.exit(1);
+}
+
+/**
+ * Always throws on any failure (network error, timeout, non-2xx, invalid
+ * JSON, or an unexpected payload shape) rather than ever silently resolving
+ * an empty list — callers decide whether to catch-and-degrade (default
+ * mode) or let it propagate (strict mode).
+ */
+async function fetchProducts() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/api/products`, { signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`API request to ${API_BASE} timed out after ${API_TIMEOUT_MS}ms`);
+    }
+    throw new Error(`API request to ${API_BASE} failed: ${err.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!res.ok) {
+    throw new Error(`API request failed: HTTP ${res.status}`);
+  }
+
+  let payload;
+  try {
+    payload = await res.json();
+  } catch (e) {
+    throw new Error(`API response was not valid JSON: ${e.message}`);
+  }
+
+  if (!Array.isArray(payload)) {
+    throw new Error(
+      `API response had an unexpected shape (expected an array of products): ${JSON.stringify(payload).slice(0, 200)}`
+    );
+  }
+
+  return payload;
 }
 
 const esc = (v) => String(v == null ? '' : v)
@@ -143,26 +223,42 @@ async function main() {
   }
   const template = fs.readFileSync(TEMPLATE, 'utf8');
 
-  let products = [];
-  try {
+  let products;
+  if (REQUIRE_API) {
+    // Strict mode: the API is the only source of truth. No fallback file,
+    // no catching fetchProducts()'s errors, no accepting a result with
+    // zero valid (id-bearing) products.
     products = await fetchProducts();
-  } catch (err) {
-    console.warn(`  ⚠ Could not fetch products (${err.message}). Trying fallback file...`);
-  }
+    const validCount = products.filter((p) => p && p.id).length;
+    if (!validCount) {
+      throw new Error(
+        'PRERENDER_REQUIRE_API=true but the API returned zero valid products — refusing to prerender without the expected fixture.'
+      );
+    }
+    console.log(`  Loaded ${products.length} product(s) from API (strict mode).`);
+  } else {
+    // Non-strict (default/developer) behavior — unchanged from before.
+    products = [];
+    try {
+      products = await fetchProducts();
+    } catch (err) {
+      console.warn(`  ⚠ Could not fetch products (${err.message}). Trying fallback file...`);
+    }
 
-  if (!products || !products.length) {
-    console.log('  🔄 Fetch empty or failed. Loading local products fallback...');
-    const fallbackPath = path.join(__dirname, 'products_fallback.json');
-    if (fs.existsSync(fallbackPath)) {
-      try {
-        products = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
-        console.log(`  ✓ Loaded ${products.length} products from products_fallback.json.`);
-      } catch (err) {
-        console.error(`  ✗ Failed to parse products_fallback.json: ${err.message}`);
+    if (!products || !products.length) {
+      console.log('  🔄 Fetch empty or failed. Loading local products fallback...');
+      const fallbackPath = path.join(__dirname, 'products_fallback.json');
+      if (fs.existsSync(fallbackPath)) {
+        try {
+          products = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+          console.log(`  ✓ Loaded ${products.length} products from products_fallback.json.`);
+        } catch (err) {
+          console.error(`  ✗ Failed to parse products_fallback.json: ${err.message}`);
+        }
+      } else {
+        console.warn('  ⚠ products_fallback.json not found. Nothing to prerender.');
+        return;
       }
-    } else {
-      console.warn('  ⚠ products_fallback.json not found. Nothing to prerender.');
-      return;
     }
   }
 
