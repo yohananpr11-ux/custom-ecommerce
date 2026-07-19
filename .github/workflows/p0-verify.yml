@@ -1,0 +1,341 @@
+name: P0 Verify
+
+on:
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+env:
+  GUARD_PATH: ${{ github.workspace }}/backend/scripts/network-guard.cjs
+  PORT: "4091"
+  NODE_ENV: test
+  HERMETIC_TEST_MODE: "true"
+  DISABLE_BACKGROUND_JOBS: "true"
+  # Every external credential explicitly blanked at job level. No step in
+  # this workflow references GitHub's repository secret store anywhere --
+  # a hermetic run must be structurally incapable of holding a real credential.
+  STRIPE_SECRET_KEY: ""
+  STRIPE_WEBHOOK_SECRET: ""
+  PAYPAL_CLIENT_ID: ""
+  PAYPAL_CLIENT_SECRET: ""
+  PAYPAL_MODE: ""
+  PAYPLUS_API_KEY: ""
+  PAYPLUS_SECRET_KEY: ""
+  PAYPLUS_PAGE_UID: ""
+  PRINTIFY_API_TOKEN: ""
+  ENABLE_PRINTIFY_SYNC: "false"
+  PRINTIFY_SHOP_ID: ""
+  CJ_API_KEY: ""
+  CJ_API_SECRET: ""
+  TELEGRAM_BOT_TOKEN: ""
+  TELEGRAM_OWNER_CHAT_ID: ""
+  TELEGRAM_ALLOWED_USER_IDS: ""
+  RESEND_API_KEY: ""
+  CLOUDINARY_CLOUD_NAME: ""
+  CLOUDINARY_API_KEY: ""
+  CLOUDINARY_API_SECRET: ""
+  IPAPI_KEY: ""
+  GEMINI_API_KEY: ""
+  DRIP_ADMIN_SECRET: ""
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node 20.20.2
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20.20.2"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Assert exact Node runtime
+        run: |
+          node --version
+          test "$(node --version)" = "v20.20.2"
+
+      - name: Initialize CI runtime paths
+        env:
+          CI_DB_PATH: ${{ runner.temp }}/ci-p0.db
+        run: |
+          test -n "${CI_DB_PATH}"
+          printf 'DB_PATH=%s\n' "${CI_DB_PATH}" >> "${GITHUB_ENV}"
+          printf 'DB_PATH=%s\n' "${CI_DB_PATH}"
+
+      # --- Dependency install: deliberately OUTSIDE the zero-egress boundary.
+      # No guard is loaded anywhere above this point (no step so far sets
+      # NODE_OPTIONS), so npm's own registry calls are expected here. Every
+      # step from here on that executes test/build code applies the guard.
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Fast fail before any guarded execution: catches a syntax error in any
+      # P0-critical file with a single cheap check, before wasting time
+      # standing up the backend or running anything else.
+      - name: Syntax-check P0-critical backend scripts
+        run: |
+          node --check backend/index.js
+          node --check backend/db.js
+          node --check backend/scripts/verify-admin-auth.js
+          node --check backend/scripts/verify-p0-payment-security.js
+          node --check backend/lib/paypal-capture-validation.js
+          node --check backend/tests/paypal-capture-validation.test.js
+          node --check backend/tests/fulfillment-concurrency.test.js
+
+      # --- Phase 1: admin-route auth. Fully self-contained -- spawns its own
+      # child server instances on its own ports and deletes its own throwaway
+      # DB. Run BEFORE the shared backend even starts, so there is no
+      # possible port collision to reason about. The guard is applied to
+      # this parent process via -r; its spawned children already load the
+      # guard themselves via an explicit absolute-path CLI argument,
+      # independent of NODE_OPTIONS inheritance (verified by direct code
+      # reading of verify-admin-auth.js's spawn() call).
+      - name: Verify admin-route auth (self-contained)
+        working-directory: backend
+        env:
+          NODE_OPTIONS: -r ${{ env.GUARD_PATH }}
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-admin-auth.jsonl
+        run: node scripts/verify-admin-auth.js
+
+      - name: Assert admin-auth guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-admin-auth.jsonl"
+
+      # --- Phase 1b: P0 backend unit tests (PayPal capture validation,
+      # fulfillment-claim concurrency). Both files require('../index.js')
+      # directly; since require.main !== module when required by the test
+      # runner, index.js's own require.main guard skips app.listen() and
+      # pricingEngine.start() entirely -- no port is ever bound, so this has
+      # zero collision risk with the shared backend started below. Each file
+      # sets its own throwaway DB_PATH via fs.mkdtempSync() before requiring
+      # index.js, independent of this job's DB_PATH. Confirmed locally that
+      # `node --test` inherits the -r-preloaded guard into the per-file
+      # child processes it spawns internally (unlike the sitemap/prerender
+      # test harness's own explicit spawn() calls) -- the guard genuinely
+      # covers both files' actual execution, not just this outer wrapper.
+      - name: Run P0 backend unit tests (PayPal capture + fulfillment concurrency)
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          HERMETIC_TEST_MODE: "true"
+          DISABLE_BACKGROUND_JOBS: "true"
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-nodetest.jsonl
+        run: |
+          node -r ./scripts/network-guard.cjs --test \
+            tests/paypal-capture-validation.test.js \
+            tests/fulfillment-concurrency.test.js
+
+      # Expected successful output includes:
+      #   activation marker present, 0 blocked attempts
+      #   Totals across 1 log(s): 0 allowed, 0 blocked.
+      #   NETWORK GUARD: CLEAN
+      - name: Assert P0 backend unit-test guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-nodetest.jsonl"
+
+      # --- Phase 2: shared backend, isolated temp-file DB, guard preloaded.
+      # Started the same way production actually starts it (render.yaml's
+      # startCommand is literally `node index.js`, never `npm start` --
+      # confirmed against render.yaml; using `npm start` here would also
+      # silently trigger the `prestart`/migrate lifecycle hook out of our
+      # controlled step order).
+      - name: Start shared backend
+        working-directory: backend
+        env:
+          NODE_OPTIONS: -r ${{ env.GUARD_PATH }}
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-backend.jsonl
+        run: |
+          node index.js > "${{ runner.temp }}/backend.log" 2>&1 &
+          echo $! > "${{ runner.temp }}/backend.pid"
+
+      - name: Wait for backend readiness
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:${PORT}/api/checkout/config" >/dev/null; then
+              echo "Backend ready after ${i}s."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not become ready within 30s."
+          cat "${{ runner.temp }}/backend.log" || true
+          exit 1
+
+      # Exercises this checkpoint's DB_PATH fix against a real, non-default
+      # DB path (not just the throwaway DBs it was unit-tested against).
+      - name: Run order_items schema migration against isolated DB
+        working-directory: backend
+        run: node scripts/migrate-order-items.js
+
+      # Deterministic fixture, id chosen outside products_fallback.json's
+      # 1-11 range so its presence in any artifact is unambiguous proof the
+      # live isolated backend was used, not a static/production fallback.
+      - name: Seed deterministic fixture product (id 9001)
+        working-directory: backend
+        run: |
+          node -e "
+            const sqlite3 = require('sqlite3').verbose();
+            const db = new sqlite3.Database(process.env.DB_PATH);
+            db.run(
+              'INSERT INTO products (id, title, description, price, stock, imageUrl) VALUES (?, ?, ?, ?, ?, ?)',
+              [9001, 'Strict Mode Fixture Product', 'A deterministic CI fixture.', 74.5, 999, '/images/ci-fixture-9001.jpg'],
+              (err) => { db.close(); if (err) { console.error(err); process.exit(1); } }
+            );
+          "
+
+      - name: Verify P0 payment security (price trust + Stripe signature enforcement)
+        working-directory: backend
+        env:
+          NODE_OPTIONS: -r ${{ env.GUARD_PATH }}
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-p0-verify.jsonl
+        run: |
+          node scripts/verify-p0-payment-security.js \
+            --baseUrl="http://127.0.0.1:${PORT}" \
+            --dbPath="${DB_PATH}" \
+            --productId=9001 \
+            --realPrice=74.5
+
+      - name: Assert p0-verify guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-p0-verify.jsonl"
+
+      - name: Assert shared backend guard log clean (interim, pre-build)
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-backend.jsonl"
+
+      # --- Phase 3: the 20 focused sitemap/prerender node:test cases. These
+      # are hermetic by construction (each spawns its script-under-test
+      # against a throwaway 127.0.0.1 fixture in a fresh temp project dir),
+      # so this guard is a defense-in-depth check on the outer test-runner
+      # process itself, not a substitute for the tests' own isolation.
+      - name: Run sitemap/prerender unit tests
+        env:
+          NODE_OPTIONS: -r ${{ env.GUARD_PATH }}
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-unit-tests.jsonl
+        run: node --test frontend/scripts/generate-sitemap.test.cjs frontend/scripts/prerender-products.test.cjs
+
+      - name: Assert unit-test guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-unit-tests.jsonl"
+
+      # --- Phase 4: the REAL frontend build entry point, unmodified --
+      # `npm run build`, not a manual step-by-step replacement. (On Windows,
+      # setting NODE_OPTIONS breaks npm's own shim -- "Could not determine
+      # Node.js install directory" -- which is why local verification of
+      # this exact step had to fall back to invoking each underlying command
+      # directly. That workaround does NOT count as validation of this step;
+      # this job is what actually proves `npm run build` itself works.)
+      - name: Frontend production build (npm run build, zero external calls)
+        working-directory: frontend
+        env:
+          NODE_OPTIONS: -r ${{ env.GUARD_PATH }}
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-frontend-build.jsonl
+          SITEMAP_API_BASE: http://127.0.0.1:4091
+          SITEMAP_REQUIRE_API: "true"
+          SITEMAP_API_TIMEOUT_MS: "10000"
+          PRERENDER_API_BASE: http://127.0.0.1:4091
+          PRERENDER_REQUIRE_API: "true"
+          PRERENDER_API_TIMEOUT_MS: "10000"
+        run: npm run build
+
+      # Fallback/missing-content/swallowed-failure is treated as a CI
+      # failure even when `npm run build`'s own exit code is 0 -- a
+      # successful build says nothing on its own about whether the seeded
+      # fixture actually made it into the artifacts. (validate-seo.cjs,
+      # the build script's own last step, independently fails the build
+      # with exit 1 on any SEO check failure -- see its `process.exit(1)`
+      # calls -- so a passing `npm run build` already proves SEO validation
+      # passed; this step adds the fixture-specific assertion on top.)
+      - name: Assert product 9001 appears in sitemap and prerender output
+        working-directory: frontend
+        run: |
+          grep -q "/product/9001" public/sitemap.xml
+          grep -q "/product/9001" dist/sitemap.xml
+          test -f dist/product/9001/index.html
+          grep -q "Strict Mode Fixture Product" dist/product/9001/index.html
+
+      - name: Assert shared backend guard log clean (final, post-build)
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-backend.jsonl"
+
+      - name: Assert frontend-build guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-frontend-build.jsonl"
+
+      # --- Cleanup: always runs, even on earlier failure. PID ownership is
+      # verified via /proc/$PID/cmdline before any signal is sent. TERM
+      # first, bounded wait, escalate to KILL only if still alive, then
+      # confirm the port itself is closed -- PID death alone is not proof
+      # of port release. Also removes the temporary DB and its WAL/SHM
+      # sidecar files and the build artifacts, regardless of outcome.
+      - name: Stop shared backend, confirm port closed, remove temp artifacts
+        if: always()
+        run: |
+          set +u
+          PIDFILE="${{ runner.temp }}/backend.pid"
+          if [ -f "$PIDFILE" ]; then
+            PID="$(cat "$PIDFILE")"
+            if [ -n "$PID" ] && [ -d "/proc/$PID" ]; then
+              CMD="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
+              case "$CMD" in
+                *index.js*)
+                  echo "Stopping verified backend PID $PID ($CMD)"
+                  kill -TERM "$PID" 2>/dev/null || true
+                  for i in $(seq 1 10); do
+                    kill -0 "$PID" 2>/dev/null || break
+                    sleep 1
+                  done
+                  if kill -0 "$PID" 2>/dev/null; then
+                    echo "PID $PID still alive after TERM, escalating to KILL"
+                    kill -KILL "$PID" 2>/dev/null || true
+                  fi
+                  ;;
+                *)
+                  echo "Refusing to kill PID $PID -- cmdline does not match expected backend process: $CMD"
+                  ;;
+              esac
+            fi
+          fi
+          if ss -ltn | grep -q ":${PORT} "; then
+            echo "Port ${PORT} still open after cleanup."
+            exit 1
+          fi
+          echo "Port ${PORT} confirmed closed."
+          if [ -n "${DB_PATH:-}" ]; then
+            rm -f -- "${DB_PATH}" "${DB_PATH}-shm" "${DB_PATH}-wal"
+          fi
+          rm -rf frontend/dist
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "---- backend.log ----"
+          cat "${{ runner.temp }}/backend.log" 2>/dev/null || true
+          echo "---- guard-admin-auth.jsonl ----"
+          cat "${{ runner.temp }}/guard-admin-auth.jsonl" 2>/dev/null || true
+          echo "---- guard-nodetest.jsonl ----"
+          cat "${{ runner.temp }}/guard-nodetest.jsonl" 2>/dev/null || true
+          echo "---- guard-backend.jsonl ----"
+          cat "${{ runner.temp }}/guard-backend.jsonl" 2>/dev/null || true
+          echo "---- guard-p0-verify.jsonl ----"
+          cat "${{ runner.temp }}/guard-p0-verify.jsonl" 2>/dev/null || true
+          echo "---- guard-unit-tests.jsonl ----"
+          cat "${{ runner.temp }}/guard-unit-tests.jsonl" 2>/dev/null || true
+          echo "---- guard-frontend-build.jsonl ----"
+          cat "${{ runner.temp }}/guard-frontend-build.jsonl" 2>/dev/null || true

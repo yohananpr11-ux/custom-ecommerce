@@ -1,7 +1,13 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-const DB_PATH = path.resolve(__dirname, '..', 'ecommerce.db');
+// Honor the same DB_PATH override db.js already respects, so this script
+// can never target the wrong file once a persistent-disk mount changes
+// where the real database lives. Falls back to the historical hardcoded
+// path only when DB_PATH is unset — zero behavior change today.
+const DB_PATH = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.resolve(__dirname, '..', 'ecommerce.db');
 
 const REQUIRED_COLUMNS = [
   { name: 'variantId',     ddl: 'ALTER TABLE order_items ADD COLUMN variantId INTEGER' },

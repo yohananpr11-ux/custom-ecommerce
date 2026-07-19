@@ -5,8 +5,6 @@ const db = require('./db');
 
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
-console.log('Starting automated CJ hardware collection seeding...');
-
 const HARDWARE_ITEMS = [
   {
     id: 17,
@@ -137,6 +135,7 @@ async function resolvePrimaryImage(token, spu, configuredImage) {
  * If missing, we lazily mint a CJ access token and resolve from the live API.
  */
 async function seedHardwareCatalog({ verbose = false } = {}) {
+  console.log('Starting automated CJ hardware collection seeding...');
   const needsToken = HARDWARE_ITEMS.some((item) => !item.imageUrl);
   let token = null;
   if (needsToken) {

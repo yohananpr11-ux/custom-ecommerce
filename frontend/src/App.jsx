@@ -150,12 +150,9 @@ const translations = {
     payment_card_bit: "כרטיס אשראי / ביט",
     payment_stripe: "כרטיס בינלאומי (Stripe)",
     payment_paypal: "PayPal",
-    payment_meshulam_card: "כרטיס אשראי ישראלי",
-    payment_meshulam_card_sub: "ויזה · מאסטרקארד · ישראכרט · Apple Pay",
-    payment_meshulam_bit: "תשלום ב-Bit",
-    payment_meshulam_bit_sub: "סריקת QR מהאפליקציה",
-    payment_meshulam_processing: "מעביר אותך לעמוד תשלום מאובטח...",
+    payment_processing: "מעביר אותך לעמוד תשלום מאובטח...",
     payment_unavailable: "אמצעי התשלום שבחרת לא זמין כרגע. נסה PayPal.",
+    payment_no_method_available: "אין כרגע אמצעי תשלום זמין להשלמת ההזמנה. נסו לרענן את הדף בעוד מספר דקות, או צרו קשר עם התמיכה.",
     order_summary: "סיכום הזמנה",
     subtotal: "סכום ביניים",
     bundle_deal: "🎁 מבצע 3 חולצות",
@@ -290,12 +287,9 @@ const translations = {
     payment_card_bit: "Card Payment",
     payment_stripe: "Stripe ($)",
     payment_paypal: "PayPal",
-    payment_meshulam_card: "Credit Card (Israel)",
-    payment_meshulam_card_sub: "Visa · Mastercard · Isracard · Apple Pay",
-    payment_meshulam_bit: "Pay with Bit",
-    payment_meshulam_bit_sub: "Scan QR from the Bit app",
-    payment_meshulam_processing: "Redirecting to secure payment page...",
+    payment_processing: "Redirecting to secure payment page...",
     payment_unavailable: "Selected payment method is unavailable right now. Please use PayPal.",
+    payment_no_method_available: "No payment method is currently available to complete your order. Please try refreshing in a few minutes, or contact support.",
     order_summary: "Order Summary",
     subtotal: "Subtotal",
     bundle_deal: "🎁 3-item bundle",
@@ -1875,10 +1869,9 @@ function MainApp() {
     paypalEnabled: true,
     stripeEnabled: false,
     payplusEnabled: false,
-    meshulamEnabled: true,
   })
   const [isPayPalProcessing, setIsPayPalProcessing] = useState(false)
-  const [isMeshulamProcessing, setIsMeshulamProcessing] = useState(false)
+  const [isSecondaryPaymentProcessing, setIsSecondaryPaymentProcessing] = useState(false)
   const [checkoutForm, setCheckoutForm] = useState({
     customerName: '',
     customerEmail: '',
@@ -2350,9 +2343,10 @@ function MainApp() {
   const isPayPalAvailable = Boolean(checkoutConfig.paypalEnabled && paypalClientId);
   const isStripeAvailable = Boolean(checkoutConfig.stripeEnabled);
   const isPayPlusAvailable = Boolean(checkoutConfig.payplusEnabled);
-  // Meshulam (Grow) — Israeli payment processor. Always offered in the UI;
-  // the backend returns a clear "not configured" error if env vars are missing.
-  const isMeshulamAvailable = Boolean(checkoutConfig.meshulamEnabled !== false);
+  // Fail-closed guard: when neither live payment method is reachable, the
+  // checkout must say so explicitly rather than leave a disabled generic
+  // button with no explanation of why the order can't be placed.
+  const noPaymentMethodAvailable = !isPayPalAvailable && !isPayPlusAvailable;
   const shippingValidationMessage = (() => {
     const f = checkoutForm;
     const namesProvided = (f.firstName || '').trim() || (f.lastName || '').trim();
@@ -2373,33 +2367,30 @@ function MainApp() {
     if (!isValidEnglishShippingValue(f.address, { requireLetter: true })) return t('shipping_address_english_only');
     return '';
   })();
+  // Stripe stays out of the active selector entirely while it remains
+  // hidden/disabled (backend forces stripeEnabled=false) — not just
+  // deprioritized. Any unrecognized paymentMethod value fails closed.
   const isSelectedPaymentAvailable = (() => {
     if (paymentMethod === 'paypal') return isPayPalAvailable;
-    if (paymentMethod === 'stripe') return isStripeAvailable;
-    if (paymentMethod === 'meshulam_card' || paymentMethod === 'meshulam_bit') return isMeshulamAvailable;
-    return isPayPlusAvailable;
+    if (paymentMethod === 'payplus') return isPayPlusAvailable;
+    return false;
   })();
 
   useEffect(() => {
     if (paymentMethod) return;
-    // Meshulam (local) is the preferred default for the Israeli storefront.
-    if (isMeshulamAvailable) setPaymentMethod('meshulam_card');
-    else if (isStripeAvailable) setPaymentMethod('stripe');
+    if (isPayPalAvailable) setPaymentMethod('paypal');
     else if (isPayPlusAvailable) setPaymentMethod('payplus');
-    else if (isPayPalAvailable) setPaymentMethod('paypal');
-  }, [isMeshulamAvailable, isStripeAvailable, isPayPlusAvailable, isPayPalAvailable, paymentMethod]);
+  }, [isPayPalAvailable, isPayPlusAvailable, paymentMethod]);
 
   useEffect(() => {
     const availableMethods = [];
-    if (isMeshulamAvailable) availableMethods.push('meshulam_card', 'meshulam_bit');
     if (isPayPalAvailable) availableMethods.push('paypal');
     if (isPayPlusAvailable) availableMethods.push('payplus');
-    if (isStripeAvailable) availableMethods.push('stripe');
 
     if (availableMethods.length > 0 && !availableMethods.includes(paymentMethod)) {
       setPaymentMethod(availableMethods[0]);
     }
-  }, [isMeshulamAvailable, isPayPalAvailable, isPayPlusAvailable, isStripeAvailable, paymentMethod]);
+  }, [isPayPalAvailable, isPayPlusAvailable, paymentMethod]);
 
   const closeCartDrawer = () => {
     setIsCartOpen(false);
@@ -2913,98 +2904,6 @@ function MainApp() {
     return `DS-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
   };
 
-  const submitMeshulamPayment = async () => {
-    if (isMeshulamProcessing) return;
-    if (hasInvalidVariant) {
-      showToast(t('variant_error_toast'));
-      return;
-    }
-    if (!isCheckoutFormValid) {
-      showToast(shippingValidationMessage || t('shipping_details'));
-      return;
-    }
-    if (!isMeshulamAvailable) {
-      showToast(t('payment_unavailable'));
-      return;
-    }
-    if (!cart || cart.length === 0) {
-      showToast(t('cart_empty') || t('payment_unavailable'));
-      return;
-    }
-
-    setIsMeshulamProcessing(true);
-    try {
-      const fullName = `${(checkoutForm.firstName || '').trim()} ${(checkoutForm.lastName || '').trim()}`.trim()
-        || (checkoutForm.customerName || '').trim();
-
-      // Build the cart-items payload that the backend will persist into
-      // order_items so the Meshulam webhook can dispatch them to CJ on success.
-      const itemsPayload = (cart || []).map((item) => ({
-        productId: item.id,
-        variantId: item.variantId || null,
-        quantity: Number(item.quantity) || 1,
-        price: Number(item.price) || 0,
-        selectedColor: item.selectedColor || null,
-        selectedSize: item.selectedSize || null,
-      }));
-
-      const response = await fetch(`${API_BASE}/api/payment/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: Number(Number(cartTotal || 0).toFixed(2)),
-          paymentMethod, // meshulam_card or meshulam_bit
-          customer: {
-            fullName,
-            email: (checkoutForm.customerEmail || '').trim(),
-            phone: (checkoutForm.phone || '').trim(),
-          },
-          shipping: {
-            firstName: (checkoutForm.firstName || '').trim(),
-            lastName: (checkoutForm.lastName || '').trim(),
-            addressLine1: (checkoutForm.addressLine1 || '').trim(),
-            addressLine2: (checkoutForm.addressLine2 || '').trim(),
-            city: (checkoutForm.city || '').trim(),
-            region: (checkoutForm.region || '').trim(),
-            postalCode: (checkoutForm.postalCode || '').trim(),
-            country: (checkoutForm.country || 'IL').toUpperCase(),
-          },
-          items: itemsPayload,
-          currency,
-          locale,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok && data.ok === true && data.redirectUrl) {
-        // Persist a pending-order snapshot keyed on the REAL internal orderId
-        // the backend returned — used by the /success page for reconciliation.
-        try {
-          sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
-            orderId: data.orderId,
-            amount: Number(Number(cartTotal || 0).toFixed(2)),
-            method: paymentMethod,
-            createdAt: new Date().toISOString(),
-            itemCount: cart.length,
-          }));
-        } catch { /* sessionStorage may be unavailable in private mode */ }
-
-        showToast(t('payment_meshulam_processing'));
-        // Do NOT clear the cart here — only after the success webhook lands.
-        window.location.href = data.redirectUrl;
-        return;
-      }
-
-      const reason = data && (data.details || data.error);
-      showToast(reason || t('payment_unavailable'));
-    } catch (err) {
-      console.error('[meshulam] checkout failed:', err);
-      showToast(err.message || GLOBAL_ERROR_TOAST_HE);
-    } finally {
-      setIsMeshulamProcessing(false);
-    }
-  };
-
   const submitCheckout = async (e) => {
     e.preventDefault();
 
@@ -3023,12 +2922,7 @@ function MainApp() {
       return;
     }
 
-    // Meshulam: hosted-page redirect flow.
-    if (paymentMethod === 'meshulam_card' || paymentMethod === 'meshulam_bit') {
-      await submitMeshulamPayment();
-      return;
-    }
-
+    setIsSecondaryPaymentProcessing(true);
     try {
       const endpoint = paymentMethod === 'stripe' ? '/api/checkout/stripe' : '/api/checkout/payplus';
       const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -3046,6 +2940,8 @@ function MainApp() {
     } catch (err) {
       console.error('Checkout failed:', err);
       showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+    } finally {
+      setIsSecondaryPaymentProcessing(false);
     }
   }
 
@@ -3312,7 +3208,7 @@ function MainApp() {
   }, [location.pathname]);
 
   // Purchase — fires when the user lands on /success. Pulls the order snapshot
-  // saved by the Meshulam/PayPal flow into sessionStorage so we report a real value.
+  // saved by the checkout flow into sessionStorage so we report a real value.
   useEffect(() => {
     if (location.pathname !== '/success') return;
     let snapshot = null;
@@ -3781,63 +3677,6 @@ function MainApp() {
               </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-              {isMeshulamAvailable && (
-                <label
-                  data-track="payment_select_meshulam_card"
-                  style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '14px', border: `1px solid ${paymentMethod === 'meshulam_card' ? '#fff' : '#333'}`, borderRadius: '2px', background: paymentMethod === 'meshulam_card' ? '#0a0a0a' : 'transparent' }}
-                >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="meshulam_card"
-                    checked={paymentMethod === 'meshulam_card'}
-                    onChange={() => setPaymentMethod('meshulam_card')}
-                  />
-                  <span style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, letterSpacing: '0.02em' }}>{t('payment_meshulam_card')}</div>
-                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{t('payment_meshulam_card_sub')}</div>
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
-                      <span style={{ padding: '2px 6px', background: '#1a1f71', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>VISA</span>
-                      <span style={{ padding: '2px 6px', background: '#eb001b', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>MC</span>
-                      <span style={{ padding: '2px 6px', background: '#0a3d62', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>ISRACARD</span>
-                      <span style={{ padding: '2px 6px', background: '#000', color: '#fff', borderRadius: '2px', fontSize: '10px', border: '1px solid #555', fontWeight: 700 }}>Pay</span>
-                    </div>
-                  </span>
-                </label>
-              )}
-              {isMeshulamAvailable && (
-                <label
-                  data-track="payment_select_meshulam_bit"
-                  style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '14px', border: `1px solid ${paymentMethod === 'meshulam_bit' ? '#fff' : '#333'}`, borderRadius: '2px', background: paymentMethod === 'meshulam_bit' ? '#0a0a0a' : 'transparent' }}
-                >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="meshulam_bit"
-                    checked={paymentMethod === 'meshulam_bit'}
-                    onChange={() => setPaymentMethod('meshulam_bit')}
-                  />
-                  <span style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span aria-hidden="true" style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '32px',
-                        height: '20px',
-                        background: '#0066ff',
-                        color: '#fff',
-                        fontSize: '11px',
-                        fontWeight: 900,
-                        letterSpacing: '0.04em',
-                        borderRadius: '2px',
-                      }}>BIT</span>
-                      <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>{t('payment_meshulam_bit')}</span>
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{t('payment_meshulam_bit_sub')}</div>
-                  </span>
-                </label>
-              )}
               {isStripeAvailable && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'stripe' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
                   <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
@@ -3858,8 +3697,21 @@ function MainApp() {
                   <span>{t('payment_paypal')}</span>
                 </label>
               )}
+              {isPayPlusAvailable && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'payplus' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
+                  <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
+                  <span>{t('payment_card_apple_google')}</span>
+                </label>
+              )}
             </div>
-            {paymentMethod === 'paypal' ? (
+            {noPaymentMethodAvailable ? (
+              <p
+                data-track="payment_no_method_available"
+                style={{ color: '#ff6b6b', marginBottom: '16px' }}
+              >
+                {t('payment_no_method_available')}
+              </p>
+            ) : paymentMethod === 'paypal' ? (
               isPayPalAvailable ? (
                 <>
                 <div className="premium-paypal-container" style={{
@@ -3950,12 +3802,12 @@ function MainApp() {
               <button
                 type="submit"
                 className="checkout-btn"
-                data-track={paymentMethod === 'meshulam_bit' ? 'checkout_submit_bit' : (paymentMethod === 'meshulam_card' ? 'checkout_submit_meshulam_card' : 'checkout_submit')}
-                disabled={isMeshulamProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
-                style={{ opacity: isMeshulamProcessing ? 0.7 : 1 }}
+                data-track="checkout_submit"
+                disabled={isSecondaryPaymentProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
+                style={{ opacity: isSecondaryPaymentProcessing ? 0.7 : 1 }}
               >
-                {isMeshulamProcessing
-                  ? t('payment_meshulam_processing')
+                {isSecondaryPaymentProcessing
+                  ? t('payment_processing')
                   : `${t('complete_order')} – ${curSym}${displayVal(cartTotal).toFixed(2)}`}
               </button>
             )}

@@ -33,6 +33,14 @@ const resolveChatId = () => {
   const fromAllowed = pickFirstId(process.env.TELEGRAM_ALLOWED_USER_IDS || '');
   if (fromAllowed) return fromAllowed;
 
+  // Hermetic test runs must never touch real local files outside the
+  // sandboxed test environment, even as a read-only fallback — skip the
+  // MENI_CORE lookup entirely and use the inert default chat id instead.
+  // Requires BOTH NODE_ENV=test AND the dedicated HERMETIC_TEST_MODE flag,
+  // standardized the same way as pricing.js's fetchExchangeRate() — never
+  // DISABLE_BACKGROUND_JOBS, which is an unrelated, independent control.
+  if (process.env.NODE_ENV === 'test' && process.env.HERMETIC_TEST_MODE === 'true') return DEFAULT_MENI_CHAT_ID;
+
   const userProfile = process.env.USERPROFILE || '';
   const meniCoreEnvPaths = [
     process.env.MENI_CORE_ENV_PATH,

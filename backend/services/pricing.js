@@ -138,6 +138,26 @@ class PricingEngine {
   }
 
   async fetchExchangeRate() {
+    // Hermetic test runs must never attempt a real network call here, on any
+    // call path (startup or an on-demand admin route like update-prices /
+    // refresh-prices calling runPricingUpdate directly). Requires BOTH
+    // NODE_ENV=test AND the dedicated HERMETIC_TEST_MODE flag — a single
+    // flag being unset should surface as a loud, visible network-guard
+    // failure during verification, not a silent pass. Deliberately NOT
+    // DISABLE_BACKGROUND_JOBS: that flag controls whether background
+    // jobs/cron get registered at all (a separate, independent concern) —
+    // an admin manually calling update-prices/refresh-prices is not a
+    // "background job" and must stay deterministic under HERMETIC_TEST_MODE
+    // even if background jobs were left enabled for some other reason.
+    if (process.env.NODE_ENV === 'test' && process.env.HERMETIC_TEST_MODE === 'true') {
+      const deterministicRate = Number(process.env.HERMETIC_TEST_FX_RATE);
+      this.exchangeRateUSDILS = Number.isFinite(deterministicRate) && deterministicRate > 0
+        ? deterministicRate
+        : 3.75;
+      console.log(`🧪 Hermetic test mode — using deterministic USD/ILS rate: ${this.exchangeRateUSDILS} (no network call attempted).`);
+      return;
+    }
+
     try {
       const res = await axios.get('https://open.er-api.com/v6/latest/USD');
       if (res.data && res.data.rates && res.data.rates.ILS) {
