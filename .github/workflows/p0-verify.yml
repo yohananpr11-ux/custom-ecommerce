@@ -68,6 +68,11 @@ jobs:
             backend/package-lock.json
             frontend/package-lock.json
 
+      - name: Assert exact Node runtime
+        run: |
+          node --version
+          test "$(node --version)" = "v20.20.2"
+
       # --- Dependency install: deliberately OUTSIDE the zero-egress boundary.
       # No guard is loaded anywhere above this point (no step so far sets
       # NODE_OPTIONS), so npm's own registry calls are expected here. Every
