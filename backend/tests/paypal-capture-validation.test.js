@@ -1,31 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const fs = require('node:fs');
-const os = require('node:os');
 
-// Isolate DB_PATH to a throwaway file before requiring index.js, even though
-// this specific function makes no DB calls — keeps this test consistent with
-// "never touch the real ecommerce.db" regardless of what index.js does at
-// module-load time.
-const tmpDb = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'paypal-capture-test-')), 'isolated.db');
-process.env.DB_PATH = tmpDb;
-process.env.ENABLE_PRINTIFY_SYNC = 'false';
-
-// require.main !== module here (we're required by the test runner, not run
-// directly), so index.js's own require.main guard skips app.listen() and
-// pricingEngine.start() entirely — this import has no network/port side effects.
-const { validatePaypalCaptureAgainstExpectation } = require('../index.js');
-
-test.after(() => {
-  // Best-effort: on Windows the sqlite3 connection opened by requiring
-  // index.js may still hold the file open at this point (no explicit
-  // db.close() is exposed to this test), which can make rmSync fail with
-  // EPERM. Not fatal — it's an OS temp directory either way.
-  try {
-    fs.rmSync(path.dirname(tmpDb), { recursive: true, force: true });
-  } catch { /* best-effort cleanup only */ }
-});
+const { validatePaypalCaptureAgainstExpectation } = require('../lib/paypal-capture-validation');
 
 test('accepts a capture matching the stored expectation exactly', () => {
   const verdict = validatePaypalCaptureAgainstExpectation({
@@ -145,8 +121,8 @@ test('is case-insensitive on currency comparison (defensive, not a real-world Pa
 });
 
 // This test module never calls axios, never contacts PayPal, and only ever
-// talks to a throwaway DB path that nothing in this suite even queries —
-// no real PayPal network request is possible from this file.
+// imports a side-effect-free pure function — no real PayPal network request
+// is possible from this file.
 test('this suite made no outbound HTTP requests (sanity check on test design, not runtime instrumentation)', () => {
   assert.equal(typeof validatePaypalCaptureAgainstExpectation, 'function');
 });

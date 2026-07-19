@@ -101,6 +101,7 @@ jobs:
           node --check backend/db.js
           node --check backend/scripts/verify-admin-auth.js
           node --check backend/scripts/verify-p0-payment-security.js
+          node --check backend/lib/paypal-capture-validation.js
           node --check backend/tests/paypal-capture-validation.test.js
           node --check backend/tests/fulfillment-concurrency.test.js
 
