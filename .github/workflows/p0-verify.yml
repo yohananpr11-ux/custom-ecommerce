@@ -16,7 +16,6 @@ defaults:
     shell: bash -euo pipefail {0}
 
 env:
-  DB_PATH: ${{ runner.temp }}/ci-p0.db
   GUARD_PATH: ${{ github.workspace }}/backend/scripts/network-guard.cjs
   PORT: "4091"
   NODE_ENV: test
@@ -72,6 +71,14 @@ jobs:
         run: |
           node --version
           test "$(node --version)" = "v20.20.2"
+
+      - name: Initialize CI runtime paths
+        env:
+          CI_DB_PATH: ${{ runner.temp }}/ci-p0.db
+        run: |
+          test -n "${CI_DB_PATH}"
+          printf 'DB_PATH=%s\n' "${CI_DB_PATH}" >> "${GITHUB_ENV}"
+          printf 'DB_PATH=%s\n' "${CI_DB_PATH}"
 
       # --- Dependency install: deliberately OUTSIDE the zero-egress boundary.
       # No guard is loaded anywhere above this point (no step so far sets
@@ -204,7 +211,7 @@ jobs:
         run: |
           node scripts/verify-p0-payment-security.js \
             --baseUrl="http://127.0.0.1:${PORT}" \
-            --dbPath="${{ env.DB_PATH }}" \
+            --dbPath="${DB_PATH}" \
             --productId=9001 \
             --realPrice=74.5
 
@@ -309,7 +316,9 @@ jobs:
             exit 1
           fi
           echo "Port ${PORT} confirmed closed."
-          rm -f "${{ env.DB_PATH }}" "${{ env.DB_PATH }}-shm" "${{ env.DB_PATH }}-wal"
+          if [ -n "${DB_PATH:-}" ]; then
+            rm -f -- "${DB_PATH}" "${DB_PATH}-shm" "${DB_PATH}-wal"
+          fi
           rm -rf frontend/dist
 
       - name: Dump logs on failure
