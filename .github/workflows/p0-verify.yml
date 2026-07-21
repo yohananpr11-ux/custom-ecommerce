@@ -72,6 +72,17 @@ jobs:
           node --version
           test "$(node --version)" = "v24.14.1"
 
+      # backend/package.json's engines.node is the ONLY repository-controlled
+      # Node-version pin in this repo (see backend/scripts/assert-node-engines-pin.cjs
+      # for why a backend/.node-version file was deliberately NOT added:
+      # Render's own docs place .node-version/.nvmrc at "the root of your
+      # repo", with no documented interaction with a service's rootDir --
+      # unlike this file, which has no such ambiguity). This step fails the
+      # build the moment engines.node and the setup-node pin above ever
+      # silently diverge.
+      - name: Assert package.json engines.node matches the pinned CI Node version
+        run: node backend/scripts/assert-node-engines-pin.cjs "24.14.1"
+
       - name: Initialize CI runtime paths
         env:
           CI_DB_PATH: ${{ runner.temp }}/ci-p0.db
@@ -115,6 +126,7 @@ jobs:
           node --check backend/scripts/recovery-restart-harness.cjs
           node --check backend/scripts/db-init-harness.cjs
           node --check backend/scripts/purge-local-placeholder-products.js
+          node --check backend/scripts/assert-node-engines-pin.cjs
 
       # --- Phase 1: admin-route auth. Fully self-contained -- spawns its own
       # child server instances on its own ports and deletes its own throwaway
