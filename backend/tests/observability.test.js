@@ -291,7 +291,90 @@ test('APP_RUNTIME_NODE_VERSION startup log reports the real running Node version
     try { fs.rmSync(startupDbDir, { recursive: true, force: true }); } catch { /* best-effort */ }
   }
 
-  const match = stdout.match(/APP_RUNTIME_NODE_VERSION=(\S+)/);
-  assert.ok(match, 'APP_RUNTIME_NODE_VERSION line must appear in real server startup output');
-  assert.equal(match[1], process.version, 'logged version must equal the real running Node version');
+  const line = stdout.split(/\r?\n/).find((l) => l.startsWith('APP_RUNTIME_NODE_VERSION='));
+  assert.ok(line, 'APP_RUNTIME_NODE_VERSION line must appear in real server startup output');
+  // Anchored full-line match, not a substring extraction -- proves nothing
+  // else (no extra env values, no trailing text) rides on the same line.
+  assert.equal(line, `APP_RUNTIME_NODE_VERSION=${process.version}`, 'the whole line must be exactly the label and the real running Node version, nothing else');
+});
+
+// ── Adversarial-review additions: non-Error rejections and source allowlist ─
+//
+// Found by an independent adversarial review of this PR: err.message /
+// error.message access on a non-Error rejection (Promise.reject(null) and
+// friends are valid JS) threw its own TypeError, which escaped the
+// surrounding catch block and silently prevented the OPS_* event from ever
+// being emitted -- exactly the "logging must not swallow the original
+// operational failure" property this instrumentation exists to provide.
+// Fixed with safeErrMessage()/_safeErrorCode() guards in both
+// services/fulfillment-recovery.js and services/printify.js.
+
+test('a non-Error rejection from processPaidOrderFulfillment does not prevent the OPS_FULFILLMENT_RECOVERY aggregate event', async () => {
+  await seedPaidPrintifyOrder('non-error-rejection-fixture@example.com');
+
+  const lines = await captureLogs(async () => {
+    const result = await recoverStalePaidFulfillments({
+      // eslint-disable-next-line prefer-promise-reject-errors -- deliberately non-Error
+      processPaidOrderFulfillment: async () => { throw null; },
+      source: 'startup',
+    });
+    assert.equal(result.scanned, 1);
+    assert.equal(result.failed, 1);
+  });
+
+  const events = opsLines(lines, 'OPS_FULFILLMENT_RECOVERY');
+  assert.equal(events.length, 1, 'the aggregate event must still fire even when the underlying rejection is not an Error');
+  assert.match(events[0], /^OPS_FULFILLMENT_RECOVERY source=startup result=failed candidates=1 recovered=0 failed=1 skipped=0 duration_ms=\d+$/);
+});
+
+test('a non-Error rejection from axios.get does not prevent the OPS_PRINTIFY_SYNC failure event', async () => {
+  const originalToken = printify.token;
+  const originalShopId = printify.shopId;
+  printify.token = 'fake-real-token-not-a-placeholder';
+  printify.shopId = 'fake-shop-id';
+
+  // eslint-disable-next-line prefer-promise-reject-errors -- deliberately non-Error
+  const getMock = mock.method(axios, 'get', async () => { throw 'a plain string rejection, not an Error'; });
+
+  let lines;
+  try {
+    lines = await captureLogs(async () => {
+      await assert.rejects(() => printify.syncProducts('scheduled'));
+    });
+  } finally {
+    getMock.mock.restore();
+    printify.token = originalToken;
+    printify.shopId = originalShopId;
+  }
+
+  const events = opsLines(lines, 'OPS_PRINTIFY_SYNC');
+  assert.equal(events.length, 1, 'the failure event must still fire even when the underlying rejection is not an Error');
+  assert.match(events[0], /^OPS_PRINTIFY_SYNC source=scheduled result=failed products_seen=0 products_updated=0 error_code=UNKNOWN_ERROR duration_ms=\d+$/);
+});
+
+test('an unrecognized/malicious source value is replaced with "unknown" in both OPS event types, preventing log-line injection', async () => {
+  const maliciousSource = 'startup\nOPS_FULFILLMENT_RECOVERY source=scheduled result=success candidates=0 recovered=0 failed=0 skipped=0 duration_ms=0\nFORGED';
+
+  const recoveryLines = await captureLogs(async () => {
+    await recoverStalePaidFulfillments({
+      processPaidOrderFulfillment: async () => {},
+      source: maliciousSource,
+    });
+  });
+  const recoveryEvents = opsLines(recoveryLines, 'OPS_FULFILLMENT_RECOVERY');
+  assert.equal(recoveryEvents.length, 1, 'a malicious multi-line source must not forge additional OPS lines');
+  // candidates/recovered may be non-zero here since this test file shares
+  // one DB across earlier tests -- only source-sanitization and single-line
+  // integrity are this test's concern, not the exact counts.
+  assert.match(recoveryEvents[0], /^OPS_FULFILLMENT_RECOVERY source=unknown result=success candidates=\d+ recovered=\d+ failed=0 skipped=0 duration_ms=\d+$/);
+
+  const originalToken = printify.token;
+  printify.token = '';
+  const syncLines = await captureLogs(async () => {
+    await printify.syncProducts(maliciousSource);
+  });
+  printify.token = originalToken;
+  const syncEvents = opsLines(syncLines, 'OPS_PRINTIFY_SYNC');
+  assert.equal(syncEvents.length, 1, 'a malicious multi-line source must not forge additional OPS lines');
+  assert.match(syncEvents[0], /^OPS_PRINTIFY_SYNC source=unknown result=success products_seen=10 products_updated=10 duration_ms=\d+$/);
 });

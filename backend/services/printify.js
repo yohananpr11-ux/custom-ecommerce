@@ -8,6 +8,24 @@ const telegram = require('./telegram');
 // past the point a human would call it stuck.
 const FULFILLMENT_HTTP_TIMEOUT_MS = 20000;
 
+// A rejection reaching syncProducts()'s catch block is not guaranteed to be
+// an Error instance -- error.message on a non-object throws its own
+// TypeError, which would otherwise prevent both the pre-existing debug log
+// and the OPS_PRINTIFY_SYNC failure event below from ever being emitted.
+// Never throws.
+function safeErrMessage(error) {
+  if (error instanceof Error) return error.message;
+  try { return String(error); } catch { return 'non-serializable error'; }
+}
+
+// source is logged verbatim into a single-line, grep-friendly format -- an
+// unvalidated caller-supplied source could embed a newline and forge
+// additional fake log lines.
+const ALLOWED_SYNC_SOURCES = new Set(['startup', 'scheduled']);
+function safeSyncSource(source) {
+  return ALLOWED_SYNC_SOURCES.has(source) ? source : 'unknown';
+}
+
 class PrintifyService {
   constructor() {
     this.token = process.env.PRINTIFY_API_TOKEN;
@@ -58,7 +76,8 @@ class PrintifyService {
     }
   }
 
-  async syncProducts(source = 'unknown') {
+  async syncProducts(rawSource = 'unknown') {
+    const source = safeSyncSource(rawSource);
     const startedAt = Date.now();
     if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
       console.warn(`⚠️ Printify token missing. Simulating 10 product sync.`);
@@ -228,7 +247,11 @@ class PrintifyService {
       await telegram.sendMessage(`🔄 <b>Printify Sync Completed</b>\n\n${syncedCount} products were synced successfully with colors, sizes, and images.`);
       return syncedCount;
     } catch (error) {
-      console.error('❌ Printify sync failed:', error.message);
+      // safeErrMessage/_safeErrorCode must never themselves throw here --
+      // a non-Error rejection (Promise.reject(null) and friends are valid
+      // JS) would otherwise prevent the OPS_PRINTIFY_SYNC failure event
+      // below from ever being emitted (proven by a regression test).
+      console.error('❌ Printify sync failed:', safeErrMessage(error));
       console.log(`OPS_PRINTIFY_SYNC source=${source} result=failed products_seen=0 products_updated=0 error_code=${this._safeErrorCode(error)} duration_ms=${Date.now() - startedAt}`);
       throw error;
     }
@@ -246,6 +269,11 @@ class PrintifyService {
   // a validation-error body can echo back submitted address fields, so only
   // a coarse HTTP-status-shaped code is ever safe to log or persist.
   _safeErrorCode(error) {
+    // error is not guaranteed to be an object (a non-Error rejection is
+    // valid JS) -- property access on null/undefined throws, which must
+    // never happen here since every caller uses this to build a log/persist
+    // value inside its own catch block.
+    if (error == null || typeof error !== 'object') return 'UNKNOWN_ERROR';
     const status = error.response && error.response.status;
     if (status) return `HTTP_${status}`;
     if (error.code) return String(error.code);

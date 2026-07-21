@@ -33,6 +33,25 @@ const dbAllAsync = (sql, params = []) => new Promise((resolve, reject) => {
 
 const DEFAULT_BATCH_LIMIT = 25;
 
+// A rejection is not guaranteed to be an Error instance (Promise.reject(null)
+// and friends are valid JS) -- err.message on a non-object throws its own
+// TypeError, which would otherwise escape this per-order catch block and
+// abort the whole batch, silently preventing the OPS_FULFILLMENT_RECOVERY
+// aggregate line below from ever being emitted. Never throws.
+function safeErrMessage(err) {
+  if (err instanceof Error) return err.message;
+  try { return String(err); } catch { return 'non-serializable error'; }
+}
+
+// source/result are logged verbatim into a single-line, grep-friendly
+// format -- an unvalidated caller-supplied source could embed a newline and
+// forge additional fake log lines. result is always internally computed
+// (never caller-supplied), so only source needs allowlisting here.
+const ALLOWED_SOURCES = new Set(['startup', 'scheduled']);
+function safeSource(source) {
+  return ALLOWED_SOURCES.has(source) ? source : 'unknown';
+}
+
 // Mirrors the exact eligibility condition backend/index.js's outer
 // order_items claim query uses, but as a read-only order-level scan: finds
 // orders that have at least one printify item the real claim query would
@@ -84,11 +103,12 @@ let scanInFlight = false;
  *   behavioral effect.
  * @returns {Promise<{scanned: number, recovered: number, skipped: number, failed: number}>}
  */
-async function recoverStalePaidFulfillments({ processPaidOrderFulfillment, batchLimit = DEFAULT_BATCH_LIMIT, source = 'unknown' }) {
+async function recoverStalePaidFulfillments({ processPaidOrderFulfillment, batchLimit = DEFAULT_BATCH_LIMIT, source: rawSource = 'unknown' }) {
   if (typeof processPaidOrderFulfillment !== 'function') {
     throw new Error('recoverStalePaidFulfillments requires a processPaidOrderFulfillment function');
   }
 
+  const source = safeSource(rawSource);
   const startedAt = Date.now();
 
   if (scanInFlight) {
@@ -106,7 +126,11 @@ async function recoverStalePaidFulfillments({ processPaidOrderFulfillment, batch
     let failed = 0;
 
     for (const row of eligible) {
-      // One failed order must not stop the rest of the batch.
+      // One failed order must not stop the rest of the batch. Defensively
+      // handles a non-Error rejection (see safeErrMessage above) -- without
+      // it, a single non-Error throw here would escape this catch, abort
+      // the loop, and skip the OPS_FULFILLMENT_RECOVERY line below entirely
+      // (proven by a regression test spawning a real non-Error rejection).
       try {
         await processPaidOrderFulfillment(row.orderId, 'Recovery');
         recovered += 1;
@@ -116,12 +140,12 @@ async function recoverStalePaidFulfillments({ processPaidOrderFulfillment, batch
         // Only a coarse, safe message -- never recipient data, which never
         // appears in anything processPaidOrderFulfillment throws (see
         // services/printify.js#_safeErrorCode and services/fulfillment.js).
-        // NOTE: err.message here is NOT necessarily safe for the structured
-        // OPS event below -- some thrown messages embed the real supplier
-        // order id (see services/fulfillment.js) -- so it is deliberately
-        // never included in the OPS_FULFILLMENT_RECOVERY line, only in this
+        // NOTE: this message is NOT necessarily safe for the structured OPS
+        // event below -- some thrown messages embed the real supplier order
+        // id (see services/fulfillment.js) -- so it is deliberately never
+        // included in the OPS_FULFILLMENT_RECOVERY line, only in this
         // pre-existing free-text debug log.
-        console.error(`[fulfillment-recovery] order #${row.orderId}: recovery attempt failed:`, err.message);
+        console.error(`[fulfillment-recovery] order #${row.orderId}: recovery attempt failed:`, safeErrMessage(err));
       }
     }
 
