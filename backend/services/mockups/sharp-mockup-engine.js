@@ -46,7 +46,7 @@ function normalizePlacement(placement) {
 // (e.g. a Cloudinary-hosted template referenced via MOCKUP_TEMPLATE_* env vars
 // in production). Remote URLs are downloaded once per composite call — Sharp
 // itself only accepts Buffers/paths, so we materialize URLs into Buffers here.
-// Relies on Node 18+ global `fetch` (Render's Node 20 runtime satisfies this).
+// Relies on Node 18+ global `fetch` (Render's pinned Node 24.14.1 runtime satisfies this).
 async function resolveInputBuffer(input, label) {
   if (!input) return null;
   if (Buffer.isBuffer(input)) return input;
