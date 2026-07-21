@@ -305,11 +305,10 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0'),
   ]);
 
-  // Purge any local placeholder products to prevent non-fulfillment checkout errors
-  db.run("DELETE FROM products WHERE type = 'local'", (err) => {
-    if (err) console.error("Error purging local products:", err.message);
-    else console.log("Purged local mock products successfully.");
-  });
+  // Local/mock placeholder products (type='local') are never purged here.
+  // Startup must never delete catalog rows -- see
+  // scripts/purge-local-placeholder-products.js for the explicit,
+  // opt-in-only cleanup this used to run unconditionally on every boot.
 
   // Create indexes only AFTER all column migrations complete
   db.run(`CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)`);

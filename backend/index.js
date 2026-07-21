@@ -3346,6 +3346,7 @@ if (!backgroundJobsDisabled) pricingEngine.start();
 
 app.listen(PORT, () => {
   console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
+  console.log(`APP_RUNTIME_NODE_VERSION=${process.version}`);
 
   if (backgroundJobsDisabled) {
     console.log('⏭️ DISABLE_BACKGROUND_JOBS=true — skipping auto-sync, catalog seeding, and all cron registrations.');
@@ -3413,7 +3414,7 @@ app.listen(PORT, () => {
     });
   };
 
-  const performSync = async () => {
+  const performSync = async (source = 'unknown') => {
     try {
       const printifySyncEnabled = isPrintifySyncEnabled();
       if (!printifySyncEnabled) {
@@ -3422,11 +3423,11 @@ app.listen(PORT, () => {
         return 0;
       }
 
-      const hasPrintifyKey = process.env.PRINTIFY_API_TOKEN && 
+      const hasPrintifyKey = process.env.PRINTIFY_API_TOKEN &&
                              process.env.PRINTIFY_API_TOKEN !== 'YOUR_PRINTIFY_TOKEN' &&
                              process.env.PRINTIFY_API_TOKEN !== 'YOUR_PRINTIFY_TOKEN_ROTATED';
       if (hasPrintifyKey) {
-        const count = await printify.syncProducts();
+        const count = await printify.syncProducts(source);
         const timestamp = new Date().toLocaleString('he-IL');
         global.lastSyncTime = timestamp; // Track for status endpoint
         console.log(`✅ Sync complete [${timestamp}]: ${count} Printify products synced.`);
@@ -3520,7 +3521,7 @@ app.listen(PORT, () => {
   // Auto-sync on startup (critical for Render where DB is ephemeral)
   setTimeout(async () => {
     console.log('🔄 Auto-syncing Printify products on startup...');
-    await performSync();
+    await performSync('startup');
     await seedDropshipProducts();
     // Hardware catalog (CJ IDs 17-21) — must run every startup because Render's
     // SQLite is ephemeral and these rows aren't backed by the Printify sync.
@@ -3538,7 +3539,7 @@ app.listen(PORT, () => {
   try {
     const syncJob = cron.schedule('0 * * * *', async () => {
       console.log('⏰ [Scheduled Sync] Running hourly Printify sync...');
-      await performSync();
+      await performSync('scheduled');
     }, { scheduled: true });
 
     console.log('✅ Scheduled sync configured: Every hour (UTC)');
@@ -3564,8 +3565,8 @@ app.listen(PORT, () => {
     // services/fulfillment-recovery.js for the full eligibility query and
     // its own in-process single-flight guard.
     const { recoverStalePaidFulfillments } = require('./services/fulfillment-recovery');
-    const runRecoveryPass = () => {
-      recoverStalePaidFulfillments({ processPaidOrderFulfillment }).then((result) => {
+    const runRecoveryPass = (source) => {
+      recoverStalePaidFulfillments({ processPaidOrderFulfillment, source }).then((result) => {
         if (result.scanned > 0) {
           console.log(`[fulfillment-recovery] pass complete: scanned=${result.scanned} recovered=${result.recovered} failed=${result.failed}`);
         }
@@ -3575,8 +3576,8 @@ app.listen(PORT, () => {
       });
     };
 
-    setTimeout(runRecoveryPass, 8000); // once, after startup catalog sync has had a chance to settle
-    cron.schedule('*/5 * * * *', runRecoveryPass, { scheduled: true });
+    setTimeout(() => runRecoveryPass('startup'), 8000); // once, after startup catalog sync has had a chance to settle
+    cron.schedule('*/5 * * * *', () => runRecoveryPass('scheduled'), { scheduled: true });
     console.log('✅ Scheduled stale-fulfillment recovery configured: Every 5 minutes');
   } catch (cronErr) {
     console.warn('⚠️ Cron not available (dev environment):', cronErr.message);

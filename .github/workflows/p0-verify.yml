@@ -58,10 +58,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node 20.20.2
+      - name: Setup Node 24.14.1
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20.20.2"
+          node-version: "24.14.1"
           cache: npm
           cache-dependency-path: |
             backend/package-lock.json
@@ -70,7 +70,18 @@ jobs:
       - name: Assert exact Node runtime
         run: |
           node --version
-          test "$(node --version)" = "v20.20.2"
+          test "$(node --version)" = "v24.14.1"
+
+      # backend/package.json's engines.node is the ONLY repository-controlled
+      # Node-version pin in this repo (see backend/scripts/assert-node-engines-pin.cjs
+      # for why a backend/.node-version file was deliberately NOT added:
+      # Render's own docs place .node-version/.nvmrc at "the root of your
+      # repo", with no documented interaction with a service's rootDir --
+      # unlike this file, which has no such ambiguity). This step fails the
+      # build the moment engines.node and the setup-node pin above ever
+      # silently diverge.
+      - name: Assert package.json engines.node matches the pinned CI Node version
+        run: node backend/scripts/assert-node-engines-pin.cjs "24.14.1"
 
       - name: Initialize CI runtime paths
         env:
@@ -108,9 +119,14 @@ jobs:
           node --check backend/tests/network-guard-negative-control.test.js
           node --check backend/tests/fulfillment-recovery.test.js
           node --check backend/tests/legacy-schema-migration.test.js
+          node --check backend/tests/local-product-preservation.test.js
+          node --check backend/tests/observability.test.js
           node --check backend/services/fulfillment-recovery.js
+          node --check backend/services/printify.js
           node --check backend/scripts/recovery-restart-harness.cjs
           node --check backend/scripts/db-init-harness.cjs
+          node --check backend/scripts/purge-local-placeholder-products.js
+          node --check backend/scripts/assert-node-engines-pin.cjs
 
       # --- Phase 1: admin-route auth. Fully self-contained -- spawns its own
       # child server instances on its own ports and deletes its own throwaway
@@ -152,7 +168,18 @@ jobs:
       # PRINTIFY_API_TOKEN unset, so services/printify.js's own built-in
       # missing-token guard makes any Printify call structurally
       # impossible there too, independent of the network guard.
-      - name: Run P0 backend unit tests (PayPal capture + fulfillment concurrency + Printify reconciliation + recovery + legacy schema)
+      # local-product-preservation.test.js additionally spawns
+      # db-init-harness.cjs to prove startup never deletes catalog rows
+      # (real/legacy behavior: it used to run an unconditional purge on
+      # every boot -- see backend/scripts/purge-local-placeholder-products.js
+      # for the explicit, opt-in-only replacement). observability.test.js
+      # spawns a real `node index.js` (via -r network-guard.cjs,
+      # DISABLE_BACKGROUND_JOBS=true, its own isolated DB/port/guard-log) to
+      # prove the APP_RUNTIME_NODE_VERSION startup log reports the actual
+      # running Node version -- fully self-contained, killed before this
+      # step ends, no port/DB collision with the shared backend started
+      # below.
+      - name: Run P0 backend unit tests (PayPal capture + fulfillment concurrency + Printify reconciliation + recovery + legacy schema + local-product preservation + observability)
         working-directory: backend
         env:
           NODE_ENV: test
@@ -165,7 +192,9 @@ jobs:
             tests/fulfillment-concurrency.test.js \
             tests/printify-fulfillment-reconciliation.test.js \
             tests/fulfillment-recovery.test.js \
-            tests/legacy-schema-migration.test.js
+            tests/legacy-schema-migration.test.js \
+            tests/local-product-preservation.test.js \
+            tests/observability.test.js
 
       # Expected successful output includes:
       #   activation marker present, 0 blocked attempts
