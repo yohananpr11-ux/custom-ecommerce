@@ -231,82 +231,138 @@ class PrintifyService {
     return 'Premium quality fabric. See product description for details.';
   }
 
-  async sendOrderToProduction(orderId, shipping, items) {
+  // Never includes response body (message/errors/etc.) in what it returns —
+  // a validation-error body can echo back submitted address fields, so only
+  // a coarse HTTP-status-shaped code is ever safe to log or persist.
+  _safeErrorCode(error) {
+    const status = error.response && error.response.status;
+    if (status) return `HTTP_${status}`;
+    if (error.code) return String(error.code);
+    return 'UNKNOWN_ERROR';
+  }
+
+  _authHeaders(extra = {}) {
+    return { Authorization: `Bearer ${this.token}`, ...extra };
+  }
+
+  // ---- Fulfillment operations (Phase: durable Printify state machine) ----
+  // Deliberately four separate, independently-callable operations instead
+  // of one helper that hides a create+submit sequence — see
+  // services/fulfillment.js for the reconciliation algorithm that composes
+  // them safely across retries/crashes.
+
+  // POST /orders.json only. Never calls send_to_production. Returns the
+  // real Printify order id so the caller can persist it before doing
+  // anything else.
+  async createPrintifyOrderDraft({ externalId, shipping, items }) {
     if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
-      console.warn(`⚠️ Printify token missing. Simulating sending order #${orderId} to Printify.`);
-      return { id: `mock_printify_${orderId}`, status: 'simulated' };
+      return { ok: true, mocked: true, orderId: `mock_printify_${externalId}`, status: 'simulated' };
     }
-
-    // Backward compat: if called with the legacy (orderId, customerName, customerEmail, address, items) signature,
-    // turn it into a structured shipping object so we don't crash callers that haven't been updated.
-    if (typeof shipping === 'string') {
-      const legacyCustomerName = shipping;
-      const legacyCustomerEmail = items;
-      const legacyAddress = arguments[3];
-      const legacyItems = arguments[4];
-      const parts = String(legacyAddress || '').split(',').map(p => p.trim()).filter(Boolean);
-      shipping = {
-        customerName: legacyCustomerName,
-        customerEmail: legacyCustomerEmail,
-        firstName: String(legacyCustomerName || '').split(' ')[0] || 'Customer',
-        lastName: String(legacyCustomerName || '').split(' ').slice(1).join(' ') || 'Customer',
-        phone: '',
-        addressLine1: parts[0] || '',
-        addressLine2: '',
-        city: parts[1] || '',
-        region: '',
-        postalCode: '',
-        country: 'IL',
-      };
-      items = legacyItems;
-    }
-
     try {
-      const printifyItems = items.map(item => ({
+      const printifyItems = items.map((item) => ({
         product_id: item.printifyProductId,
         variant_id: item.printifyVariantId,
-        quantity: item.quantity
+        quantity: item.quantity,
+        external_id: item.lineExternalId,
       }));
 
-      const country = String(shipping.country || 'IL').toUpperCase();
       const payload = {
-        external_id: orderId.toString(),
-        label: `Order ${orderId}`,
+        external_id: externalId,
+        label: `Order ${externalId}`,
         line_items: printifyItems,
         shipping_method: 1,
+        is_printify_express: false,
+        is_economy_shipping: false,
         send_shipping_notification: false,
         address_to: {
           first_name: String(shipping.firstName || '').trim() || 'Customer',
-          last_name:  String(shipping.lastName  || '').trim() || 'Customer',
-          email:      String(shipping.customerEmail || '').trim(),
-          phone:      String(shipping.phone || '').trim(),
-          country:    country,
-          region:     String(shipping.region || '').trim(),
-          address1:   String(shipping.addressLine1 || '').trim(),
-          address2:   String(shipping.addressLine2 || '').trim(),
-          city:       String(shipping.city || '').trim(),
-          zip:        String(shipping.postalCode || '').trim() || '00000'
-        }
+          last_name: String(shipping.lastName || '').trim() || 'Customer',
+          email: String(shipping.customerEmail || '').trim(),
+          phone: String(shipping.phone || '').trim(),
+          country: String(shipping.country || 'IL').toUpperCase(),
+          region: String(shipping.region || '').trim(),
+          address1: String(shipping.addressLine1 || '').trim(),
+          address2: String(shipping.addressLine2 || '').trim(),
+          city: String(shipping.city || '').trim(),
+          zip: String(shipping.postalCode || '').trim() || '00000',
+        },
       };
 
-      const response = await axios.post(`${this.baseUrl}/shops/${this.shopId}/orders.json`, payload, {
-        headers: {
-          'Authorization': `Bearer ${this.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log(`✅ Order sent to Printify successfully: ${response.data.id}`);
-      
-      await axios.post(`${this.baseUrl}/shops/${this.shopId}/orders/${response.data.id}/send_to_production.json`, {}, {
-        headers: { 'Authorization': `Bearer ${this.token}` }
-      });
-
-      return response.data;
+      const response = await axios.post(
+        `${this.baseUrl}/shops/${this.shopId}/orders.json`,
+        payload,
+        { headers: this._authHeaders({ 'Content-Type': 'application/json' }) }
+      );
+      return { ok: true, orderId: String(response.data.id), status: response.data.status || null };
     } catch (error) {
-      console.error('❌ Failed to send order to Printify:', error.response ? error.response.data : error.message);
-      await telegram.notifyError(`Printify Order Submission (Order #${orderId})`, error.message);
-      throw error;
+      return { ok: false, errorCode: this._safeErrorCode(error) };
+    }
+  }
+
+  // GET a single order by its real Printify order id.
+  async getPrintifyOrder(printifyOrderId) {
+    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
+      return { ok: true, mocked: true, order: null };
+    }
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/shops/${this.shopId}/orders/${printifyOrderId}.json`,
+        { headers: this._authHeaders() }
+      );
+      return { ok: true, order: response.data };
+    } catch (error) {
+      return { ok: false, errorCode: this._safeErrorCode(error) };
+    }
+  }
+
+  // Read-only reconciliation: does an order with this external_id already
+  // exist? Matches either the top-level external_id or metadata.shop_order_id
+  // (Printify has been observed to surface it in either place). Bounded to a
+  // handful of pages — reconciliation only ever needs to find an order this
+  // application itself just created, and Printify's list is newest-first, so
+  // a deep scan is never actually required for that to succeed.
+  async findPrintifyOrderByExternalId(externalId, { maxPages = 5, pageSize = 50 } = {}) {
+    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
+      return { ok: true, mocked: true, matchCount: 0, order: null };
+    }
+    try {
+      const matches = [];
+      for (let page = 1; page <= maxPages; page += 1) {
+        const response = await axios.get(
+          `${this.baseUrl}/shops/${this.shopId}/orders.json?page=${page}&limit=${pageSize}`,
+          { headers: this._authHeaders() }
+        );
+        const pageOrders = Array.isArray(response.data && response.data.data) ? response.data.data : [];
+        for (const order of pageOrders) {
+          const topLevelMatch = order.external_id != null && String(order.external_id) === externalId;
+          const metadataMatch = order.metadata && order.metadata.shop_order_id != null
+            && String(order.metadata.shop_order_id) === externalId;
+          if (topLevelMatch || metadataMatch) matches.push(order);
+        }
+        if (pageOrders.length < pageSize) break; // last page reached
+        if (matches.length > 1) break; // already ambiguous, no need to keep scanning
+      }
+      return { ok: true, matchCount: matches.length, order: matches.length === 1 ? matches[0] : null };
+    } catch (error) {
+      return { ok: false, errorCode: this._safeErrorCode(error) };
+    }
+  }
+
+  // POST send_to_production only. Requires an already-known real Printify
+  // order id. Never creates an order.
+  async sendPrintifyOrderToProduction(printifyOrderId) {
+    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
+      return { ok: true, mocked: true };
+    }
+    try {
+      await axios.post(
+        `${this.baseUrl}/shops/${this.shopId}/orders/${printifyOrderId}/send_to_production.json`,
+        {},
+        { headers: this._authHeaders() }
+      );
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, errorCode: this._safeErrorCode(error) };
     }
   }
 }
