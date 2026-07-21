@@ -58,7 +58,8 @@ class PrintifyService {
     }
   }
 
-  async syncProducts() {
+  async syncProducts(source = 'unknown') {
+    const startedAt = Date.now();
     if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
       console.warn(`⚠️ Printify token missing. Simulating 10 product sync.`);
       const db = require('../db');
@@ -66,6 +67,7 @@ class PrintifyService {
         db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
           [`Premium Street Hoodie v${i}`, `Exclusive Printify collection. Sync mock.`, 300, `https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=400&q=80`, 999, 'printify']);
       }
+      console.log(`OPS_PRINTIFY_SYNC source=${source} result=success products_seen=10 products_updated=10 duration_ms=${Date.now() - startedAt}`);
       return 10;
     }
 
@@ -222,10 +224,12 @@ class PrintifyService {
       }
 
       console.log(`✅ Synced ${syncedCount} products with variants from Printify.`);
+      console.log(`OPS_PRINTIFY_SYNC source=${source} result=success products_seen=${products.length} products_updated=${syncedCount} duration_ms=${Date.now() - startedAt}`);
       await telegram.sendMessage(`🔄 <b>Printify Sync Completed</b>\n\n${syncedCount} products were synced successfully with colors, sizes, and images.`);
       return syncedCount;
     } catch (error) {
       console.error('❌ Printify sync failed:', error.message);
+      console.log(`OPS_PRINTIFY_SYNC source=${source} result=failed products_seen=0 products_updated=0 error_code=${this._safeErrorCode(error)} duration_ms=${Date.now() - startedAt}`);
       throw error;
     }
   }

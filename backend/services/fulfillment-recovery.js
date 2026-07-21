@@ -79,15 +79,21 @@ let scanInFlight = false;
  *   directly, to avoid a circular require with backend/index.js and to
  *   keep this module trivially testable with a mock.
  * @param {number} [deps.batchLimit]
+ * @param {string} [deps.source] 'startup' | 'scheduled' | any caller-supplied
+ *   tag -- carried into the OPS_FULFILLMENT_RECOVERY summary line only, no
+ *   behavioral effect.
  * @returns {Promise<{scanned: number, recovered: number, skipped: number, failed: number}>}
  */
-async function recoverStalePaidFulfillments({ processPaidOrderFulfillment, batchLimit = DEFAULT_BATCH_LIMIT }) {
+async function recoverStalePaidFulfillments({ processPaidOrderFulfillment, batchLimit = DEFAULT_BATCH_LIMIT, source = 'unknown' }) {
   if (typeof processPaidOrderFulfillment !== 'function') {
     throw new Error('recoverStalePaidFulfillments requires a processPaidOrderFulfillment function');
   }
 
+  const startedAt = Date.now();
+
   if (scanInFlight) {
     console.log('[fulfillment-recovery] scan already in progress in this process, skipping overlap');
+    console.log(`OPS_FULFILLMENT_RECOVERY source=${source} result=skipped_overlap candidates=0 recovered=0 failed=0 skipped=1 duration_ms=${Date.now() - startedAt}`);
     return { scanned: 0, recovered: 0, skipped: 0, failed: 0, overlapped: true };
   }
   scanInFlight = true;
@@ -110,9 +116,17 @@ async function recoverStalePaidFulfillments({ processPaidOrderFulfillment, batch
         // Only a coarse, safe message -- never recipient data, which never
         // appears in anything processPaidOrderFulfillment throws (see
         // services/printify.js#_safeErrorCode and services/fulfillment.js).
+        // NOTE: err.message here is NOT necessarily safe for the structured
+        // OPS event below -- some thrown messages embed the real supplier
+        // order id (see services/fulfillment.js) -- so it is deliberately
+        // never included in the OPS_FULFILLMENT_RECOVERY line, only in this
+        // pre-existing free-text debug log.
         console.error(`[fulfillment-recovery] order #${row.orderId}: recovery attempt failed:`, err.message);
       }
     }
+
+    const result = failed === 0 ? 'success' : (recovered === 0 ? 'failed' : 'partial');
+    console.log(`OPS_FULFILLMENT_RECOVERY source=${source} result=${result} candidates=${eligible.length} recovered=${recovered} failed=${failed} skipped=0 duration_ms=${Date.now() - startedAt}`);
 
     return { scanned: eligible.length, recovered, skipped: 0, failed };
   } finally {
