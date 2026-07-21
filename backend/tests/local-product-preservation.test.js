@@ -55,10 +55,16 @@ function runHarness(dbPath, extraEnv = {}) {
   });
 }
 
-function runPurgeScript(dbPath, args = []) {
+function runPurgeScript(dbPath, args = [], { extraEnv = {}, omitDbPath = false } = {}) {
+  const env = { ...process.env, ...extraEnv };
+  if (omitDbPath) {
+    delete env.DB_PATH;
+  } else {
+    env.DB_PATH = dbPath;
+  }
   return spawnSync(process.execPath, [PURGE_SCRIPT_PATH, ...args], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, DB_PATH: dbPath },
+    env,
     encoding: 'utf8',
     timeout: 20000,
   });
@@ -193,15 +199,116 @@ test('explicit dev-only purge script is a no-op without --yes, and deletes only 
   const realRun = runPurgeScript(dbPath, ['--yes']);
   assert.equal(realRun.status, 0, `--yes run must exit 0; stderr: ${realRun.stderr}`);
   assert.match(realRun.stdout, /Deleted 1 product/);
+  assert.doesNotMatch(realRun.stdout, /Local Placeholder Tee/, 'purge script must report only aggregate counts, never row titles');
 
   const afterConn = openDb(dbPath);
   const deleted = await get(afterConn, `SELECT * FROM products WHERE id = 1`);
   assert.equal(deleted, undefined, 'local product must be gone after explicit --yes invocation');
 
+  const deletedVariant = await get(afterConn, `SELECT * FROM product_variants WHERE id = 1`);
+  const deletedImage = await get(afterConn, `SELECT * FROM product_images WHERE id = 1`);
+  assert.equal(deletedVariant, undefined, 'the local product\'s variant must be deleted too, not left orphaned');
+  assert.equal(deletedImage, undefined, 'the local product\'s image must be deleted too, not left orphaned');
+
   const printifyStillThere = await get(afterConn, `SELECT * FROM products WHERE id = 2`);
   const dropshipStillThere = await get(afterConn, `SELECT * FROM products WHERE id = 3`);
   assert.ok(printifyStillThere, 'printify product must be untouched by the explicit purge script');
   assert.ok(dropshipStillThere, 'dropship (CJ) product must be untouched by the explicit purge script');
+  await closeDb(afterConn);
+
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+});
+
+test('purge script does absolutely nothing when merely require()-d, not executed directly', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-product-purge-require-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  assert.equal(runHarness(dbPath).status, 0);
+  await seedMixedCatalog(dbPath);
+
+  const proof = spawnSync(
+    process.execPath,
+    ['-e', `require(${JSON.stringify(PURGE_SCRIPT_PATH)}); console.log('REQUIRE_COMPLETED_NO_THROW');`],
+    { cwd: path.join(__dirname, '..'), env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8', timeout: 10000 }
+  );
+  assert.equal(proof.status, 0, `require() alone must not throw or exit non-zero; stderr: ${proof.stderr}`);
+  assert.match(proof.stdout, /REQUIRE_COMPLETED_NO_THROW/);
+  assert.doesNotMatch(proof.stdout, /Explicit cleanup/, 'require() alone must never print the script\'s own startup banner -- it must not run at all');
+
+  const conn = openDb(dbPath);
+  const stillThere = await get(conn, `SELECT * FROM products WHERE id = 1`);
+  assert.ok(stillThere, 'local product must be untouched -- require() must never connect to or query the database');
+  await closeDb(conn);
+
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+});
+
+test('purge script refuses to run when NODE_ENV=production, even with --yes', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-product-purge-prod-refusal-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  assert.equal(runHarness(dbPath).status, 0);
+  await seedMixedCatalog(dbPath);
+
+  const result = runPurgeScript(dbPath, ['--yes'], { extraEnv: { NODE_ENV: 'production' } });
+  assert.notEqual(result.status, 0, 'must exit non-zero when NODE_ENV=production');
+  assert.match(result.stderr, /Refusing to run.*NODE_ENV=production/);
+
+  const conn = openDb(dbPath);
+  const stillThere = await get(conn, `SELECT * FROM products WHERE id = 1`);
+  assert.ok(stillThere, 'local product must survive a refused NODE_ENV=production invocation');
+  await closeDb(conn);
+
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+});
+
+test('purge script refuses to run against any DB_PATH under /var/data, even with --yes', async () => {
+  const varDataPaths = ['/var/data/ecommerce.db', '/var/data/some/other/nested.db'];
+  for (const target of varDataPaths) {
+    const result = runPurgeScript(target, ['--yes']);
+    assert.notEqual(result.status, 0, `must exit non-zero for DB_PATH=${target}`);
+    assert.match(result.stderr, /Refusing to run.*\/var\/data/, `refusal message must cite /var/data for ${target}`);
+  }
+});
+
+test('purge script refuses to run when DB_PATH is not set, never falling back to an implicit default database', async () => {
+  const result = runPurgeScript(undefined, ['--yes'], { omitDbPath: true });
+  assert.notEqual(result.status, 0, 'must exit non-zero when DB_PATH is unset');
+  assert.match(result.stderr, /Refusing to run.*DB_PATH must be set explicitly/);
+  // Must never have attempted to open any database at all -- no DB-related
+  // output of any kind, success or failure, beyond the refusal itself.
+  assert.doesNotMatch(result.stdout, /Explicit cleanup|Found \d+ product/);
+});
+
+test('purge script rolls back the entire transaction if any statement in it fails, leaving no partial deletion', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-product-purge-rollback-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  assert.equal(runHarness(dbPath).status, 0);
+  await seedMixedCatalog(dbPath);
+
+  // Forces the final DELETE FROM products statement to fail AFTER the
+  // variant/image deletes earlier in the same transaction have already
+  // run -- a real, deterministic way to prove the whole transaction rolls
+  // back together, not just the statement that happened to fail.
+  const conn = openDb(dbPath);
+  await run(conn, `
+    CREATE TRIGGER block_local_product_delete BEFORE DELETE ON products
+    WHEN OLD.type = 'local'
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated failure for rollback test');
+    END
+  `);
+  await closeDb(conn);
+
+  const result = runPurgeScript(dbPath, ['--yes']);
+  assert.notEqual(result.status, 0, 'script must exit non-zero when the transaction fails');
+  assert.match(result.stderr, /Cleanup failed/);
+
+  const afterConn = openDb(dbPath);
+  const product = await get(afterConn, `SELECT * FROM products WHERE id = 1`);
+  const variant = await get(afterConn, `SELECT * FROM product_variants WHERE id = 1`);
+  const image = await get(afterConn, `SELECT * FROM product_images WHERE id = 1`);
+  assert.ok(product, 'product must still exist after a rolled-back transaction');
+  assert.ok(variant, 'variant must still exist after rollback -- must not be left deleted while the product survives');
+  assert.ok(image, 'image must still exist after rollback -- must not be left deleted while the product survives');
   await closeDb(afterConn);
 
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
