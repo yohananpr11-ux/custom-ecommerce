@@ -105,6 +105,7 @@ jobs:
           node --check backend/tests/paypal-capture-validation.test.js
           node --check backend/tests/fulfillment-concurrency.test.js
           node --check backend/tests/printify-fulfillment-reconciliation.test.js
+          node --check backend/tests/network-guard-negative-control.test.js
 
       # --- Phase 1: admin-route auth. Fully self-contained -- spawns its own
       # child server instances on its own ports and deletes its own throwaway
@@ -156,6 +157,21 @@ jobs:
       #   NETWORK GUARD: CLEAN
       - name: Assert P0 backend unit-test guard log clean
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-nodetest.jsonl"
+
+      # --- Negative control: deliberately intentional, run as its own step
+      # so its output is never mixed with real test results above. Proves
+      # the guard actually blocks an outbound attempt (before any DNS/TCP)
+      # rather than merely proving no test happened to make one. Targets
+      # RFC 2606's .invalid TLD (guaranteed never to resolve to anything
+      # real) -- no real service or credential involved. This step's own
+      # log is expected to show blocked attempts; it is intentionally NOT
+      # passed to assert-network-guard-clean.cjs, whose job is the opposite
+      # assertion (zero blocked) for the real suites above.
+      - name: Network guard negative control (intentional — proves the guard actually blocks)
+        working-directory: backend
+        env:
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-negative-control.jsonl
+        run: node -r ./scripts/network-guard.cjs --test tests/network-guard-negative-control.test.js
 
       # --- Phase 2: shared backend, isolated temp-file DB, guard preloaded.
       # Started the same way production actually starts it (render.yaml's
