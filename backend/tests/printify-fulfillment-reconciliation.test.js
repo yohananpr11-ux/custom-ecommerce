@@ -716,3 +716,23 @@ test('a genuinely canceled remote order blocks submission and enters reconcile_r
     restoreAll([createMock, getMock, submitMock]);
   }
 });
+
+// ── Section 8: a completely novel/unrecognized status must be write-blocking ──
+test('a completely novel, never-before-seen Printify status string blocks both create and submit — treated as unknown, not guessed at', async () => {
+  const { orderId, items } = await seedPrintifyOrder(1);
+  const NOVEL_STATUS = 'quantum-fulfillment-pending-review'; // deliberately not in any known set
+  const createMock = mock.method(printify, 'createPrintifyOrderDraft', async () => ({ ok: true, orderId: 'pf-novel-status', status: NOVEL_STATUS }));
+  const getMock = mock.method(printify, 'getPrintifyOrder', async () => ({ ok: true, order: { id: 'pf-novel-status', status: NOVEL_STATUS, external_id: deterministicExternalId(orderId) } }));
+  const submitMock = mock.method(printify, 'sendPrintifyOrderToProduction', async () => { throw new Error('must not be called — status is unrecognized'); });
+
+  try {
+    await assert.rejects(() => handlePrintify(orderId, FAKE_DESTINATION, items));
+    assert.equal(submitMock.mock.callCount(), 0, 'an unrecognized status must never be treated as safe-to-submit');
+    const row = await dbGet(`SELECT state, lastErrorCode, supplierOrderId FROM supplier_fulfillments WHERE orderId = ? AND supplierId = 'printify'`, [orderId]);
+    assert.equal(row.state, 'reconcile_required', 'an unrecognized status must fail closed to manual review, never be guessed as safe');
+    assert.equal(row.lastErrorCode, 'UNSAFE_STATUS_' + NOVEL_STATUS);
+    assert.equal(row.supplierOrderId, 'pf-novel-status', 'the real order id must still be retained for manual review');
+  } finally {
+    restoreAll([createMock, getMock, submitMock]);
+  }
+});
