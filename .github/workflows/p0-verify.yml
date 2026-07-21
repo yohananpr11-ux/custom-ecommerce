@@ -104,6 +104,13 @@ jobs:
           node --check backend/lib/paypal-capture-validation.js
           node --check backend/tests/paypal-capture-validation.test.js
           node --check backend/tests/fulfillment-concurrency.test.js
+          node --check backend/tests/printify-fulfillment-reconciliation.test.js
+          node --check backend/tests/network-guard-negative-control.test.js
+          node --check backend/tests/fulfillment-recovery.test.js
+          node --check backend/tests/legacy-schema-migration.test.js
+          node --check backend/services/fulfillment-recovery.js
+          node --check backend/scripts/recovery-restart-harness.cjs
+          node --check backend/scripts/db-init-harness.cjs
 
       # --- Phase 1: admin-route auth. Fully self-contained -- spawns its own
       # child server instances on its own ports and deletes its own throwaway
@@ -124,9 +131,11 @@ jobs:
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-admin-auth.jsonl"
 
       # --- Phase 1b: P0 backend unit tests (PayPal capture validation,
-      # fulfillment-claim concurrency). Both files require('../index.js')
-      # directly; since require.main !== module when required by the test
-      # runner, index.js's own require.main guard skips app.listen() and
+      # fulfillment-claim concurrency, Printify supplier-fulfillment
+      # reconciliation, stale-fulfillment recovery, legacy-schema upgrade).
+      # All files require('../index.js') and/or backend/db.js directly;
+      # since require.main !== module when required by the test runner,
+      # index.js's own require.main guard skips app.listen() and
       # pricingEngine.start() entirely -- no port is ever bound, so this has
       # zero collision risk with the shared backend started below. Each file
       # sets its own throwaway DB_PATH via fs.mkdtempSync() before requiring
@@ -134,8 +143,16 @@ jobs:
       # `node --test` inherits the -r-preloaded guard into the per-file
       # child processes it spawns internally (unlike the sitemap/prerender
       # test harness's own explicit spawn() calls) -- the guard genuinely
-      # covers both files' actual execution, not just this outer wrapper.
-      - name: Run P0 backend unit tests (PayPal capture + fulfillment concurrency)
+      # covers every file's actual execution, not just this outer wrapper.
+      # fulfillment-recovery.test.js and legacy-schema-migration.test.js
+      # additionally spawn their own dedicated harness child processes
+      # (backend/scripts/recovery-restart-harness.cjs,
+      # backend/scripts/db-init-harness.cjs) to prove genuine restart/
+      # repeated-startup behavior -- both harnesses run with
+      # PRINTIFY_API_TOKEN unset, so services/printify.js's own built-in
+      # missing-token guard makes any Printify call structurally
+      # impossible there too, independent of the network guard.
+      - name: Run P0 backend unit tests (PayPal capture + fulfillment concurrency + Printify reconciliation + recovery + legacy schema)
         working-directory: backend
         env:
           NODE_ENV: test
@@ -145,7 +162,10 @@ jobs:
         run: |
           node -r ./scripts/network-guard.cjs --test \
             tests/paypal-capture-validation.test.js \
-            tests/fulfillment-concurrency.test.js
+            tests/fulfillment-concurrency.test.js \
+            tests/printify-fulfillment-reconciliation.test.js \
+            tests/fulfillment-recovery.test.js \
+            tests/legacy-schema-migration.test.js
 
       # Expected successful output includes:
       #   activation marker present, 0 blocked attempts
@@ -153,6 +173,21 @@ jobs:
       #   NETWORK GUARD: CLEAN
       - name: Assert P0 backend unit-test guard log clean
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-nodetest.jsonl"
+
+      # --- Negative control: deliberately intentional, run as its own step
+      # so its output is never mixed with real test results above. Proves
+      # the guard actually blocks an outbound attempt (before any DNS/TCP)
+      # rather than merely proving no test happened to make one. Targets
+      # RFC 2606's .invalid TLD (guaranteed never to resolve to anything
+      # real) -- no real service or credential involved. This step's own
+      # log is expected to show blocked attempts; it is intentionally NOT
+      # passed to assert-network-guard-clean.cjs, whose job is the opposite
+      # assertion (zero blocked) for the real suites above.
+      - name: Network guard negative control (intentional — proves the guard actually blocks)
+        working-directory: backend
+        env:
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-negative-control.jsonl
+        run: node -r ./scripts/network-guard.cjs --test tests/network-guard-negative-control.test.js
 
       # --- Phase 2: shared backend, isolated temp-file DB, guard preloaded.
       # Started the same way production actually starts it (render.yaml's

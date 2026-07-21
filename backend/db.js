@@ -194,6 +194,33 @@ db.serialize(() => {
     )
   `);
 
+  // Durable per-order-per-supplier fulfillment state — the source of truth
+  // for supplier-write idempotency (create-order / send-to-production).
+  // order_items.fulfillment_status remains the UI/reporting-facing summary;
+  // this table is what a retry/crash-recovery path actually reconciles
+  // against. One row per (orderId, supplierId) — never more, enforced by
+  // the UNIQUE constraint, since one supplier order can bundle multiple
+  // local order_items.
+  //
+  // state values: pending, reconciling, created, submitting, submitted,
+  // create_failed, submit_failed, reconcile_required.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS supplier_fulfillments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      orderId INTEGER NOT NULL,
+      supplierId TEXT NOT NULL,
+      externalId TEXT NOT NULL,
+      supplierOrderId TEXT,
+      state TEXT NOT NULL DEFAULT 'pending',
+      lastErrorCode TEXT,
+      attemptCount INTEGER NOT NULL DEFAULT 0,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (orderId) REFERENCES orders(id),
+      UNIQUE(orderId, supplierId)
+    )
+  `);
+
 });
 
 // Helper to safely add column if not exists — returns a Promise
@@ -295,6 +322,7 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
   // Phase 3: Multi-Vendor indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_supplier ON order_items(supplier_id, fulfillment_status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_supplier_fulfillments_state ON supplier_fulfillments(supplierId, state)`);
 })().catch((err) => {
   console.error('Schema migration block failed:', err.message);
 });
