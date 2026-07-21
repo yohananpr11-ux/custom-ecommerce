@@ -104,6 +104,7 @@ jobs:
           node --check backend/lib/paypal-capture-validation.js
           node --check backend/tests/paypal-capture-validation.test.js
           node --check backend/tests/fulfillment-concurrency.test.js
+          node --check backend/tests/printify-fulfillment-reconciliation.test.js
 
       # --- Phase 1: admin-route auth. Fully self-contained -- spawns its own
       # child server instances on its own ports and deletes its own throwaway
@@ -124,9 +125,10 @@ jobs:
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-admin-auth.jsonl"
 
       # --- Phase 1b: P0 backend unit tests (PayPal capture validation,
-      # fulfillment-claim concurrency). Both files require('../index.js')
-      # directly; since require.main !== module when required by the test
-      # runner, index.js's own require.main guard skips app.listen() and
+      # fulfillment-claim concurrency, Printify supplier-fulfillment
+      # reconciliation). All three files require('../index.js') directly;
+      # since require.main !== module when required by the test runner,
+      # index.js's own require.main guard skips app.listen() and
       # pricingEngine.start() entirely -- no port is ever bound, so this has
       # zero collision risk with the shared backend started below. Each file
       # sets its own throwaway DB_PATH via fs.mkdtempSync() before requiring
@@ -134,8 +136,8 @@ jobs:
       # `node --test` inherits the -r-preloaded guard into the per-file
       # child processes it spawns internally (unlike the sitemap/prerender
       # test harness's own explicit spawn() calls) -- the guard genuinely
-      # covers both files' actual execution, not just this outer wrapper.
-      - name: Run P0 backend unit tests (PayPal capture + fulfillment concurrency)
+      # covers all three files' actual execution, not just this outer wrapper.
+      - name: Run P0 backend unit tests (PayPal capture + fulfillment concurrency + Printify reconciliation)
         working-directory: backend
         env:
           NODE_ENV: test
@@ -145,7 +147,8 @@ jobs:
         run: |
           node -r ./scripts/network-guard.cjs --test \
             tests/paypal-capture-validation.test.js \
-            tests/fulfillment-concurrency.test.js
+            tests/fulfillment-concurrency.test.js \
+            tests/printify-fulfillment-reconciliation.test.js
 
       # Expected successful output includes:
       #   activation marker present, 0 blocked attempts
