@@ -581,17 +581,24 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   // to that old pattern makes tests/fulfillment-concurrency.test.js fail
   // (double-dispatch reproduced), confirming this fix and that test are real.
   //
-  // A 'processing' printify item is ALSO reclaimable, but only when its
-  // supplier_fulfillments record is either absent or stale (no active-lease
-  // row updated within the last 5 minutes — see
-  // services/fulfillment.js#claimSupplierFulfillment, which uses the same
-  // lease window and is the real safety boundary once this claim succeeds).
-  // Without this, a crash inside routeOrderToSupplier/handlePrintify would
-  // leave the item at 'processing' forever — reconciliation is unreachable
-  // from any later retry, because this exact query is what gates entry to
-  // it. Scoped to supplier_id='printify' only: dropship/manual have no
-  // equivalent reconciliation path yet, so their pre-existing (unrelated,
-  // out of scope here) stuck-processing behavior is intentionally untouched.
+  // A 'processing' OR 'failed' printify item is ALSO reclaimable, but only
+  // when its supplier_fulfillments record does not currently forbid it:
+  //   - 'submitted' — already done, must never be touched again;
+  //   - 'reconcile_required' — a human decision is required, never
+  //     auto-retried;
+  //   - an active (non-stale) lease on 'reconciling'/'created'/'submitting'
+  //     — another invocation may genuinely still be working on it right now.
+  // Everything else — 'create_failed', 'submit_failed', a stale lease, or no
+  // supplier_fulfillments row at all — is safe to reclaim. The lease window
+  // matches services/fulfillment.js#claimSupplierFulfillment, which is the
+  // real safety boundary once this claim succeeds; this outer query only
+  // decides whether reconciliation is reachable at all. Without this, a
+  // crash inside routeOrderToSupplier/handlePrintify would leave the item
+  // stuck at 'processing'/'failed' forever, since this exact query is what
+  // gates entry to reconciliation. Scoped to supplier_id='printify' only:
+  // dropship/manual have no equivalent reconciliation path yet, so their
+  // pre-existing (unrelated, out of scope here) stuck behavior is
+  // intentionally untouched.
   const claimed = await dbAllAsync(
     `UPDATE order_items
      SET fulfillment_status = 'processing'
@@ -600,14 +607,16 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
          fulfillment_status IS NULL
          OR fulfillment_status = 'pending'
          OR (
-           fulfillment_status = 'processing'
+           fulfillment_status IN ('processing', 'failed')
            AND COALESCE(supplier_id, 'printify') = 'printify'
            AND NOT EXISTS (
              SELECT 1 FROM supplier_fulfillments sf
              WHERE sf.orderId = order_items.orderId
                AND sf.supplierId = 'printify'
-               AND sf.state IN ('reconciling', 'created', 'submitting')
-               AND sf.updatedAt > datetime('now', '-5 minutes')
+               AND (
+                 sf.state IN ('submitted', 'reconcile_required')
+                 OR (sf.state IN ('reconciling', 'created', 'submitting') AND sf.updatedAt > datetime('now', '-5 minutes'))
+               )
            )
          )
        )
@@ -3531,7 +3540,7 @@ app.listen(PORT, () => {
       console.log('⏰ [Scheduled Sync] Running hourly Printify sync...');
       await performSync();
     }, { scheduled: true });
-    
+
     console.log('✅ Scheduled sync configured: Every hour (UTC)');
 
     // ---- SCHEDULED EMAIL RETRY: Every 15 minutes ----
@@ -3540,6 +3549,35 @@ app.listen(PORT, () => {
     }, { scheduled: true });
 
     console.log('✅ Scheduled email recovery configured: Every 15 minutes');
+
+    // ---- STALE PAID-FULFILLMENT RECOVERY ----
+    // Nothing previously re-invoked processPaidOrderFulfillment() for an
+    // order stuck mid-flight after a crash: every payment webhook returns
+    // early once orders.status is already 'paid' (confirmed by direct code
+    // audit -- the /api/paypal/capture-order, Stripe, and PayPlus webhook
+    // handlers all short-circuit with `duplicate: true` before reaching
+    // fulfillment), and nothing at startup or on a schedule ever scanned for
+    // unfinished work. This is that trigger. It makes no supplier write and
+    // no direct DB write itself -- it only re-invokes the exact same,
+    // already-durable production entry point on a bounded batch of orders
+    // whose state proves recovery is safe. See
+    // services/fulfillment-recovery.js for the full eligibility query and
+    // its own in-process single-flight guard.
+    const { recoverStalePaidFulfillments } = require('./services/fulfillment-recovery');
+    const runRecoveryPass = () => {
+      recoverStalePaidFulfillments({ processPaidOrderFulfillment }).then((result) => {
+        if (result.scanned > 0) {
+          console.log(`[fulfillment-recovery] pass complete: scanned=${result.scanned} recovered=${result.recovered} failed=${result.failed}`);
+        }
+      }).catch((err) => {
+        // Must never crash the HTTP server -- this is a background pass.
+        console.error('[fulfillment-recovery] pass threw unexpectedly:', err.message);
+      });
+    };
+
+    setTimeout(runRecoveryPass, 8000); // once, after startup catalog sync has had a chance to settle
+    cron.schedule('*/5 * * * *', runRecoveryPass, { scheduled: true });
+    console.log('✅ Scheduled stale-fulfillment recovery configured: Every 5 minutes');
   } catch (cronErr) {
     console.warn('⚠️ Cron not available (dev environment):', cronErr.message);
   }
