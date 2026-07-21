@@ -241,7 +241,8 @@ test('crash after remote create but before local persistence: reconciliation fin
 test('crash after local persistence but before submit: retry uses the stored Printify order id, no second create request', async () => {
   const { orderId, items } = await seedPrintifyOrder(1);
   await dbRun(
-    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, attemptCount) VALUES (?, 'printify', ?, 'pf-order-4', 'created', 1)`,
+    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, attemptCount, updatedAt)
+     VALUES (?, 'printify', ?, 'pf-order-4', 'created', 1, datetime('now', '-10 minutes'))`,
     [orderId, deterministicExternalId(orderId)]
   );
 
@@ -266,7 +267,8 @@ test('crash after local persistence but before submit: retry uses the stored Pri
 test('lost send response but remote state is already in-production: retry performs no second send request', async () => {
   const { orderId, items } = await seedPrintifyOrder(1);
   await dbRun(
-    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, attemptCount) VALUES (?, 'printify', ?, 'pf-order-5', 'submitting', 1)`,
+    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, attemptCount, updatedAt)
+     VALUES (?, 'printify', ?, 'pf-order-5', 'submitting', 1, datetime('now', '-10 minutes'))`,
     [orderId, deterministicExternalId(orderId)]
   );
 
@@ -353,7 +355,8 @@ test('a stale reconciling record with a known order id is not blindly reset and 
   // Simulates a process that crashed exactly while sitting in 'reconciling'
   // after already discovering/persisting a real order id.
   await dbRun(
-    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, attemptCount) VALUES (?, 'printify', ?, 'pf-order-8', 'reconciling', 3)`,
+    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, attemptCount, updatedAt)
+     VALUES (?, 'printify', ?, 'pf-order-8', 'reconciling', 3, datetime('now', '-10 minutes'))`,
     [orderId, deterministicExternalId(orderId)]
   );
 
@@ -557,6 +560,158 @@ test('multiple Printify items belonging to one local order result in exactly one
       assert.equal(item.fulfillment_status, 'submitted');
       assert.equal(item.fulfillment_ref, 'pf-order-13', 'every local item must be linked to the same real supplier order id');
     }
+  } finally {
+    restoreAll([createMock, getMock, submitMock]);
+  }
+});
+
+// ── Adversarial: real production entry path + stale processing item ────────
+// This exercises processPaidOrderFulfillment() itself (not handlePrintify
+// directly) to prove the outer order_items claim and the inner
+// supplier_fulfillments reconciliation are actually composed correctly —
+// a stale 'processing' item from a crashed prior invocation must still
+// reach reconciliation on retry, without ever double-creating a supplier
+// order, and without ever reclaiming an item that a genuinely still-active
+// invocation legitimately owns.
+
+test('a stale processing item with a stale supplier_fulfillments record reaches reconciliation through the real entry path and creates no duplicate order', async () => {
+  const { orderId, itemIds } = await seedPrintifyOrder(1);
+  const extId = deterministicExternalId(orderId);
+
+  // Simulate exactly the crash window: the outer claim already ran once
+  // (item is 'processing'), handlePrintify got as far as 'created' with a
+  // real remote order id, then the process died. Backdate updatedAt well
+  // outside any reasonable lease window.
+  await dbRun(`UPDATE order_items SET fulfillment_status = 'processing' WHERE id = ?`, [itemIds[0]]);
+  await dbRun(
+    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, attemptCount, updatedAt)
+     VALUES (?, 'printify', ?, 'pf-order-stale-1', 'created', 1, datetime('now', '-1 hour'))`,
+    [orderId, extId]
+  );
+
+  const createMock = mock.method(printify, 'createPrintifyOrderDraft', async () => { throw new Error('must not be called — a real order id is already known'); });
+  const getMock = mock.method(printify, 'getPrintifyOrder', async (id) => {
+    assert.equal(id, 'pf-order-stale-1');
+    return { ok: true, order: { id, status: 'on-hold', external_id: extId } };
+  });
+  const submitMock = mock.method(printify, 'sendPrintifyOrderToProduction', async () => ({ ok: true }));
+
+  try {
+    await processPaidOrderFulfillment(orderId, 'RetryTest');
+
+    assert.equal(createMock.mock.callCount(), 0, 'no duplicate order may be created for a stale-but-known order id');
+    assert.equal(submitMock.mock.callCount(), 1, 'the retry must resume and complete submission');
+
+    const row = await dbGet(`SELECT state, supplierOrderId FROM supplier_fulfillments WHERE orderId = ? AND supplierId = 'printify'`, [orderId]);
+    assert.equal(row.state, 'submitted');
+    assert.equal(row.supplierOrderId, 'pf-order-stale-1');
+
+    const item = await dbGet(`SELECT fulfillment_status, fulfillment_ref FROM order_items WHERE id = ?`, [itemIds[0]]);
+    assert.equal(item.fulfillment_status, 'submitted');
+    assert.equal(item.fulfillment_ref, 'pf-order-stale-1');
+  } finally {
+    restoreAll([createMock, getMock, submitMock]);
+  }
+});
+
+// ── Adversarial: a genuinely fresh (non-stale) in-flight record must NOT be reclaimed ──
+test('a fresh, genuinely in-flight supplier_fulfillments record blocks a concurrent retry from double-dispatching', async () => {
+  const { orderId, items, itemIds } = await seedPrintifyOrder(1);
+  const extId = deterministicExternalId(orderId);
+
+  await dbRun(`UPDATE order_items SET fulfillment_status = 'processing' WHERE id = ?`, [itemIds[0]]);
+  // updatedAt is "now" — this must read as still legitimately active, not stale.
+  await dbRun(
+    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, attemptCount, updatedAt)
+     VALUES (?, 'printify', ?, 'pf-order-fresh-1', 'submitting', 1, CURRENT_TIMESTAMP)`,
+    [orderId, extId]
+  );
+
+  const createMock = mock.method(printify, 'createPrintifyOrderDraft', async () => { throw new Error('must not be called'); });
+  const getMock = mock.method(printify, 'getPrintifyOrder', async () => { throw new Error('must not be called while genuinely in-flight'); });
+  const submitMock = mock.method(printify, 'sendPrintifyOrderToProduction', async () => { throw new Error('must not be called while genuinely in-flight'); });
+
+  try {
+    // The outer claim must find nothing to reclaim (the item is 'processing'
+    // and its supplier record is fresh/active), so this must be a quiet
+    // no-op — not an error, not a duplicate write.
+    await processPaidOrderFulfillment(orderId, 'ConcurrentRetryTest');
+    assert.equal(createMock.mock.callCount(), 0);
+    assert.equal(getMock.mock.callCount(), 0);
+    assert.equal(submitMock.mock.callCount(), 0);
+
+    const row = await dbGet(`SELECT state, supplierOrderId FROM supplier_fulfillments WHERE orderId = ? AND supplierId = 'printify'`, [orderId]);
+    assert.equal(row.state, 'submitting', 'the active record must be untouched by the second invocation');
+    assert.equal(row.supplierOrderId, 'pf-order-fresh-1');
+    void items;
+  } finally {
+    restoreAll([createMock, getMock, submitMock]);
+  }
+});
+
+// ── State-machine: invalid-transition proofs ────────────────────────────────
+
+test('a stale submit_failed record with a known order id retries submit exactly once, never creates a second order', async () => {
+  const { orderId, items } = await seedPrintifyOrder(1);
+  await dbRun(
+    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, lastErrorCode, attemptCount, updatedAt)
+     VALUES (?, 'printify', ?, 'pf-order-retry-submit', 'submit_failed', 'HTTP_502', 1, datetime('now', '-10 minutes'))`,
+    [orderId, deterministicExternalId(orderId)]
+  );
+
+  const createMock = mock.method(printify, 'createPrintifyOrderDraft', async () => { throw new Error('must not be called — a real order id is already known'); });
+  const getMock = mock.method(printify, 'getPrintifyOrder', async (id) => ({ ok: true, order: { id, status: 'on-hold', external_id: deterministicExternalId(orderId) } }));
+  const submitMock = mock.method(printify, 'sendPrintifyOrderToProduction', async () => ({ ok: true }));
+
+  try {
+    const result = await handlePrintify(orderId, FAKE_DESTINATION, items);
+    assert.equal(createMock.mock.callCount(), 0);
+    assert.equal(submitMock.mock.callCount(), 1);
+    assert.equal(result.ref, 'pf-order-retry-submit');
+  } finally {
+    restoreAll([createMock, getMock, submitMock]);
+  }
+});
+
+test('reconcile_required is a true terminal state — it is never automatically reclaimed by a later call', async () => {
+  const { orderId, items } = await seedPrintifyOrder(1);
+  await dbRun(
+    `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, supplierOrderId, state, lastErrorCode, attemptCount, updatedAt)
+     VALUES (?, 'printify', ?, NULL, 'reconcile_required', 'AMBIGUOUS_EXTERNAL_ID_MATCH', 2, datetime('now', '-1 day'))`,
+    [orderId, deterministicExternalId(orderId)]
+  );
+
+  const createMock = mock.method(printify, 'createPrintifyOrderDraft', async () => { throw new Error('must not be called'); });
+  const getMock = mock.method(printify, 'getPrintifyOrder', async () => { throw new Error('must not be called'); });
+  const findMock = mock.method(printify, 'findPrintifyOrderByExternalId', async () => { throw new Error('must not be called'); });
+  const submitMock = mock.method(printify, 'sendPrintifyOrderToProduction', async () => { throw new Error('must not be called'); });
+
+  try {
+    await assert.rejects(() => handlePrintify(orderId, FAKE_DESTINATION, items));
+    assert.equal(createMock.mock.callCount(), 0);
+    assert.equal(getMock.mock.callCount(), 0);
+    assert.equal(findMock.mock.callCount(), 0);
+    assert.equal(submitMock.mock.callCount(), 0);
+    const row = await dbGet(`SELECT state FROM supplier_fulfillments WHERE orderId = ? AND supplierId = 'printify'`, [orderId]);
+    assert.equal(row.state, 'reconcile_required', 'must remain in reconcile_required — a human decision is required, not an automatic write');
+  } finally {
+    restoreAll([createMock, getMock, findMock, submitMock]);
+  }
+});
+
+test('a genuinely canceled remote order blocks submission and enters reconcile_required rather than being guessed at', async () => {
+  const { orderId, items } = await seedPrintifyOrder(1);
+  const createMock = mock.method(printify, 'createPrintifyOrderDraft', async () => ({ ok: true, orderId: 'pf-order-canceled', status: 'on-hold' }));
+  const getMock = mock.method(printify, 'getPrintifyOrder', async () => ({ ok: true, order: { id: 'pf-order-canceled', status: 'canceled', external_id: deterministicExternalId(orderId) } }));
+  const submitMock = mock.method(printify, 'sendPrintifyOrderToProduction', async () => { throw new Error('must not be called — order is canceled'); });
+
+  try {
+    await assert.rejects(() => handlePrintify(orderId, FAKE_DESTINATION, items));
+    assert.equal(submitMock.mock.callCount(), 0);
+    const row = await dbGet(`SELECT state, lastErrorCode, supplierOrderId FROM supplier_fulfillments WHERE orderId = ? AND supplierId = 'printify'`, [orderId]);
+    assert.equal(row.state, 'reconcile_required');
+    assert.equal(row.lastErrorCode, 'UNSAFE_STATUS_canceled');
+    assert.equal(row.supplierOrderId, 'pf-order-canceled', 'the real order id must still be retained for manual review, not discarded');
   } finally {
     restoreAll([createMock, getMock, submitMock]);
   }

@@ -1,6 +1,13 @@
 const axios = require('axios');
 const telegram = require('./telegram');
 
+// Every fulfillment HTTP call below must have a bounded, finite timeout —
+// the supplier_fulfillments staleness/lease window in services/fulfillment.js
+// assumes no single Printify call can hang indefinitely. Without this, a
+// stalled connection could masquerade as "genuinely still in-flight" well
+// past the point a human would call it stuck.
+const FULFILLMENT_HTTP_TIMEOUT_MS = 20000;
+
 class PrintifyService {
   constructor() {
     this.token = process.env.PRINTIFY_API_TOKEN;
@@ -291,7 +298,7 @@ class PrintifyService {
       const response = await axios.post(
         `${this.baseUrl}/shops/${this.shopId}/orders.json`,
         payload,
-        { headers: this._authHeaders({ 'Content-Type': 'application/json' }) }
+        { headers: this._authHeaders({ 'Content-Type': 'application/json' }), timeout: FULFILLMENT_HTTP_TIMEOUT_MS }
       );
       return { ok: true, orderId: String(response.data.id), status: response.data.status || null };
     } catch (error) {
@@ -307,7 +314,7 @@ class PrintifyService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/shops/${this.shopId}/orders/${printifyOrderId}.json`,
-        { headers: this._authHeaders() }
+        { headers: this._authHeaders(), timeout: FULFILLMENT_HTTP_TIMEOUT_MS }
       );
       return { ok: true, order: response.data };
     } catch (error) {
@@ -320,8 +327,12 @@ class PrintifyService {
   // (Printify has been observed to surface it in either place). Bounded to a
   // handful of pages — reconciliation only ever needs to find an order this
   // application itself just created, and Printify's list is newest-first, so
-  // a deep scan is never actually required for that to succeed.
-  async findPrintifyOrderByExternalId(externalId, { maxPages = 5, pageSize = 50 } = {}) {
+  // a deep scan is never actually required for that to succeed. pageSize
+  // defaults to 10 because Printify's own OpenAPI spec caps `limit` at 10 on
+  // this endpoint (parameter literally named `limit_max_10`) — requesting
+  // more would either be silently clamped or rejected, which this default
+  // avoids relying on.
+  async findPrintifyOrderByExternalId(externalId, { maxPages = 10, pageSize = 10 } = {}) {
     if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
       return { ok: true, mocked: true, matchCount: 0, order: null };
     }
@@ -330,7 +341,7 @@ class PrintifyService {
       for (let page = 1; page <= maxPages; page += 1) {
         const response = await axios.get(
           `${this.baseUrl}/shops/${this.shopId}/orders.json?page=${page}&limit=${pageSize}`,
-          { headers: this._authHeaders() }
+          { headers: this._authHeaders(), timeout: FULFILLMENT_HTTP_TIMEOUT_MS }
         );
         const pageOrders = Array.isArray(response.data && response.data.data) ? response.data.data : [];
         for (const order of pageOrders) {
@@ -358,7 +369,7 @@ class PrintifyService {
       await axios.post(
         `${this.baseUrl}/shops/${this.shopId}/orders/${printifyOrderId}/send_to_production.json`,
         {},
-        { headers: this._authHeaders() }
+        { headers: this._authHeaders(), timeout: FULFILLMENT_HTTP_TIMEOUT_MS }
       );
       return { ok: true };
     } catch (error) {

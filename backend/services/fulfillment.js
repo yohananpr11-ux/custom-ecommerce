@@ -94,22 +94,50 @@ function getSupplierFulfillment(orderId, supplierId) {
   );
 }
 
-// Atomic claim: transitions into 'reconciling' from any state except the two
-// terminal ones ('submitted' — already done; 'reconcile_required' — needs a
-// human). A stale 'claimed'/'created'/'submitting' record left behind by a
-// crash is deliberately still claimable here — it is never blindly reset to
-// pending and recreated; it always re-enters reconciliation first, which is
-// exactly what proves whether a supplier order already exists before any
-// further write is allowed.
+// A single supplier HTTP call is bounded by FULFILLMENT_HTTP_TIMEOUT_MS
+// (see services/printify.js, 20s) and a full reconciliation pass can issue
+// at most a handful of them (findPrintifyOrderByExternalId's page cap is 5).
+// This lease window is set comfortably above that worst case, so a record
+// still inside it is presumed genuinely in-flight, and a record past it is
+// presumed abandoned by a crashed process.
+const SUPPLIER_CLAIM_LEASE_SQLITE_MODIFIER = '-5 minutes';
+
+// Atomic claim: transitions into 'reconciling'. Two cases are claimable:
+//   1. An explicit idle/restartable state (pending, create_failed,
+//      submit_failed) — always claimable immediately.
+//   2. An active-looking state (reconciling, created, submitting) whose
+//      updatedAt is older than the lease window — presumed abandoned by a
+//      crashed process, so it is claimable too, but ONLY once stale.
+// This is a true single-winner lock even under genuine concurrency: two
+// simultaneous UPDATEs with this WHERE clause are serialized by SQLite: the
+// first commits and moves the row's updatedAt to "now", so the second's own
+// WHERE clause (evaluated against the now-current row) no longer matches
+// case 1 (state is no longer idle) or case 2 (updatedAt is no longer stale).
+// Terminal states ('submitted', 'reconcile_required') are never claimable.
 async function claimSupplierFulfillment(orderId, supplierId) {
   const rows = await dbAllAsync(
     `UPDATE supplier_fulfillments
         SET state = 'reconciling', attemptCount = attemptCount + 1, updatedAt = CURRENT_TIMESTAMP
-      WHERE orderId = ? AND supplierId = ? AND state NOT IN ('submitted', 'reconcile_required')
+      WHERE orderId = ? AND supplierId = ?
+        AND (
+          state IN ('pending', 'create_failed', 'submit_failed')
+          OR (state IN ('reconciling', 'created', 'submitting') AND updatedAt <= datetime('now', ?))
+        )
       RETURNING *`,
-    [orderId, supplierId]
+    [orderId, supplierId, SUPPLIER_CLAIM_LEASE_SQLITE_MODIFIER]
   );
   return rows[0] || null;
+}
+
+// True while a record's own state/updatedAt indicates another invocation is
+// still legitimately within the lease window — i.e. claimSupplierFulfillment
+// correctly refused to touch it because it is not (yet) stale.
+function isWithinActiveLease(record) {
+  if (!record) return false;
+  if (!['reconciling', 'created', 'submitting'].includes(record.state)) return false;
+  const updatedAtMs = Date.parse(`${record.updatedAt.replace(' ', 'T')}Z`);
+  if (Number.isNaN(updatedAtMs)) return false;
+  return Date.now() - updatedAtMs < 5 * 60 * 1000;
 }
 
 async function persistSupplierState(orderId, supplierId, state, errorCode) {
@@ -161,6 +189,13 @@ async function handlePrintify(orderId, destination, items) {
       const ref = current.supplierOrderId || externalId;
       await writeItemStatus(items.map((i) => i.id), 'submitted', ref);
       return { supplier: supplierId, ref, count: items.length };
+    }
+    if (isWithinActiveLease(current)) {
+      // Another invocation is genuinely still working on this right now —
+      // this is not a failure, just "someone else has it." No write, no
+      // error, no alert; leave item status exactly as the outer caller set
+      // it (still 'processing').
+      return { supplier: supplierId, ref: current.supplierOrderId || externalId, count: 0, skipped: true };
     }
     throw new Error(
       `Printify fulfillment for order #${orderId} requires manual review `

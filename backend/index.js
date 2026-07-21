@@ -580,10 +580,37 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   // landed, and both proceed to dispatch the same items. Verified: reverting
   // to that old pattern makes tests/fulfillment-concurrency.test.js fail
   // (double-dispatch reproduced), confirming this fix and that test are real.
+  //
+  // A 'processing' printify item is ALSO reclaimable, but only when its
+  // supplier_fulfillments record is either absent or stale (no active-lease
+  // row updated within the last 5 minutes — see
+  // services/fulfillment.js#claimSupplierFulfillment, which uses the same
+  // lease window and is the real safety boundary once this claim succeeds).
+  // Without this, a crash inside routeOrderToSupplier/handlePrintify would
+  // leave the item at 'processing' forever — reconciliation is unreachable
+  // from any later retry, because this exact query is what gates entry to
+  // it. Scoped to supplier_id='printify' only: dropship/manual have no
+  // equivalent reconciliation path yet, so their pre-existing (unrelated,
+  // out of scope here) stuck-processing behavior is intentionally untouched.
   const claimed = await dbAllAsync(
     `UPDATE order_items
      SET fulfillment_status = 'processing'
-     WHERE orderId = ? AND (fulfillment_status IS NULL OR fulfillment_status = 'pending')
+     WHERE orderId = ?
+       AND (
+         fulfillment_status IS NULL
+         OR fulfillment_status = 'pending'
+         OR (
+           fulfillment_status = 'processing'
+           AND COALESCE(supplier_id, 'printify') = 'printify'
+           AND NOT EXISTS (
+             SELECT 1 FROM supplier_fulfillments sf
+             WHERE sf.orderId = order_items.orderId
+               AND sf.supplierId = 'printify'
+               AND sf.state IN ('reconciling', 'created', 'submitting')
+               AND sf.updatedAt > datetime('now', '-5 minutes')
+           )
+         )
+       )
      RETURNING id`,
     [orderId]
   );
