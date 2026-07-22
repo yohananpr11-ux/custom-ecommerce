@@ -131,8 +131,11 @@ jobs:
           node --check backend/tests/paid-order-notifications.test.js
           node --check backend/tests/paid-order-crash-recovery.test.js
           node --check backend/scripts/paid-order-crash-harness.cjs
+          node --check backend/tests/paid-order-pii-audit.test.js
+          node --check backend/tests/paid-order-payplus-inert.test.js
           node --check backend/services/emailService.js
           node --check backend/services/telegram.js
+          node --check backend/services/dropship.js
 
       # --- Phase 1: admin-route auth. Fully self-contained -- spawns its own
       # child server instances on its own ports and deletes its own throwaway
@@ -231,7 +234,7 @@ jobs:
       # set on that spawn (a bare -r CLI flag does not propagate to spawned
       # children the way NODE_OPTIONS does) and asserts that child's own
       # guard log independently.
-      - name: Run paid-order end-to-end readiness tests (trust boundaries + idempotency + crash recovery + notification safety)
+      - name: Run paid-order end-to-end readiness tests (trust boundaries + idempotency + crash recovery + notification safety + PII audit + PayPlus inert-gap)
         working-directory: backend
         env:
           NODE_ENV: test
@@ -242,7 +245,9 @@ jobs:
           node -r ./scripts/network-guard.cjs --test \
             tests/paid-order-e2e.test.js \
             tests/paid-order-notifications.test.js \
-            tests/paid-order-crash-recovery.test.js
+            tests/paid-order-crash-recovery.test.js \
+            tests/paid-order-pii-audit.test.js \
+            tests/paid-order-payplus-inert.test.js
 
       - name: Assert paid-order end-to-end readiness guard log clean
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-paid-order-e2e.jsonl"
