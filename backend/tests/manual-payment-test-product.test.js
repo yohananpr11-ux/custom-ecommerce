@@ -75,7 +75,7 @@ async function apiGet(pathname) {
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON (e.g. feed XML) */ }
-  return { status: res.status, json, text };
+  return { status: res.status, json, text, headers: res.headers };
 }
 
 async function apiPost(pathname, body) {
@@ -214,7 +214,7 @@ test('a real paid order for the manual test product creates exactly one order, o
 
     const createRes = await apiPost('/api/paypal/create-order', {
       ...SYNTHETIC_SHIPPING,
-      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS' }],
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS', accessToken: product.rawToken }],
       currency: 'ILS',
     });
     assert.equal(createRes.status, 200, JSON.stringify(createRes.json));
@@ -261,7 +261,7 @@ test('a duplicate capture of the same manual-product order does not double-fulfi
   try {
     const createRes = await apiPost('/api/paypal/create-order', {
       ...SYNTHETIC_SHIPPING,
-      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS' }],
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS', accessToken: product.rawToken }],
       currency: 'ILS',
     });
     const orderID = createRes.json.orderID;
@@ -296,7 +296,7 @@ test('once stock reaches zero, a second checkout attempt for the manual test pro
   try {
     const first = await apiPost('/api/paypal/create-order', {
       ...SYNTHETIC_SHIPPING,
-      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS' }],
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS', accessToken: product.rawToken }],
       currency: 'ILS',
     });
     await apiPost('/api/paypal/capture-order', { orderID: first.json.orderID });
@@ -304,9 +304,12 @@ test('once stock reaches zero, a second checkout attempt for the manual test pro
 
     const ordersBefore = (await dbGet(`SELECT COUNT(*) AS n FROM orders`)).n;
 
+    // Still supplies the correct, valid token here -- this isolates the
+    // rejection to genuinely being about exhausted stock, not an incidental
+    // token failure.
     const second = await apiPost('/api/paypal/create-order', {
       ...SYNTHETIC_SHIPPING,
-      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS' }],
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS', accessToken: product.rawToken }],
       currency: 'ILS',
     });
     assert.equal(second.status, 400, 'a second purchase attempt after stock=0 must be rejected');
@@ -328,7 +331,7 @@ test('re-invoking fulfillment for an already-submitted manual order does not ful
   try {
     const createRes = await apiPost('/api/paypal/create-order', {
       ...SYNTHETIC_SHIPPING,
-      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS' }],
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Default', selectedSize: 'OS', accessToken: product.rawToken }],
       currency: 'ILS',
     });
     await apiPost('/api/paypal/capture-order', { orderID: createRes.json.orderID });
@@ -477,6 +480,19 @@ test('GET /api/products/:id for the manual test product returns 404 with an expi
   const manual = await seedManualTestProduct({ tokenTtlHours: -1 }); // already expired
   const res = await apiGet(`/api/products/${manual.productId}?token=${manual.rawToken}`);
   assert.equal(res.status, 404);
+});
+
+test('GET /api/products/:id sends Cache-Control: no-store for the token-gated product, on both success and failure, and identically for an ordinary product -- no cache-eligibility signal distinguishes the hidden product', async () => {
+  const manual = await seedManualTestProduct();
+  const ordinary = await seedRealPrintifyProduct();
+
+  const success = await apiGet(`/api/products/${manual.productId}?token=${manual.rawToken}`);
+  const failure = await apiGet(`/api/products/${manual.productId}?token=wrong`);
+  const ordinaryRes = await apiGet(`/api/products/${ordinary.productId}`);
+
+  assert.equal(success.headers.get('cache-control'), 'no-store');
+  assert.equal(failure.headers.get('cache-control'), 'no-store');
+  assert.equal(ordinaryRes.headers.get('cache-control'), 'no-store');
 });
 
 test('GET /api/products/:id for the manual test product succeeds with the correct, unexpired token', async () => {
