@@ -48,17 +48,20 @@ class EmailService {
       recipientStr.includes('+sim') ||
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientStr);
 
+    // SECURITY: never log the recipient address, or a raw provider
+    // response/error object, on any branch below (success, mock/dev mode,
+    // or the reputation-safeguard skip) -- all are real operational log
+    // lines that a production log aggregator will retain, and the
+    // recipient address is customer PII. Only fixed-shape, non-PII
+    // summaries (subject, byte lengths, a provider-issued send id, or a
+    // coarse HTTP status) are ever logged.
     if (isJunkOrSimulated) {
-      console.log(`🛡️ [Reputation Safeguard] Skipped sending to simulated/junk address: ${recipientStr}`);
+      console.log(`🛡️ [Reputation Safeguard] Skipped sending to a simulated/junk address (redacted, length=${recipientStr.length}).`);
       return { ok: true, mocked: true, reason: 'safeguarded_junk_or_simulation' };
     }
 
     if (!this.resend) {
-      console.log(`[MOCK EMAIL] To: ${to}, Subject: ${subject}`);
-      if (text) {
-        console.log(`[MOCK EMAIL TEXT FALLBACK] ${text.slice(0, 300)}...`);
-      }
-      console.log(`[MOCK EMAIL BODY] ${html.slice(0, 300)}...`);
+      console.log(`[MOCK EMAIL] Subject: ${subject} (recipient redacted, length=${recipientStr.length})`);
       return { ok: true, mocked: true };
     }
 
@@ -77,10 +80,13 @@ class EmailService {
       }
 
       const response = await this.resend.emails.send(payload);
-      console.log(`✅ Email sent successfully via Resend: ${subject} to ${to}`);
+      const sendId = response && response.data && response.data.id;
+      console.log(`✅ Email sent successfully via Resend: ${subject}${sendId ? ` (id=${sendId})` : ''}`);
       return { ok: true, data: response.data };
     } catch (error) {
-      console.error(`❌ Failed to send email via Resend to ${to}:`, error);
+      const status = error && (error.statusCode || (error.response && error.response.status));
+      const errName = (error && (error.name || error.code)) || 'UNKNOWN_ERROR';
+      console.error(`❌ Failed to send email via Resend: ${errName}${status ? ` (HTTP_${status})` : ''}`);
       return { ok: false, error };
     }
   }

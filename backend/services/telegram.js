@@ -103,15 +103,22 @@ class TelegramService {
   }
 
   async sendMessage(text) {
+    // SECURITY: never log the message body here -- callers embed customer
+    // names, order totals, and other order details directly into `text`
+    // (see notifyNewOrder/sendPaymentNotification-shaped callers in
+    // index.js), so logging it verbatim whenever Telegram happens to be
+    // unconfigured (every hermetic test run, and any real misconfiguration)
+    // would put customer PII straight into operational logs. Only a safe,
+    // fixed-shape, non-PII summary (byte length only) is ever logged.
     if (!this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN') {
-      console.warn('⚠️ Telegram token not configured. Skipping message:', text);
+      console.warn(`⚠️ Telegram token not configured. Skipping message (length=${String(text || '').length}).`);
       return { ok: false, skipped: true, reason: 'token_not_configured' };
     }
 
     const resolvedChatId = await this.ensureChatId();
 
     if (!resolvedChatId) {
-      console.warn('⚠️ Telegram chat id not configured. Skipping message:', text);
+      console.warn(`⚠️ Telegram chat id not configured. Skipping message (length=${String(text || '').length}).`);
       return { ok: false, skipped: true, reason: 'chat_id_not_configured' };
     }
 
@@ -124,7 +131,12 @@ class TelegramService {
       console.log('✅ Telegram alert sent.');
       return { ok: true, status: response.status };
     } catch (error) {
-      const details = error.response && error.response.data ? error.response.data : error.message;
+      // Only a coarse, safe status/error-code summary is ever logged --
+      // never the raw response body, which is not guaranteed to be free of
+      // request-derived content on every possible Telegram API error shape.
+      const status = error.response && error.response.status;
+      const telegramErrorCode = error.response && error.response.data && error.response.data.error_code;
+      const details = status ? `HTTP_${status}${telegramErrorCode ? ` (telegram_error_code=${telegramErrorCode})` : ''}` : (error.code || 'UNKNOWN_ERROR');
       console.error('❌ Failed to send Telegram alert:', details);
       return { ok: false, skipped: false, reason: 'telegram_api_error', details };
     }
