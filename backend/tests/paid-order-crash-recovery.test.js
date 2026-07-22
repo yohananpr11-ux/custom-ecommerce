@@ -383,6 +383,15 @@ test('RESTART: a fresh child process capturing against a persisted SQLite file s
   await new Promise((resolve) => seedConn.close(resolve));
 
   const harnessPath = path.join(__dirname, '..', 'scripts', 'paid-order-crash-harness.cjs');
+  // NODE_OPTIONS (not a bare -r CLI flag, which would apply only to THIS
+  // process and not propagate to the spawned child) is what actually makes
+  // the guard active inside the harness process. Belt-and-suspenders on top
+  // of the harness's own hardcoded axios.post override and the real
+  // PRINTIFY_API_TOKEN-unset missing-token guard -- matches this task's
+  // explicit "preload the network guard for all tests and scripts"
+  // requirement literally, not only via other structural safety.
+  const guardPath = path.join(__dirname, '..', 'scripts', 'network-guard.cjs');
+  const harnessGuardLogPath = path.join(restartTmpDir, 'harness-guard.jsonl');
   const spawnResult = spawnSync(process.execPath, [harnessPath], {
     cwd: path.join(__dirname, '..'),
     env: {
@@ -402,6 +411,8 @@ test('RESTART: a fresh child process capturing against a persisted SQLite file s
       CRASH_HARNESS_LOCAL_ORDER_ID: String(localOrderId),
       CRASH_HARNESS_EXPECTED_CURRENCY: currency,
       CRASH_HARNESS_EXPECTED_AMOUNT: String(price),
+      NODE_OPTIONS: `-r ${guardPath}`,
+      NETWORK_GUARD_LOG_PATH: harnessGuardLogPath,
     },
     encoding: 'utf8',
     timeout: 20000,
@@ -419,6 +430,15 @@ test('RESTART: a fresh child process capturing against a persisted SQLite file s
   assert.equal(result.orderStatusAfter, 'paid', 'the persisted order must actually reach paid status');
   assert.notEqual(result.itemFulfillmentStatusAfter, 'pending', 'fulfillment must have been dispatched (missing-token guard path), not left untouched');
   assert.equal(result.processedWebhookRowCount, 1, 'still exactly one processed_webhooks row for this capture id -- no duplicate bookkeeping row either');
+
+  // Confirm the guard was genuinely active INSIDE the harness process (not
+  // only structurally safe via its own axios override / the real
+  // missing-token guard) and that it recorded zero blocked/external calls.
+  assert.ok(fs.existsSync(harnessGuardLogPath), 'the harness process must have written its own network-guard log -- proof the guard actually loaded inside the spawned child, not just the parent test process');
+  const harnessGuardLines = fs.readFileSync(harnessGuardLogPath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(harnessGuardLines.some((l) => l.activated === true), 'harness guard log must contain an activation marker');
+  const harnessBlocked = harnessGuardLines.filter((l) => l.allowed === false);
+  assert.equal(harnessBlocked.length, 0, `harness process must make zero blocked/external network attempts: ${JSON.stringify(harnessBlocked)}`);
 
   // Re-open the same file from THIS process, after the child has fully
   // exited and released its handle, as independent confirmation.
