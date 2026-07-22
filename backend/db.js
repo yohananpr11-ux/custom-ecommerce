@@ -257,6 +257,11 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('products', 'priceUSD', 'REAL'),
     // Phase 3: Multi-Vendor — supplier routing
     addColumnIfMissing('products', 'supplier_id', "TEXT NOT NULL DEFAULT 'printify'"),
+    // Direct-access token gate for hidden (type='local', supplier_id='manual')
+    // products — see GET /api/products/:id. NULL for every ordinary product;
+    // only ever set by scripts/manual-payment-test-product.js.
+    addColumnIfMissing('products', 'access_token_hash', 'TEXT'),
+    addColumnIfMissing('products', 'access_token_expires_at', 'DATETIME'),
     // orders
     addColumnIfMissing('orders', 'promoCode', 'TEXT'),
     addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0'),

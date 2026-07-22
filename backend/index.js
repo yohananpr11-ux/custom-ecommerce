@@ -488,9 +488,22 @@ const resolveValidatedOrderItems = async (items = []) => {
       throw new ClientValidationError('Each order item must include a valid product id');
     }
 
-    const product = await dbGetAsync(`SELECT id, title, price, priceUSD, printifyId, supplier_id FROM products WHERE id = ?`, [productId]);
+    const product = await dbGetAsync(`SELECT id, title, price, priceUSD, printifyId, supplier_id, stock FROM products WHERE id = ?`, [productId]);
     if (!product) {
       throw new ClientValidationError(`Product ${productId} was not found`);
+    }
+
+    // SECURITY: stock is purely informational/display for printify and
+    // dropship products everywhere else in this codebase -- checkout never
+    // enforces it for them (their real availability is Printify/CJ-side).
+    // Manual-supplier products are the one exception: they exist to be
+    // purchased exactly `stock` times (in practice, exactly once, for a
+    // single controlled real-payment test), so this is the only place that
+    // needs to reject an over-quantity or already-exhausted manual item --
+    // scoped narrowly enough that it can never affect a real printify/
+    // dropship product's checkout behavior.
+    if (product.supplier_id === 'manual' && Number(product.stock || 0) < quantity) {
+      throw new ClientValidationError(`Product ${productId} is no longer available`);
     }
 
     const selectedColor = rawItem && rawItem.selectedColor ? String(rawItem.selectedColor).trim() : null;
@@ -627,9 +640,15 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   // crash inside routeOrderToSupplier/handlePrintify would leave the item
   // stuck at 'processing'/'failed' forever, since this exact query is what
   // gates entry to reconciliation. Scoped to supplier_id='printify' only:
-  // dropship/manual have no equivalent reconciliation path yet, so their
-  // pre-existing (unrelated, out of scope here) stuck behavior is
-  // intentionally untouched.
+  // dropship has no equivalent reconciliation path yet, so its pre-existing
+  // (unrelated, out of scope here) stuck behavior is intentionally
+  // untouched. supplier_id='manual' items ARE also unconditionally
+  // reclaimable here (no lease/NOT EXISTS check needed): handleManual()
+  // makes no external call at all -- its only side effects are a local
+  // status write and a best-effort, already-swallowed-on-failure Telegram
+  // notification -- so retrying a stuck 'processing'/'failed' manual item
+  // can never risk a duplicate real-world order the way a blind printify
+  // retry could.
   const claimed = await dbAllAsync(
     `UPDATE order_items
      SET fulfillment_status = 'processing'
@@ -649,6 +668,10 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
                  OR (sf.state IN ('reconciling', 'created', 'submitting') AND sf.updatedAt > datetime('now', '-5 minutes'))
                )
            )
+         )
+         OR (
+           fulfillment_status IN ('processing', 'failed')
+           AND supplier_id = 'manual'
          )
        )
      RETURNING id`,
@@ -1477,6 +1500,28 @@ app.get('/api/products/:id', (req, res) => {
     try {
       const row = await dbGetAsync("SELECT * FROM products WHERE id = ?", [id]);
       if (!row) return res.status(404).json({ error: 'Product not found' });
+
+      // SECURITY: hidden manual-fulfillment test products (supplier_id='manual')
+      // are already excluded from every discovery surface (/api/products,
+      // /api/products/active-ids, the Google feed) by their type='local', but
+      // this route resolves by bare sequential integer id with no other
+      // filter — an ordinary sequential scan of small ids would otherwise
+      // still find them. When the row carries an access_token_hash, this
+      // route requires a matching ?token= query param (SHA-256'd and
+      // compared with a timing-safe comparison against the stored hash,
+      // never the raw token itself) and a still-valid expiration, or it
+      // returns the exact same 404 shape as a genuinely missing product --
+      // never a distinguishable "forbidden" response that would itself leak
+      // the row's existence. The raw token is never logged.
+      if (row.supplier_id === 'manual' && row.access_token_hash) {
+        const providedToken = typeof req.query.token === 'string' ? req.query.token : '';
+        const providedHash = providedToken ? crypto.createHash('sha256').update(providedToken).digest('hex') : '';
+        const hashMatches = providedHash && timingSafeEqualStr(providedHash, row.access_token_hash);
+        const notExpired = row.access_token_expires_at && new Date(row.access_token_expires_at).getTime() > Date.now();
+        if (!hashMatches || !notExpired) {
+          return res.status(404).json({ error: 'Product not found' });
+        }
+      }
 
       let imageData = { allImages: [], variantImageMap: {} };
       try {
