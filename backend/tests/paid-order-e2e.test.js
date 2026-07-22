@@ -608,6 +608,114 @@ test('trust boundary: capturing a PayPal order ID never created by our own serve
   }
 });
 
+test('malformed PayPal response: completely missing purchase_units is rejected, order stays pending_payment', async () => {
+  const product = await seedPrintifyProduct({ price: 40 });
+  const axiosMock = installAxiosPostMock();
+  axiosMock.on('/v1/oauth2/token', async () => ({ data: { access_token: 'fake-token' } }));
+  axiosMock.on('/v2/checkout/orders', async (url, data) => {
+    if (url.endsWith('/capture')) {
+      // Malformed: PayPal's own real API always returns purchase_units for a
+      // COMPLETED capture, but a client cannot control this -- proves the
+      // server never assumes the shape is present and crashes/throws
+      // instead of failing closed with a normal 400.
+      return { data: { status: 'COMPLETED' } };
+    }
+    const unit = data.purchase_units[0];
+    return { data: { id: `PPO-MALFORMED-${unit.custom_id}`, status: 'CREATED' } };
+  });
+  try {
+    const createRes = await apiPost('/api/paypal/create-order', {
+      ...SYNTHETIC_SHIPPING,
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Black', selectedSize: 'M' }],
+      currency: 'ILS',
+    });
+    const res = await apiPost('/api/paypal/capture-order', { orderID: createRes.json.orderID });
+    assert.equal(res.status, 400, 'a response missing purchase_units entirely must fail closed with 400, not crash');
+    assert.notEqual(res.json.success, true);
+    const order = await dbGet(`SELECT status FROM orders WHERE id = ?`, [createRes.json.orderId]);
+    assert.equal(order.status, 'pending_payment');
+  } finally {
+    axiosMock.restore();
+  }
+});
+
+test('malformed PayPal response: purchase_units present but captures array empty is rejected, order stays pending_payment', async () => {
+  const product = await seedPrintifyProduct({ price: 40 });
+  const axiosMock = installAxiosPostMock();
+  const created = new Map();
+  axiosMock.on('/v1/oauth2/token', async () => ({ data: { access_token: 'fake-token' } }));
+  axiosMock.on('/v2/checkout/orders', async (url, data) => {
+    if (url.endsWith('/capture')) {
+      const paypalOrderId = url.split('/checkout/orders/')[1].split('/capture')[0];
+      const record = created.get(paypalOrderId);
+      return {
+        data: {
+          status: 'COMPLETED',
+          purchase_units: [{ reference_id: record.localOrderId, custom_id: record.localOrderId, payments: { captures: [] } }],
+        },
+      };
+    }
+    const unit = data.purchase_units[0];
+    const paypalOrderId = `PPO-EMPTYCAP-${unit.custom_id}`;
+    created.set(paypalOrderId, { localOrderId: unit.custom_id });
+    return { data: { id: paypalOrderId, status: 'CREATED' } };
+  });
+  try {
+    const createRes = await apiPost('/api/paypal/create-order', {
+      ...SYNTHETIC_SHIPPING,
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Black', selectedSize: 'M' }],
+      currency: 'ILS',
+    });
+    const res = await apiPost('/api/paypal/capture-order', { orderID: createRes.json.orderID });
+    assert.notEqual(res.json.success, true, 'an empty captures array must never be treated as a successful capture');
+    const order = await dbGet(`SELECT status FROM orders WHERE id = ?`, [createRes.json.orderId]);
+    assert.equal(order.status, 'pending_payment', 'an empty captures array must never result in the real order being marked paid');
+  } finally {
+    axiosMock.restore();
+  }
+});
+
+test('malformed PayPal response: capture present but missing amount object is rejected, order stays pending_payment', async () => {
+  const product = await seedPrintifyProduct({ price: 40 });
+  const axiosMock = installAxiosPostMock();
+  const created = new Map();
+  axiosMock.on('/v1/oauth2/token', async () => ({ data: { access_token: 'fake-token' } }));
+  axiosMock.on('/v2/checkout/orders', async (url, data) => {
+    if (url.endsWith('/capture')) {
+      const paypalOrderId = url.split('/checkout/orders/')[1].split('/capture')[0];
+      const record = created.get(paypalOrderId);
+      return {
+        data: {
+          status: 'COMPLETED',
+          purchase_units: [{
+            reference_id: record.localOrderId, custom_id: record.localOrderId,
+            // capture object present, but its `amount` field is entirely absent.
+            payments: { captures: [{ id: `CAPTURE-${paypalOrderId}` }] },
+          }],
+        },
+      };
+    }
+    const unit = data.purchase_units[0];
+    const paypalOrderId = `PPO-NOAMOUNT-${unit.custom_id}`;
+    created.set(paypalOrderId, { localOrderId: unit.custom_id });
+    return { data: { id: paypalOrderId, status: 'CREATED' } };
+  });
+  try {
+    const createRes = await apiPost('/api/paypal/create-order', {
+      ...SYNTHETIC_SHIPPING,
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Black', selectedSize: 'M' }],
+      currency: 'ILS',
+    });
+    const res = await apiPost('/api/paypal/capture-order', { orderID: createRes.json.orderID });
+    assert.equal(res.status, 400, 'a capture missing its amount object must fail closed, never succeed');
+    assert.notEqual(res.json.success, true);
+    const order = await dbGet(`SELECT status FROM orders WHERE id = ?`, [createRes.json.orderId]);
+    assert.equal(order.status, 'pending_payment');
+  } finally {
+    axiosMock.restore();
+  }
+});
+
 test('trust boundary: client cannot redirect a payment to a different provider identifier than the server issued', async () => {
   // The only "provider identifier" a client supplies is the PayPal orderID
   // returned by OUR OWN create-order call -- there is no field anywhere in
