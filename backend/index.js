@@ -50,6 +50,19 @@ class ClientValidationError extends Error {
 }
 const isClientValidationError = (err) => Boolean(err && err.isClientError);
 
+// SECURITY: for logging ONLY -- never log a raw provider error response body
+// (err.response.data) verbatim. The checkout routes that call this send the
+// customer's own name/email/phone/address to the provider in the SAME
+// request, and a validation-error response commonly echoes some or all of
+// that back to confirm what was rejected. Only a safe, fixed-shape summary
+// (HTTP status code, or a generic axios error code/message when there is no
+// response at all) is ever produced.
+const safeProviderErrorSummary = (err) => {
+  const status = err && err.response && err.response.status;
+  if (status) return `HTTP_${status}`;
+  return (err && (err.code || err.message)) || 'UNKNOWN_ERROR';
+};
+
 const resolveUsdPrice = (price, storedPriceUSD = null) => {
   const stored = Number(storedPriceUSD);
   if (Number.isFinite(stored) && stored > 0) {
@@ -1049,16 +1062,32 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     if (!claim.changes) {
       return res.json({ received: true, duplicate: true, provider: 'stripe', reason: 'already_paid' });
     }
-    await reserveWebhookEvent('stripe', stripeEventId);
-    const isILS = String(session.currency || '').toLowerCase() === 'ils';
-    const amountText = isILS ? `₪${amount.toFixed(2)}` : `$${amount.toFixed(2)}`;
-    await sendPaymentNotification({ provider: 'Stripe', orderId, amountText });
-    const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [orderId]);
-    const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [orderId]);
-    if (paidOrder) {
-      telegram.notifyNewOrder(orderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
+
+    // CORRECTNESS: see the matching comment in /api/paypal/capture-order --
+    // the order is ALREADY marked paid by the atomic claim above; everything
+    // below is best-effort bookkeeping and must never turn an
+    // already-successful webhook into a client-visible (Stripe-visible)
+    // failure that would trigger a pointless retry storm.
+    try {
+      await reserveWebhookEvent('stripe', stripeEventId);
+      const isILS = String(session.currency || '').toLowerCase() === 'ils';
+      const amountText = isILS ? `₪${amount.toFixed(2)}` : `$${amount.toFixed(2)}`;
+      await sendPaymentNotification({ provider: 'Stripe', orderId, amountText });
+      const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [orderId]);
+      const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [orderId]);
+      if (paidOrder) {
+        telegram.notifyNewOrder(orderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
+      }
+    } catch (bookkeepingErr) {
+      console.error(`[Stripe Webhook] Post-claim bookkeeping failed for order #${orderId} (payment already marked paid, unaffected):`, bookkeepingErr.message);
     }
-    await processPaidOrderFulfillment(orderId, 'Stripe');
+
+    // Fire-and-forget, matching /api/paypal/capture-order's established
+    // pattern -- a fulfillment-layer error must not turn into a 500 sent
+    // back to Stripe for a webhook that already succeeded.
+    processPaidOrderFulfillment(orderId, 'Stripe').catch(err =>
+      console.error(`[fulfillment] background error for order #${orderId}:`, err.message)
+    );
   }
   res.json({received: true});
 });
@@ -1156,13 +1185,28 @@ app.post('/api/webhooks/payplus', express.raw({ type: 'application/json' }), asy
     if (!claim.changes) {
       return res.json({ received: true, duplicate: true, provider: 'payplus', reason: 'already_paid' });
     }
-    await reserveWebhookEvent('payplus', eventId);
-    const orderTotalAmount = await getOrderTotalAmount(orderId);
-    await sendPaymentNotification({ provider: 'PayPlus/Grow', orderId, amountText: `₪${orderTotalAmount.toFixed(2)}` });
 
-    await processPaidOrderFulfillment(orderId, 'PayPlus');
+    // CORRECTNESS: see the matching comment in /api/paypal/capture-order --
+    // the order is ALREADY marked paid by the atomic claim above; everything
+    // below is best-effort bookkeeping and must never turn an
+    // already-successful webhook into a client-visible (PayPlus-visible)
+    // failure that would trigger a pointless retry storm.
+    try {
+      await reserveWebhookEvent('payplus', eventId);
+      const orderTotalAmount = await getOrderTotalAmount(orderId);
+      await sendPaymentNotification({ provider: 'PayPlus/Grow', orderId, amountText: `₪${orderTotalAmount.toFixed(2)}` });
+    } catch (bookkeepingErr) {
+      console.error(`[PayPlus Webhook] Post-claim bookkeeping failed for order #${orderId} (payment already marked paid, unaffected):`, bookkeepingErr.message);
+    }
+
+    // Fire-and-forget, matching /api/paypal/capture-order's established
+    // pattern -- a fulfillment-layer error must not turn into a 500 sent
+    // back to PayPlus for a webhook that already succeeded.
+    processPaidOrderFulfillment(orderId, 'PayPlus').catch(err =>
+      console.error(`[fulfillment] background error for order #${orderId}:`, err.message)
+    );
   }
-  
+
   res.json({received: true});
 });
 
@@ -2799,7 +2843,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
       promoCode: validatedLeadPromo ? validatedLeadPromo.promo_code : null,
     });
   } catch (err) {
-    console.error('PayPal create-order failed:', err.response?.data || err.message);
+    console.error('PayPal create-order failed:', safeProviderErrorSummary(err));
     const statusCode = isClientValidationError(err) ? 400 : 500;
     return res.status(statusCode).json({ error: err.message || 'Failed to create PayPal order' });
   }
@@ -2899,24 +2943,38 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     if (!claim.changes) {
       return res.json({ success: true, duplicate: true, orderId: localOrderId });
     }
-    // Best-effort bookkeeping only from here on -- the paid transition above
-    // already happened and is final; nothing below can undo it.
-    await reserveWebhookEvent('paypal', captureId);
 
-    if (existingOrder.promoCode) {
-      await consumeLeadPromoCode(existingOrder.promoCode);
+    // CORRECTNESS: the payment is ALREADY captured and the order ALREADY
+    // marked paid by the atomic claim above -- everything below (webhook
+    // dedup bookkeeping, promo-code consumption, admin notifications) is
+    // genuinely best-effort. A prior version let any of this throw straight
+    // into the outer catch, which would answer the CLIENT with a 500
+    // "Failed to capture PayPal order" for a payment that had, in fact,
+    // already succeeded -- misleading a real customer into thinking their
+    // payment failed (and potentially retrying/paying again) when it had
+    // not. Swallowed here (logged only) so a failure in any of it can never
+    // turn an already-successful capture into a client-visible failure.
+    try {
+      await reserveWebhookEvent('paypal', captureId);
+
+      if (existingOrder.promoCode) {
+        await consumeLeadPromoCode(existingOrder.promoCode);
+      }
+
+      const amountText = captureCurrency === 'USD'
+        ? `$${captureValue.toFixed(2)}`
+        : `₪${captureValue.toFixed(2)}`;
+
+      await sendPaymentNotification({ provider: 'PayPal', orderId: localOrderId, amountText });
+      const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
+      const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [localOrderId]);
+      if (paidOrder) {
+        telegram.notifyNewOrder(localOrderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
+      }
+    } catch (bookkeepingErr) {
+      console.error(`[PayPal capture] Post-claim bookkeeping failed for order #${localOrderId} (payment already captured and marked paid, unaffected):`, bookkeepingErr.message);
     }
 
-    const amountText = captureCurrency === 'USD'
-      ? `$${captureValue.toFixed(2)}`
-      : `₪${captureValue.toFixed(2)}`;
-
-    await sendPaymentNotification({ provider: 'PayPal', orderId: localOrderId, amountText });
-    const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
-    const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [localOrderId]);
-    if (paidOrder) {
-      telegram.notifyNewOrder(localOrderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
-    }
     // Phase 3.4: Fire-and-forget — respond to PayPal immediately, fulfill in background
     processPaidOrderFulfillment(localOrderId, 'PayPal').catch(err =>
       console.error(`[fulfillment] background error for order #${localOrderId}:`, err.message)
@@ -2928,7 +2986,7 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       status: captureData.status,
     });
   } catch (err) {
-    console.error('PayPal capture-order failed:', err.response?.data || err.message);
+    console.error('PayPal capture-order failed:', safeProviderErrorSummary(err));
     return res.status(500).json({ error: 'Failed to capture PayPal order' });
   }
 });
@@ -3058,12 +3116,21 @@ app.post('/api/checkout/payplus', async (req, res) => {
       const paymentUrl = response.data.data.payment_page_link;
       res.json({ success: true, paymentUrl });
     } else {
-      console.error('PayPlus API response failed:', response.data);
+      // SECURITY: never log the raw response body -- payplusPayload above
+      // includes the customer's name/email/phone, and a "failure" result
+      // here is exactly the case most likely to explain itself by echoing
+      // back the field it didn't like. Only PayPlus's own coarse
+      // status/result code is logged -- never the free-text description
+      // (which could reference a submitted value), and never response.data
+      // itself.
+      const resultStatus = response.data && response.data.results && response.data.results.status;
+      const resultCode = response.data && response.data.results && response.data.results.code;
+      console.error(`PayPlus API response failed: status=${resultStatus || 'unknown'}${resultCode !== undefined ? ` code=${resultCode}` : ''}`);
       const errMsg = response.data?.results?.description || 'Failed to generate PayPlus link';
       res.status(400).json({ error: errMsg });
     }
   } catch (err) {
-    console.error('PayPlus checkout initialization error:', err.response?.data || err.message);
+    console.error('PayPlus checkout initialization error:', safeProviderErrorSummary(err));
     const statusCode = isClientValidationError(err) ? 400 : 500;
     res.status(statusCode).json({ error: err.message || 'Failed to initialize PayPlus checkout' });
   }

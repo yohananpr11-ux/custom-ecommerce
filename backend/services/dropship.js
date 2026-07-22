@@ -66,9 +66,12 @@ async function getCJAccessToken() {
     cachedTokenExpiry = now + 12 * 60 * 60 * 1000;
     return token;
   } catch (error) {
-    const errMsg = error.response ? JSON.stringify(error.response.data) : error.message;
-    console.error('❌ CJ Dropshipping authentication failed:', errMsg);
-    throw new Error(`CJ Dropshipping authentication failed: ${errMsg}`);
+    // SECURITY: never log or forward the raw response body -- see the
+    // matching comment in sendOrder() below for the full reasoning.
+    const status = error.response && error.response.status;
+    const safeSummary = status ? `HTTP_${status}` : (error.code || error.message || 'UNKNOWN_ERROR');
+    console.error('❌ CJ Dropshipping authentication failed:', safeSummary);
+    throw new Error(`CJ Dropshipping authentication failed: ${safeSummary}`);
   }
 }
 
@@ -191,14 +194,26 @@ async function sendOrder(orderId, shippingDestination, items) {
     const resultObj = json.result || json.data || {};
     const ref = resultObj.orderNumber || resultObj.cjOrderNumber || json.orderNumber || `CJ-${orderId}`;
 
-    console.log(`[${SUPPLIER_NAME}] Raw API Response:`, JSON.stringify(json));
+    // SECURITY: never log the raw API response -- the payload just sent to
+    // CJ (above) includes the customer's full name, address, city, zip, and
+    // phone number, and an order-creation API response commonly echoes back
+    // some or all of what it received to confirm receipt. Only the derived,
+    // already-safe `ref` is logged.
     console.log(`[${SUPPLIER_NAME}] ✓ Order #${orderId} submitted successfully to CJ! Ref=${ref}`);
     return { ref };
   } catch (error) {
-    const errMsg = error.response ? JSON.stringify(error.response.data) : error.message;
-    console.error(`[${SUPPLIER_NAME}] ✗ Failed to submit order #${orderId} to CJ Dropshipping:`, errMsg);
-    await telegram.notifyError(`CJ Dropshipping Fulfillment (Order #${orderId})`, errMsg).catch(() => null);
-    throw new Error(`CJ Dropshipping order submission failed: ${errMsg}`);
+    // SECURITY: never log or forward the raw response body, or a JSON dump
+    // of it, to console or Telegram -- same reasoning as above, and this is
+    // the failure path where CJ's own response is most likely to include a
+    // validation message that echoes a submitted field verbatim. Only a
+    // safe, fixed-shape summary (HTTP status / CJ's own numeric error code)
+    // is ever logged or sent.
+    const status = error.response && error.response.status;
+    const cjCode = error.response && error.response.data && typeof error.response.data.code === 'number' ? error.response.data.code : undefined;
+    const safeSummary = status ? `HTTP_${status}${cjCode !== undefined ? ` (cj_code=${cjCode})` : ''}` : (error.code || error.message || 'UNKNOWN_ERROR');
+    console.error(`[${SUPPLIER_NAME}] ✗ Failed to submit order #${orderId} to CJ Dropshipping:`, safeSummary);
+    await telegram.notifyError(`CJ Dropshipping Fulfillment (Order #${orderId})`, safeSummary).catch(() => null);
+    throw new Error(`CJ Dropshipping order submission failed: ${safeSummary}`);
   }
 }
 
