@@ -3051,7 +3051,15 @@ app.post('/api/checkout/payplus', async (req, res) => {
   const body = req.body || {};
   const { customerName, customerEmail, address, items, couponCode } = body;
 
-  if (!hasPayPlusCheckoutConfig() || !process.env.PAYPLUS_PAGE_UID) {
+  // SECURITY: must use hasConfiguredValue() here, matching /api/checkout/config's
+  // payplusEnabled computation exactly -- a bare `!process.env.PAYPLUS_PAGE_UID`
+  // truthy check (the prior code) only rejects a genuinely EMPTY value, not
+  // a leftover placeholder like "YOUR_PAYPLUS_PAGE_UID" copied from a .env
+  // template. That mismatch meant the customer-facing config flag correctly
+  // hid PayPlus from checkout, while this route's own independent guard
+  // would still accept the placeholder and attempt a real PayPlus API call
+  // with it. Proven by a real test (paid-order-payplus-inert.test.js).
+  if (!hasPayPlusCheckoutConfig() || !hasConfiguredValue(process.env.PAYPLUS_PAGE_UID)) {
     return res.status(503).json({ success: false, error: 'PayPlus checkout is currently unavailable. Please use PayPal.' });
   }
 
