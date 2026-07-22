@@ -294,3 +294,96 @@ test('generate-sitemap.cjs strict mode', async (t) => {
     }
   });
 });
+
+/**
+ * DEFAULT MODE (SITEMAP_REQUIRE_API unset) -- regression coverage for a real
+ * incident: running `npm run build` locally with no local DB and no
+ * SITEMAP_API_BASE silently made a real, unauthenticated GET request to the
+ * live production backend, because the previous default-mode fallback was
+ * deny-list-based (anything not explicitly hermetic fell through to a
+ * hardcoded production URL). The fix makes it allow-list-based: the
+ * production URL is only ever reachable when either an explicit
+ * SITEMAP_API_BASE is set, OR a recognized deploy platform's own env var is
+ * present (VERCEL=1 / RENDER=true, both set automatically by those
+ * platforms in every build they run -- never by a local/offline run).
+ *
+ * These tests deliberately do NOT attempt to prove "VERCEL=1 with no
+ * explicit base resolves to the real hardcoded production URL" via an
+ * actual request -- doing so would itself require a real outbound network
+ * attempt toward the real production host, which is exactly what this fix
+ * (and this entire audit) exists to prevent. That one line
+ * (`RAW_API_BASE = process.env.SITEMAP_API_BASE || 'https://...'`) is
+ * unchanged from before this fix and was never in question -- what changed,
+ * and what is tested here, is the NEW gate in front of it.
+ */
+test('generate-sitemap.cjs default mode', async (t) => {
+  await t.test('regression: with no local DB, no explicit API base, and no recognized deploy-platform env var, the script never attempts any network request and degrades to a static-only sitemap', async () => {
+    const { dir, scriptDest } = makeTempProject();
+    try {
+      // Deliberately does not set VERCEL, RENDER, or SITEMAP_API_BASE --
+      // BLANK_CREDENTIALS_ENV + PATH is the entire child environment
+      // otherwise, so none of these can leak in from this test's own host
+      // environment either.
+      const result = await runScript(scriptDest, {}, dir);
+
+      assert.equal(result.status, 0, `expected exit 0 (graceful degradation, not a hard failure), got ${result.status}. stderr:\n${result.stderr}`);
+      // console.warn() writes to stderr, not stdout.
+      assert.match(result.stderr, /No local DB and no usable API base/);
+      assert.match(result.stderr, /refusing to fall back to any hardcoded production URL/);
+      assert.doesNotMatch(result.stdout + result.stderr, /custom-ecommerce-qp30\.onrender\.com/, 'the real production hostname must never even be mentioned, let alone contacted, in this configuration');
+      assert.doesNotMatch(result.stdout, /Falling back to API/, 'must never even log the "falling back" message when there is no usable base to fall back to');
+
+      const publicXml = fs.readFileSync(path.join(dir, 'public', 'sitemap.xml'), 'utf8');
+      assert.doesNotMatch(publicXml, /\/product\//, 'zero products expected -- static routes only');
+      assert.match(publicXml, /<urlset/);
+    } finally {
+      cleanupTempProject(dir);
+    }
+  });
+
+  await t.test('an explicit SITEMAP_API_BASE still works in default mode with no platform env var present, exactly as before this fix', async () => {
+    const fixture = await startFixture((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ids: [4242] }));
+    });
+    const { dir, scriptDest } = makeTempProject();
+    try {
+      const result = await runScript(scriptDest, {
+        SITEMAP_API_BASE: fixture.baseUrl,
+      }, dir);
+
+      assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
+      assert.match(result.stdout, /Loaded 1 product ID\(s\) from API\./);
+      const publicXml = fs.readFileSync(path.join(dir, 'public', 'sitemap.xml'), 'utf8');
+      assert.match(publicXml, /\/product\/4242/);
+    } finally {
+      await fixture.close();
+      cleanupTempProject(dir);
+    }
+  });
+
+  await t.test('a recognized deploy-platform env var (VERCEL=1) combined with an explicit local API base still resolves and uses that base normally', async () => {
+    // Proves the platform-detection gate does not interfere with a normal,
+    // fully-specified run -- VERCEL=1 alone is not, by itself, let anywhere
+    // near a real network call in this test; SITEMAP_API_BASE always wins
+    // when present, on any platform.
+    const fixture = await startFixture((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ids: [7777] }));
+    });
+    const { dir, scriptDest } = makeTempProject();
+    try {
+      const result = await runScript(scriptDest, {
+        VERCEL: '1',
+        SITEMAP_API_BASE: fixture.baseUrl,
+      }, dir);
+
+      assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
+      const publicXml = fs.readFileSync(path.join(dir, 'public', 'sitemap.xml'), 'utf8');
+      assert.match(publicXml, /\/product\/7777/);
+    } finally {
+      await fixture.close();
+      cleanupTempProject(dir);
+    }
+  });
+});

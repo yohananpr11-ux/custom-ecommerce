@@ -293,3 +293,81 @@ test('prerender-products.cjs strict mode', async (t) => {
     }
   });
 });
+
+/**
+ * DEFAULT MODE (PRERENDER_REQUIRE_API unset) -- regression coverage for the
+ * same real incident described in generate-sitemap.test.cjs: running
+ * `npm run build` locally with no PRERENDER_API_BASE silently made a real,
+ * unauthenticated GET request to the live production backend, because the
+ * previous default-mode fallback was deny-list-based. The fix makes it
+ * allow-list-based: the production URL is only ever reachable when either
+ * an explicit PRERENDER_API_BASE is set, OR a recognized deploy platform's
+ * own env var is present (VERCEL=1 / RENDER=true).
+ *
+ * As in generate-sitemap.test.cjs, these tests do not attempt to prove
+ * "VERCEL=1 with no explicit base resolves to the real hardcoded production
+ * URL" via an actual request -- that would itself require a real outbound
+ * network attempt toward the real production host.
+ */
+test('prerender-products.cjs default mode', async (t) => {
+  await t.test('regression: with no explicit API base and no recognized deploy-platform env var, the script never attempts any network request and falls through to products_fallback.json (or exits cleanly with nothing prerendered)', async () => {
+    const { dir, scriptDest } = makeTempProject();
+    try {
+      // No products_fallback.json exists in this temp project, so this also
+      // exercises the "nothing to prerender" terminal branch -- the point
+      // here is exclusively that no network attempt is made getting there.
+      const result = await runScript(scriptDest, {}, dir);
+
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}. stderr:\n${result.stderr}`);
+      assert.match(result.stderr, /No usable API base/);
+      assert.match(result.stderr, /refusing to fall back to any hardcoded production URL/);
+      assert.doesNotMatch(result.stdout + result.stderr, /custom-ecommerce-qp30\.onrender\.com/, 'the real production hostname must never even be mentioned, let alone contacted, in this configuration');
+      assert.equal(fs.existsSync(path.join(dir, 'dist', 'product')), false, 'zero products expected -- nothing prerendered');
+    } finally {
+      cleanupTempProject(dir);
+    }
+  });
+
+  await t.test('an explicit PRERENDER_API_BASE still works in default mode with no platform env var present, exactly as before this fix', async () => {
+    const fixture = await startFixture((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify([
+        { id: 5555, title: 'Default Mode Fixture Product', description: 'A fixture.', price: 50, imageUrl: 'https://example.com/x.jpg' },
+      ]));
+    });
+    const { dir, scriptDest } = makeTempProject();
+    try {
+      const result = await runScript(scriptDest, {
+        PRERENDER_API_BASE: fixture.baseUrl,
+      }, dir);
+
+      assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
+      assert.equal(fs.existsSync(path.join(dir, 'dist', 'product', '5555', 'index.html')), true);
+    } finally {
+      await fixture.close();
+      cleanupTempProject(dir);
+    }
+  });
+
+  await t.test('a recognized deploy-platform env var (VERCEL=1) combined with an explicit local API base still resolves and uses that base normally', async () => {
+    const fixture = await startFixture((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify([
+        { id: 6666, title: 'Vercel Fixture Product', description: 'A fixture.', price: 60, imageUrl: 'https://example.com/x.jpg' },
+      ]));
+    });
+    const { dir, scriptDest } = makeTempProject();
+    try {
+      const result = await runScript(scriptDest, {
+        VERCEL: '1',
+        PRERENDER_API_BASE: fixture.baseUrl,
+      }, dir);
+
+      assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
+      assert.equal(fs.existsSync(path.join(dir, 'dist', 'product', '6666', 'index.html')), true);
+    } finally {
+      await fixture.close();
+      cleanupTempProject(dir);
+    }
+  });
+});
