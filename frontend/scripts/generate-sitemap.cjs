@@ -42,13 +42,43 @@ function normalizeApiBase(raw) {
   return parsed.origin + parsed.pathname.replace(/\/+$/, '');
 }
 
-const RAW_API_BASE = process.env.SITEMAP_API_BASE || 'https://custom-ecommerce-qp30.onrender.com';
-let API_BASE;
-try {
-  API_BASE = normalizeApiBase(RAW_API_BASE);
-} catch (err) {
-  console.error(`[sitemap] FATAL: ${err.message}`);
+// SAFETY: the hardcoded production URL below must only ever be reached
+// during a REAL platform deployment build -- Vercel sets VERCEL=1 and
+// Render sets RENDER=true automatically in every build/runtime environment
+// they control, so their presence is a reliable, allow-list-based signal
+// that this script is genuinely running inside that platform's own build,
+// not on a developer machine or in an offline/local verification run. A
+// prior incident found that running `npm run build` locally with neither a
+// local DB nor SITEMAP_API_BASE set silently made a real, unauthenticated
+// GET request to the live production backend -- the previous design was
+// deny-list-based (anything not explicitly hermetic fell through to
+// production); this is now allow-list-based (only a recognized deploy
+// platform, or an explicit override, may ever use the production URL).
+// Local/offline runs still degrade gracefully to a static-only sitemap
+// (see resolveProductIds() below) -- they simply never attempt the network
+// call that would otherwise silently reach production.
+const ON_KNOWN_DEPLOY_PLATFORM = process.env.VERCEL === '1' || process.env.RENDER === 'true';
+const HAS_EXPLICIT_API_BASE = Boolean(process.env.SITEMAP_API_BASE && process.env.SITEMAP_API_BASE.trim());
+
+if (REQUIRE_API && !HAS_EXPLICIT_API_BASE) {
+  // Already fatal above (line ~21) for the strict/CI path -- unreachable in
+  // practice, kept only so API_BASE resolution below never has to consider
+  // "REQUIRE_API but no base and not on a platform" as a live case.
+  console.error('[sitemap] FATAL: SITEMAP_REQUIRE_API=true requires SITEMAP_API_BASE to be explicitly set.');
   process.exit(1);
+}
+
+const CAN_USE_PRODUCTION_FALLBACK = HAS_EXPLICIT_API_BASE || ON_KNOWN_DEPLOY_PLATFORM || REQUIRE_API;
+
+let API_BASE = null;
+if (CAN_USE_PRODUCTION_FALLBACK) {
+  const RAW_API_BASE = process.env.SITEMAP_API_BASE || 'https://custom-ecommerce-qp30.onrender.com';
+  try {
+    API_BASE = normalizeApiBase(RAW_API_BASE);
+  } catch (err) {
+    console.error(`[sitemap] FATAL: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 /** Validated, bounded fetch timeout — never hangs CI indefinitely. */
@@ -184,6 +214,11 @@ async function resolveProductIds() {
 
   const fromDb = await fetchProductIdsFromDb();
   if (fromDb && fromDb.length) return fromDb;
+
+  if (!API_BASE) {
+    console.warn('[sitemap] No local DB and no usable API base (not on a recognized deploy platform, and SITEMAP_API_BASE not set) -- refusing to fall back to any hardcoded production URL. Proceeding with static-only sitemap.');
+    return [];
+  }
 
   console.log('[sitemap] Falling back to API for product IDs...');
   try {
