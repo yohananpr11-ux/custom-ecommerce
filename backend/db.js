@@ -262,7 +262,24 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     // only ever set by scripts/manual-payment-test-product.js.
     addColumnIfMissing('products', 'access_token_hash', 'TEXT'),
     addColumnIfMissing('products', 'access_token_expires_at', 'DATETIME'),
+    // Manual-supplier stock reservation lease -- see reserveManualProductStock
+    // in index.js. Deliberately lives on the product row itself, not on any
+    // orders/order_items row, so a reservation can always be reclaimed even
+    // if the process crashes before an order row for it ever exists (between
+    // resolveValidatedOrderItems reserving stock and createPendingOrder's own
+    // orders INSERT). NULL for every ordinary product and whenever no manual
+    // product currently has an outstanding reservation.
+    addColumnIfMissing('products', 'stock_reservation_qty', 'INTEGER'),
+    addColumnIfMissing('products', 'stock_reservation_expires_at', 'DATETIME'),
     // orders
+    // Populated at /api/paypal/create-order time with the real PayPal order
+    // id. Used only by capture-order's pre-capture reservation check for
+    // manual-supplier orders (see the matching comment there) -- looking a
+    // client-supplied PayPal orderID up against this column lets that check
+    // find the local order and re-verify its status BEFORE ever calling
+    // PayPal's real capture endpoint, instead of only after (when a real
+    // charge has already happened). Harmless/unused for every other order.
+    addColumnIfMissing('orders', 'paypal_order_id', 'TEXT'),
     addColumnIfMissing('orders', 'promoCode', 'TEXT'),
     addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0'),
     addColumnIfMissing('orders', 'emailSent', 'INTEGER DEFAULT 0'),

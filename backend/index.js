@@ -477,6 +477,102 @@ const consumeLeadPromoCode = async (promoCode) => {
 
 const normalizeVariantValue = (value) => String(value || '').trim().toLowerCase();
 
+// A hidden manual-supplier product is only ever meant to be reachable via
+// its own unguessable direct link (see GET /api/products/:id's token gate).
+// That route-level gate alone is NOT sufficient: checkout's own item
+// resolver (below) accepts a bare numeric product id from the client with
+// no other requirement, so an attacker who merely guesses or otherwise
+// learns the id -- without ever needing the token -- could still create a
+// real local order and a real PayPal order for it. This re-validates the
+// SAME token (SHA-256'd, timing-safe compared, expiration-checked) here,
+// at the one place that actually creates an order, for every checkout
+// route (PayPal/Stripe/PayPlus all share this function). Uses the exact
+// same "Product X was not found" message as a genuinely missing product so
+// a probe cannot distinguish "doesn't exist" from "exists but wrong/missing
+// token" by response shape alone.
+const validateManualProductAccessToken = (product, providedToken) => {
+  const tokenHash = providedToken ? crypto.createHash('sha256').update(String(providedToken)).digest('hex') : '';
+  const hashMatches = Boolean(product.access_token_hash) && Boolean(tokenHash) && timingSafeEqualStr(tokenHash, product.access_token_hash);
+  const notExpired = Boolean(product.access_token_expires_at) && new Date(product.access_token_expires_at).getTime() > Date.now();
+  return hashMatches && notExpired;
+};
+
+const MANUAL_PRODUCT_RESERVATION_WINDOW_MINUTES = 15;
+
+// Atomically reserves `quantity` units of a manual-supplier product's stock
+// for a brand-new order about to be created. A single atomic
+// UPDATE ... WHERE stock >= quantity is what actually prevents two
+// concurrent requests from both reserving the same unit -- SQLite
+// serializes writers, so once one invocation's UPDATE commits, a second
+// concurrent invocation's WHERE clause can no longer match the same row.
+// Reservation happens HERE, at order-creation time, not at fulfillment
+// time: fulfillment can be minutes or hours behind capture, which is far
+// too late to prevent two concurrent PayPal orders from both being created
+// (and both later successfully captured) for the same single unit.
+//
+// The lease (stock_reservation_qty/stock_reservation_expires_at) lives on
+// the PRODUCT row itself, not on any orders/order_items row. This is
+// deliberate: createPendingOrder calls resolveValidatedOrderItems (which
+// reserves stock) BEFORE it ever inserts the orders row, so a crash in
+// that exact window would leave a reservation with no order row to anchor
+// an order-keyed reclaim query against -- stranding the unit permanently.
+// Keying the lease on the product row instead means reclaim never depends
+// on how far createPendingOrder got.
+//
+// If the immediate reservation fails, makes ONE lazy attempt to reclaim an
+// expired lease before retrying once. This gives "no permanent stock lock
+// after an abandoned checkout" without a separate scheduled job.
+const reserveManualProductStock = async (productId, quantity) => {
+  const attempt = async () => {
+    const result = await dbRunAsync(
+      `UPDATE products
+          SET stock = stock - ?,
+              stock_reservation_qty = ?,
+              stock_reservation_expires_at = datetime('now', ?)
+        WHERE id = ? AND supplier_id = 'manual' AND stock >= ?`,
+      [quantity, quantity, `+${MANUAL_PRODUCT_RESERVATION_WINDOW_MINUTES} minutes`, productId, quantity]
+    );
+    return result.changes > 0;
+  };
+
+  if (await attempt()) return true;
+
+  // Single atomic UPDATE does the staleness check, the restore, and the
+  // lease clear all in one WHERE-guarded statement -- no separate read
+  // creates a TOCTOU window, and two concurrent requests discovering
+  // staleness at once can never both restore stock: only the first one's
+  // UPDATE actually matches a row (the lease columns are already NULL by
+  // the time the second one's WHERE clause is evaluated).
+  const reclaim = await dbRunAsync(
+    `UPDATE products
+        SET stock = stock + stock_reservation_qty,
+            stock_reservation_qty = NULL,
+            stock_reservation_expires_at = NULL
+      WHERE id = ? AND supplier_id = 'manual'
+        AND stock_reservation_expires_at IS NOT NULL
+        AND stock_reservation_expires_at <= datetime('now')`,
+    [productId]
+  );
+  if (!reclaim.changes) return false;
+
+  // Best-effort only, and deliberately AFTER the reclaim above has already
+  // committed: marks any corresponding stale pending_payment order (if one
+  // was ever actually created for the reservation just reclaimed) so
+  // capture-order's pre-capture check can refuse a real PayPal charge if
+  // that original customer's approval is submitted after reclaim. If no
+  // such order row exists (the true crash-before-order-row-insert case
+  // this design targets), there is nothing to mark and nothing to protect
+  // either -- no PayPal order could have been created without one.
+  await dbRunAsync(
+    `UPDATE orders SET status = 'reservation_expired'
+      WHERE status = 'pending_payment'
+        AND id IN (SELECT orderId FROM order_items WHERE productId = ?)`,
+    [productId]
+  ).catch((err) => console.error(`[reserveManualProductStock] best-effort stale-order marking failed for product #${productId} (reservation reclaim itself already succeeded):`, err.message));
+
+  return attempt();
+};
+
 const resolveValidatedOrderItems = async (items = []) => {
   const validatedItems = [];
 
@@ -488,22 +584,30 @@ const resolveValidatedOrderItems = async (items = []) => {
       throw new ClientValidationError('Each order item must include a valid product id');
     }
 
-    const product = await dbGetAsync(`SELECT id, title, price, priceUSD, printifyId, supplier_id, stock FROM products WHERE id = ?`, [productId]);
+    const product = await dbGetAsync(`SELECT id, title, price, priceUSD, printifyId, supplier_id, stock, access_token_hash, access_token_expires_at FROM products WHERE id = ?`, [productId]);
     if (!product) {
       throw new ClientValidationError(`Product ${productId} was not found`);
     }
 
-    // SECURITY: stock is purely informational/display for printify and
-    // dropship products everywhere else in this codebase -- checkout never
-    // enforces it for them (their real availability is Printify/CJ-side).
-    // Manual-supplier products are the one exception: they exist to be
-    // purchased exactly `stock` times (in practice, exactly once, for a
-    // single controlled real-payment test), so this is the only place that
-    // needs to reject an over-quantity or already-exhausted manual item --
-    // scoped narrowly enough that it can never affect a real printify/
-    // dropship product's checkout behavior.
-    if (product.supplier_id === 'manual' && Number(product.stock || 0) < quantity) {
-      throw new ClientValidationError(`Product ${productId} is no longer available`);
+    if (product.supplier_id === 'manual') {
+      // SECURITY: see validateManualProductAccessToken's own comment above
+      // -- this is the actual enforcement point for the hidden product's
+      // access gate, not merely the GET route.
+      if (!validateManualProductAccessToken(product, rawItem && rawItem.accessToken)) {
+        throw new ClientValidationError(`Product ${productId} was not found`);
+      }
+
+      // SECURITY: stock is purely informational/display for printify and
+      // dropship products everywhere else in this codebase -- checkout
+      // never enforces it for them (their real availability is
+      // Printify/CJ-side). Manual-supplier products are the one exception:
+      // the atomic reservation above/below is what actually prevents two
+      // concurrent checkouts from both succeeding for a stock=1 item, not
+      // merely a read-then-compare check.
+      const reserved = await reserveManualProductStock(productId, quantity);
+      if (!reserved) {
+        throw new ClientValidationError(`Product ${productId} is no longer available`);
+      }
     }
 
     const selectedColor = rawItem && rawItem.selectedColor ? String(rawItem.selectedColor).trim() : null;
@@ -1498,6 +1602,16 @@ app.get('/api/products/:id', (req, res) => {
 
   (async () => {
     try {
+      // SECURITY: applied uniformly to every response this route can send
+      // (404/500/200), not only the token-gated branch below -- an
+      // intermediate cache treating the hidden product's token-bearing URL
+      // any differently from an ordinary product's URL would itself be an
+      // observable signal. Defense-in-depth: the token's own high entropy
+      // already makes a genuine cache collision implausible, but a
+      // token-bearing URL should never be eligible for any shared/browser
+      // cache to retain regardless.
+      res.set('Cache-Control', 'no-store');
+
       const row = await dbGetAsync("SELECT * FROM products WHERE id = ?", [id]);
       if (!row) return res.status(404).json({ error: 'Product not found' });
 
@@ -2879,6 +2993,22 @@ app.post('/api/paypal/create-order', async (req, res) => {
       },
     });
 
+    // Records PayPal's own order id against the local order so
+    // capture-order can look the local order up directly from the
+    // client-supplied orderID -- see the pre-capture check there for why.
+    // Best-effort: on a freshly (re)started process this column's migration
+    // may not have finished yet (see the matching guard in capture-order).
+    // A real PayPal order has already been created by this point -- failing
+    // the whole request over this would strand a valid PayPal approval
+    // behind a spurious 500, so this degrades to "legacy order, no
+    // pre-capture safeguard" instead, identical to how a genuinely
+    // pre-migration order already behaves.
+    try {
+      await dbRunAsync(`UPDATE orders SET paypal_order_id = ? WHERE id = ?`, [paypalOrder.id, orderId]);
+    } catch (paypalOrderIdErr) {
+      console.error(`[PayPal create-order] Failed to persist paypal_order_id for order #${orderId} (continuing without it): ${paypalOrderIdErr.message}`);
+    }
+
     return res.json({
       success: true,
       orderID: paypalOrder.id,
@@ -2902,6 +3032,43 @@ app.post('/api/paypal/capture-order', async (req, res) => {
   }
 
   try {
+    // SECURITY: reservation-expiry pre-check for manual-supplier "hidden
+    // product" orders (see reserveManualProductStock/
+    // resolveValidatedOrderItems above). An order only ever reaches
+    // 'reservation_expired' when THIS PayPal order's stock reservation was
+    // already lazily reclaimed by a later checkout attempt (the original
+    // customer abandoned checkout past the reservation window). Without
+    // this, a customer who returns to that stale, already-reclaimed
+    // approval could still trigger a REAL PayPal charge below --
+    // capturePayPalOrder is the actual charge-executing call, so this must
+    // run BEFORE it, not after. Looked up directly via paypal_order_id
+    // (populated at create-order time above), so this needs no PayPal API
+    // call of its own. A missing/legacy order (paypal_order_id not yet
+    // populated) or any normal order (which can never reach this status)
+    // simply falls through to the existing capture flow unchanged.
+    // Startup-race guard: on a freshly (re)started process, this query can
+    // in principle run before db.js's migration Promise.all has finished
+    // adding this column -- index.js does not currently await that promise
+    // before app.listen(). Treated as "no match" (falls through to the
+    // existing, unmodified capture flow) rather than a hard 500: a real
+    // customer's legitimate capture succeeding is strictly more important
+    // than this specific safeguard being active during the brief startup
+    // window before migrations finish. This is a pre-existing startup
+    // ordering gap (shared by every migration-added column), not something
+    // newly introduced here -- out of scope to fix broadly in this change.
+    let preCaptureOrder = null;
+    try {
+      preCaptureOrder = await dbGetAsync(`SELECT id, status FROM orders WHERE paypal_order_id = ?`, [orderID]);
+    } catch (preCaptureErr) {
+      console.error(`[PayPal capture] Pre-capture reservation-expiry lookup failed (continuing without it): ${preCaptureErr.message}`);
+    }
+    if (preCaptureOrder && preCaptureOrder.status === 'reservation_expired') {
+      return res.status(409).json({
+        success: false,
+        error: 'This order has expired and its item is no longer reserved. Please start a new checkout.',
+      });
+    }
+
     const accessToken = await getPayPalAccessToken();
     const captureData = await capturePayPalOrder(accessToken, orderID);
 

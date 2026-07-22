@@ -1563,6 +1563,7 @@ function ProductDetailPage({ productId, accessToken, addToCart, goToCheckout, sh
     
     addToCart({
       ...product,
+      accessToken,
       title: variantTitle.join(' - '),
       cartId: `${product.id}-${selectedColor}-${selectedSize}`,
       selectedColor,
@@ -2413,7 +2414,20 @@ function MainApp() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('drip_street_cart', JSON.stringify(cart))
+      // The hidden manual-product test flow threads a one-time accessToken
+      // onto its cart item (see ProductDetailPage's addToCart call) so it
+      // survives navigation from the product page to checkout within the
+      // current session. It must never reach durable storage: localStorage
+      // persists indefinitely, well past this token's own short intended
+      // lifetime, and inconsistently with this feature's design elsewhere
+      // (hash-only storage, non-revealing 404s, timing-safe comparison).
+      // Stripped only from the persisted copy -- the in-memory `cart` state
+      // driving this session's own checkout submission is unaffected. If
+      // the page is reloaded before checkout completes, the rehydrated item
+      // simply has no token and checkout correctly rejects it, same as any
+      // other missing-token attempt.
+      const persistable = cart.map(({ accessToken, ...item }) => item);
+      localStorage.setItem('drip_street_cart', JSON.stringify(persistable))
     } catch (e) {
       console.error('Failed to save cart:', e)
     }

@@ -311,19 +311,12 @@ async function handleManual(orderId, items) {
   const ref = `MANUAL-${orderId}`;
   await writeItemStatus(items.map(i => i.id), 'submitted', ref);
 
-  // Manual-supplier products are the one product type checkout actually
-  // enforces stock for (see resolveValidatedOrderItems in index.js) --
-  // decrement here, at the point fulfillment is genuinely committed, so a
-  // stock=1 test product correctly becomes unpurchasable after its single
-  // real payment. Scoped to supplier_id='manual' in the WHERE clause so
-  // this can never affect a printify/dropship product's stock, which stays
-  // sync-managed elsewhere.
-  for (const item of items) {
-    await dbRunAsync(
-      `UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ? AND supplier_id = 'manual'`,
-      [Number(item.quantity) || 1, item.productId]
-    );
-  }
+  // NOTE: stock for manual-supplier products is reserved atomically at
+  // CHECKOUT-CREATE time, not here (see reserveManualProductStock in
+  // index.js). A read-then-decrement at fulfillment time is too late to
+  // prevent two concurrent checkouts from both succeeding for a stock=1
+  // item -- fulfillment can run minutes behind capture. Decrementing again
+  // here would double-consume stock that create-order already reserved.
 
   await telegram.sendMessage(
     `📦 <b>Manual fulfillment required</b>\n` +
