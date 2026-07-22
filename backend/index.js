@@ -32,6 +32,24 @@ const PAYPAL_SUPPORTED_CURRENCIES = new Set(['USD', 'ILS']);
 const ENGLISH_SHIPPING_TEXT_REGEX = /^[A-Za-z0-9\s.,'\-/#()]+$/;
 const DEFAULT_USD_CONVERSION_RATE = 3.6;
 
+// Marks an error as caused by invalid client input (bad shipping details,
+// unknown product, disabled/mismatched variant, etc.) so every checkout
+// route's catch block can return 400, not 500, without each one needing to
+// enumerate every possible validation message string. The previous
+// substring-matching approach (checking for e.g. 'Shipping details' or
+// 'valid product id' inside err.message) missed most real validation
+// messages -- 'Product 123 was not found', 'City is required', 'A valid
+// phone number is required', and most of validateShippingDetails()'s other
+// messages all fell through to 500 despite being ordinary client input
+// errors that correctly prevented order creation either way.
+class ClientValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.isClientError = true;
+  }
+}
+const isClientValidationError = (err) => Boolean(err && err.isClientError);
+
 const resolveUsdPrice = (price, storedPriceUSD = null) => {
   const stored = Number(storedPriceUSD);
   if (Number.isFinite(stored) && stored > 0) {
@@ -107,46 +125,46 @@ const validateShippingDetails = (input = {}) => {
 
   // Email format
   if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
-    throw new Error('Valid email is required');
+    throw new ClientValidationError('Valid email is required');
   }
 
   // Name (combined)
   if (!customerName) {
-    throw new Error('Full name is required');
+    throw new ClientValidationError('Full name is required');
   }
   if (!ENGLISH_SHIPPING_TEXT_REGEX.test(customerName) || !/[A-Za-z]/.test(customerName)) {
-    throw new Error('Shipping name must be in English only');
+    throw new ClientValidationError('Shipping name must be in English only');
   }
 
   // Country
   if (!country || !PRINTIFY_SUPPORTED_COUNTRIES.has(country)) {
-    throw new Error('A valid shipping country must be selected');
+    throw new ClientValidationError('A valid shipping country must be selected');
   }
 
   // Structured-mode validation (preferred path)
   const hasStructured = addressLine1 || city || postalCode || phone;
   if (hasStructured) {
-    if (!addressLine1) throw new Error('Street address is required');
-    if (!city) throw new Error('City is required');
-    if (!postalCode) throw new Error('Postal/ZIP code is required');
+    if (!addressLine1) throw new ClientValidationError('Street address is required');
+    if (!city) throw new ClientValidationError('City is required');
+    if (!postalCode) throw new ClientValidationError('Postal/ZIP code is required');
     if (!phone || !isValidPhone(phone)) {
-      throw new Error('A valid phone number is required (carriers may contact you for delivery)');
+      throw new ClientValidationError('A valid phone number is required (carriers may contact you for delivery)');
     }
     if (REGION_REQUIRED_COUNTRIES.has(country) && !region) {
-      throw new Error(`State/Region is required for ${country}`);
+      throw new ClientValidationError(`State/Region is required for ${country}`);
     }
 
     // English-only on address fields (Printify/carriers are not consistent with non-Latin)
     for (const [label, value] of [['Street address', addressLine1], ['Address line 2', addressLine2], ['City', city], ['State/Region', region]]) {
       if (value && (!ENGLISH_SHIPPING_TEXT_REGEX.test(value) || !/[A-Za-z0-9]/.test(value))) {
-        throw new Error(`${label} must be in English (Latin) characters only`);
+        throw new ClientValidationError(`${label} must be in English (Latin) characters only`);
       }
     }
   } else {
     // Legacy single-string address fallback (transitional — should be removed once frontend ships)
-    if (!legacyAddress) throw new Error('Shipping address is required');
+    if (!legacyAddress) throw new ClientValidationError('Shipping address is required');
     if (!ENGLISH_SHIPPING_TEXT_REGEX.test(legacyAddress) || !/[A-Za-z]/.test(legacyAddress)) {
-      throw new Error('Shipping address must be in English only');
+      throw new ClientValidationError('Shipping address must be in English only');
     }
   }
 
@@ -454,12 +472,12 @@ const resolveValidatedOrderItems = async (items = []) => {
     const quantity = Math.max(1, Number(rawItem && rawItem.quantity) || 1);
 
     if (!productId) {
-      throw new Error('Each order item must include a valid product id');
+      throw new ClientValidationError('Each order item must include a valid product id');
     }
 
     const product = await dbGetAsync(`SELECT id, title, price, priceUSD, printifyId, supplier_id FROM products WHERE id = ?`, [productId]);
     if (!product) {
-      throw new Error(`Product ${productId} was not found`);
+      throw new ClientValidationError(`Product ${productId} was not found`);
     }
 
     const selectedColor = rawItem && rawItem.selectedColor ? String(rawItem.selectedColor).trim() : null;
@@ -482,7 +500,7 @@ const resolveValidatedOrderItems = async (items = []) => {
       )) || null;
 
       if (!resolvedVariant) {
-        throw new Error(`Variant mismatch for product ${productId}: ${selectedColor || '-'} / ${selectedSize || '-'}`);
+        throw new ClientValidationError(`Variant mismatch for product ${productId}: ${selectedColor || '-'} / ${selectedSize || '-'}`);
       }
     }
 
@@ -1085,13 +1103,33 @@ app.post('/api/webhooks/payplus', express.raw({ type: 'application/json' }), asy
     return res.status(400).json({ received: false, error: 'Invalid JSON payload' });
   }
 
+  // KNOWN GAP (documented, not silently fixed): unlike /api/paypal/capture-order
+  // (which stores expected_payment_currency/expected_payment_amount at
+  // order-creation time and cross-verifies PayPal's own response against
+  // that snapshot before ever marking an order paid), this handler trusts
+  // `status === 'success'` alone -- it never cross-checks a webhook-reported
+  // amount/currency against orders.totalAmount. The webhook IS
+  // forgery-protected (HMAC-verified above with PAYPLUS_SECRET_KEY, timing-
+  // safe compare), so this is not an unauthenticated attacker surface, and
+  // /api/checkout/payplus already generates the payment page with a fixed,
+  // server-computed `amount` (never client-supplied) -- but it is still a
+  // real defense-in-depth gap relative to the PayPal flow's redundant
+  // check. Deliberately NOT "fixed" by guessing PayPlus's exact webhook
+  // amount/currency field names (not verified against PayPlus's own API
+  // docs) -- an incorrect guess could either silently no-op or break the
+  // one real flow if PayPlus is ever enabled (PAYPLUS_PAGE_UID is currently
+  // unset in production). Before enabling PayPlus, extend this handler to
+  // snapshot the expected amount/currency at /api/checkout/payplus
+  // creation time (mirroring expected_payment_currency/expected_payment_amount)
+  // and verify it here against PayPlus's actual documented webhook payload
+  // shape.
   const { transaction_uid, status, custom_field } = payload;
   const orderId = Number(custom_field); // We pass orderId in custom_field during PayPlus creation
 
   if (!orderId || Number.isNaN(orderId)) {
     return res.status(400).json({ received: false, error: 'Invalid or missing custom_field(orderId)' });
   }
-  
+
   if (status === 'success') {
     console.log(`[PayPlus Webhook] Payment successful for Order #${orderId}`);
     const eventId = transaction_uid || `payplus:${orderId}:${status}`;
@@ -2753,15 +2791,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
     });
   } catch (err) {
     console.error('PayPal create-order failed:', err.response?.data || err.message);
-    const errMessage = String(err.message || '');
-    const statusCode = errMessage.includes('Variant mismatch')
-      || errMessage.includes('valid product id')
-      || errMessage.includes('Shipping details')
-      || errMessage.includes('Shipping address must be in English only')
-      || errMessage.includes('Shipping name must be in English only')
-      || errMessage.includes('Valid email')
-      ? 400
-      : 500;
+    const statusCode = isClientValidationError(err) ? 400 : 500;
     return res.status(statusCode).json({ error: err.message || 'Failed to create PayPal order' });
   }
 });
@@ -2930,7 +2960,7 @@ app.post('/api/checkout/stripe', async (req, res) => {
     res.json({ success: true, paymentUrl: session.url });
   } catch (err) {
     console.error(err);
-    const statusCode = String(err.message || '').includes('Shipping') || String(err.message || '').includes('Valid email') ? 400 : 500;
+    const statusCode = isClientValidationError(err) ? 400 : 500;
     res.status(statusCode).json({ error: err.message || 'Failed to initialize Stripe checkout' });
   }
 });
@@ -3011,7 +3041,7 @@ app.post('/api/checkout/payplus', async (req, res) => {
     }
   } catch (err) {
     console.error('PayPlus checkout initialization error:', err.response?.data || err.message);
-    const statusCode = String(err.message || '').includes('Shipping') || String(err.message || '').includes('Valid email') ? 400 : 500;
+    const statusCode = isClientValidationError(err) ? 400 : 500;
     res.status(statusCode).json({ error: err.message || 'Failed to initialize PayPlus checkout' });
   }
 });
@@ -3215,7 +3245,9 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
             else if (attempts === 4) requiredDelayMinutes = 240;
             
             if (elapsedMinutes < requiredDelayMinutes) {
-              console.log(`⏭️ [Retry Gatekeeper] Skipping order #${order.id} (Email: ${order.customerEmail}). Delay of ${requiredDelayMinutes}m required, only ${Math.round(elapsedMinutes)}m elapsed.`);
+              // SECURITY: log the order id only, never customerEmail -- this
+              // runs on a schedule against real production orders.
+              console.log(`⏭️ [Retry Gatekeeper] Skipping order #${order.id}. Delay of ${requiredDelayMinutes}m required, only ${Math.round(elapsedMinutes)}m elapsed.`);
               continue;
             }
           }
