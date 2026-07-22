@@ -33,6 +33,7 @@ const { app, processPaidOrderFulfillment } = require('../index.js');
 const db = require('../db.js');
 const printify = require('../services/printify.js');
 const emailService = require('../services/emailService.js');
+const fulfillment = require('../services/fulfillment.js');
 const telegram = require('../services/telegram.js');
 
 const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
@@ -228,6 +229,78 @@ test('an email provider failure does not roll back payment or fulfillment, and d
     printifyMock.restore();
     emailMock.mock.restore();
   }
+});
+
+// ── Adversarial-review finding: does confirmation depend on fulfillment? ───
+//
+// processPaidOrderFulfillment() calls fulfillment.routeOrderToSupplier()
+// FIRST and sendOrderConfirmationEmail() SECOND, inside the SAME try block
+// -- if routing throws (a real, demonstrated behavior of the underlying
+// reconciliation code on e.g. a Printify outage or ambiguous-match
+// condition, not merely theoretical), the email is never sent on THAT
+// invocation, order_items are marked 'failed', and only an internal
+// Telegram alert fires. This proves the mitigating path actually works: the
+// scheduled runEmailRetryRecovery() sweep (backend/index.js, every 15
+// minutes via node-cron, unless DISABLE_BACKGROUND_JOBS is set) selects
+// purely on `orders.status = 'paid' AND emailSent = 0` -- it does NOT gate
+// on fulfillment_status at all, so the confirmation email still goes out
+// even though fulfillment remains permanently stuck in 'failed'. This
+// caps real-world customer impact at "confirmation delayed until the next
+// cron tick" (well under the 15-minute window on the very first retry,
+// since the backoff gate only applies once emailAttempts > 0), not
+// "confirmation permanently lost" -- provided the scheduled job is
+// actually running in production (DISABLE_BACKGROUND_JOBS must never be
+// left true there; this is an operational configuration risk worth
+// monitoring, not a code defect this test can prove either way).
+test('a fulfillment-routing failure skips the immediate confirmation email, but the scheduled retry sweep still recovers it regardless of fulfillment status', async () => {
+  const product = await seedPrintifyProduct({ price: 73 });
+  const axiosMock = installAxiosPostMock();
+  installPaypalHappyPathMocks(axiosMock);
+  const routeMock = mock.method(fulfillment, 'routeOrderToSupplier', async () => {
+    throw new Error('simulated Printify outage during routing');
+  });
+
+  let orderId;
+  try {
+    const createRes = await apiPost('/api/paypal/create-order', {
+      ...SYNTHETIC_SHIPPING,
+      items: [{ id: product.productId, quantity: 1, selectedColor: 'Black', selectedSize: 'M' }],
+      currency: 'ILS',
+    });
+    orderId = createRes.json.orderId;
+    const captureRes = await apiPost('/api/paypal/capture-order', { orderID: createRes.json.orderID });
+    assert.equal(captureRes.json.success, true, 'the payment/capture itself must succeed regardless of fulfillment');
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const orderAfterFailure = await dbGet(`SELECT status, emailSent, emailAttempts FROM orders WHERE id = ?`, [orderId]);
+    assert.equal(orderAfterFailure.status, 'paid', 'payment truth must be unaffected by a fulfillment routing failure');
+    assert.equal(orderAfterFailure.emailSent, 0, 'confirms the immediate email was indeed skipped by the routing throw');
+
+    const itemAfterFailure = await dbGet(`SELECT fulfillment_status FROM order_items WHERE orderId = ?`, [orderId]);
+    assert.equal(itemAfterFailure.fulfillment_status, 'failed', 'fulfillment must be recorded as failed, not silently ignored');
+  } finally {
+    axiosMock.restore();
+    routeMock.mock.restore();
+  }
+
+  // Now simulate the scheduled cron tick -- fulfillment is STILL stuck in
+  // 'failed' (routeOrderToSupplier is no longer mocked to throw, but
+  // nothing re-invokes it here; the point is proving the email path does
+  // not care either way) -- and confirm the retry sweep sends the
+  // confirmation email anyway.
+  const res = await fetch(`${baseUrl}/api/admin/retry-emails`, {
+    method: 'POST',
+    headers: { 'X-Admin-Secret': process.env.DRIP_ADMIN_SECRET, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force: true }),
+  });
+  assert.equal(res.status, 200, 'the retry-recovery admin route must exist and succeed');
+
+  const orderAfterRetry = await dbGet(`SELECT emailSent FROM orders WHERE id = ?`, [orderId]);
+  assert.equal(orderAfterRetry.emailSent, 1, 'the confirmation email must still be delivered on the next retry cycle even though fulfillment remains permanently failed -- confirmation does not depend on fulfillment success');
+
+  const itemStillFailed = await dbGet(`SELECT fulfillment_status FROM order_items WHERE orderId = ?`, [orderId]);
+  assert.equal(itemStillFailed.fulfillment_status, 'failed', 'sanity check: fulfillment genuinely never recovered on its own -- the email success above is not an artifact of fulfillment quietly having succeeded in the background');
 });
 
 test('email retry recovery succeeds on a later attempt for an order whose first email attempt failed', async () => {
