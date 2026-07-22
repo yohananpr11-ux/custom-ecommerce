@@ -1161,7 +1161,7 @@ function CustomerReviews({ t, locale }) {
   );
 }
 
-function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
+function ProductDetailPage({ productId, accessToken, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
@@ -1177,7 +1177,13 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    fetch(`${API_BASE}/api/products/${productId}`)
+    // accessToken is only ever present for a hidden manual-fulfillment test
+    // product's direct link (see ProductDetailRoute) -- omitted entirely
+    // for every ordinary product, so this never changes normal PDP requests.
+    const fetchUrl = accessToken
+      ? `${API_BASE}/api/products/${productId}?token=${encodeURIComponent(accessToken)}`
+      : `${API_BASE}/api/products/${productId}`;
+    fetch(fetchUrl)
       .then(res => {
         if (!res.ok) throw new Error('Product not found or failed to load');
         return res.json();
@@ -1241,7 +1247,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         showToast(GLOBAL_ERROR_TOAST_HE);
         setLoading(false);
       });
-  }, [productId]);
+  }, [productId, accessToken]);
 
   const productVariants = product && Array.isArray(product.variants) ? product.variants : [];
   const productSizes = product && Array.isArray(product.sizes) ? product.sizes : [];
@@ -1836,6 +1842,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 // Thin wrapper so /product/:productId can render ProductDetailPage with URL params
 function ProductDetailRoute(props) {
   const { productId } = useParams();
+  const location = useLocation();
   const parsed = Number(productId);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return (
@@ -1844,7 +1851,10 @@ function ProductDetailRoute(props) {
       </div>
     );
   }
-  return <ProductDetailPage productId={parsed} {...props} />;
+  // Only ever populated for a hidden manual-fulfillment test product's
+  // direct link (?token=...) -- absent for every ordinary product page.
+  const accessToken = new URLSearchParams(location.search).get('token') || undefined;
+  return <ProductDetailPage productId={parsed} accessToken={accessToken} {...props} />;
 }
 
 function MainApp() {
