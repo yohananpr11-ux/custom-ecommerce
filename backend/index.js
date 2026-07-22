@@ -1029,23 +1029,27 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
       return res.json({ received: true, ignored: true, reason: 'invalid_order_id' });
     }
 
-    const canProcess = await reserveWebhookEvent('stripe', stripeEventId);
-    if (!canProcess) {
-      return res.json({ received: true, duplicate: true, provider: 'stripe', eventId: stripeEventId });
-    }
-    
-    console.log(`[Stripe Webhook] Payment successful for Order #${orderId}`);
-
     const existingOrder = await dbGetAsync(`SELECT id, status FROM orders WHERE id = ?`, [orderId]);
     if (!existingOrder) {
       return res.json({ received: true, ignored: true, reason: 'order_not_found' });
     }
-
     if (existingOrder.status === 'paid') {
       return res.json({ received: true, duplicate: true, provider: 'stripe', reason: 'already_paid' });
     }
 
-    await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
+    console.log(`[Stripe Webhook] Payment successful for Order #${orderId}`);
+
+    // SECURITY: see the matching comment in /api/paypal/capture-order --
+    // this atomic UPDATE (not reserveWebhookEvent) is the authoritative,
+    // crash-safe claim on the paid transition, and must run first so a
+    // crash/restart right after it can never strand an already-charged
+    // Stripe payment behind an already-reserved, now-permanently-"duplicate"
+    // webhook event id.
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [orderId]);
+    if (!claim.changes) {
+      return res.json({ received: true, duplicate: true, provider: 'stripe', reason: 'already_paid' });
+    }
+    await reserveWebhookEvent('stripe', stripeEventId);
     const isILS = String(session.currency || '').toLowerCase() === 'ils';
     const amountText = isILS ? `₪${amount.toFixed(2)}` : `$${amount.toFixed(2)}`;
     await sendPaymentNotification({ provider: 'Stripe', orderId, amountText });
@@ -1131,23 +1135,28 @@ app.post('/api/webhooks/payplus', express.raw({ type: 'application/json' }), asy
   }
 
   if (status === 'success') {
-    console.log(`[PayPlus Webhook] Payment successful for Order #${orderId}`);
-    const eventId = transaction_uid || `payplus:${orderId}:${status}`;
-    const canProcess = await reserveWebhookEvent('payplus', eventId);
-    if (!canProcess) {
-      return res.json({ received: true, duplicate: true, provider: 'payplus' });
-    }
-
     const existingOrder = await dbGetAsync(`SELECT id, status FROM orders WHERE id = ?`, [orderId]);
     if (!existingOrder) {
       return res.json({ received: true, ignored: true, reason: 'order_not_found' });
     }
-
     if (existingOrder.status === 'paid') {
       return res.json({ received: true, duplicate: true, provider: 'payplus', reason: 'already_paid' });
     }
 
-    await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
+    console.log(`[PayPlus Webhook] Payment successful for Order #${orderId}`);
+    const eventId = transaction_uid || `payplus:${orderId}:${status}`;
+
+    // SECURITY: see the matching comment in /api/paypal/capture-order --
+    // this atomic UPDATE (not reserveWebhookEvent) is the authoritative,
+    // crash-safe claim on the paid transition, and must run first so a
+    // crash/restart right after it can never strand an already-charged
+    // PayPlus payment behind an already-reserved, now-permanently-
+    // "duplicate" webhook event id.
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [orderId]);
+    if (!claim.changes) {
+      return res.json({ received: true, duplicate: true, provider: 'payplus', reason: 'already_paid' });
+    }
+    await reserveWebhookEvent('payplus', eventId);
     const orderTotalAmount = await getOrderTotalAmount(orderId);
     await sendPaymentNotification({ provider: 'PayPlus/Grow', orderId, amountText: `₪${orderTotalAmount.toFixed(2)}` });
 
@@ -2872,13 +2881,27 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       });
     }
 
+    // SECURITY: the atomic UPDATE below (not reserveWebhookEvent) is the
+    // authoritative, crash-safe claim on this order's paid transition, and
+    // must run FIRST. The previous order -- reserve the webhook event, then
+    // separately UPDATE orders -- left a real crash window: a process
+    // restart between those two statements (Render redeploy, OOM, etc.)
+    // would permanently strand an already-captured PayPal payment, because
+    // the event would already be recorded as "processed" in
+    // processed_webhooks, so every future retry would be silently treated
+    // as a duplicate and the order would never transition to 'paid' or
+    // reach fulfillment. `UPDATE ... WHERE status != 'paid'` is a single
+    // SQLite statement -- inherently all-or-nothing -- so there is no
+    // window in which a crash can leave it half-applied, and it doubles as
+    // the concurrency guard for two overlapping captures of the same order.
     const captureId = capture?.id || orderID;
-    const canProcess = await reserveWebhookEvent('paypal', captureId);
-    if (!canProcess) {
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [localOrderId]);
+    if (!claim.changes) {
       return res.json({ success: true, duplicate: true, orderId: localOrderId });
     }
-
-    await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [localOrderId]);
+    // Best-effort bookkeeping only from here on -- the paid transition above
+    // already happened and is final; nothing below can undo it.
+    await reserveWebhookEvent('paypal', captureId);
 
     if (existingOrder.promoCode) {
       await consumeLeadPromoCode(existingOrder.promoCode);
