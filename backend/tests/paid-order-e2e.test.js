@@ -478,6 +478,21 @@ test('trust boundary: missing shipping details are rejected, no order created', 
   assert.equal(res.status, 400);
 });
 
+test('shipping boundary: an otherwise-valid but Printify-unsupported destination country is rejected before any order is created', async () => {
+  const product = await seedPrintifyProduct();
+  const ordersBefore = await dbGet(`SELECT COUNT(*) AS n FROM orders`);
+  const res = await apiPost('/api/paypal/create-order', {
+    ...SYNTHETIC_SHIPPING,
+    country: 'CN', // a real ISO code, deliberately not in PRINTIFY_SUPPORTED_COUNTRIES
+    items: [{ id: product.productId, quantity: 1, selectedColor: 'Black', selectedSize: 'M' }],
+    currency: 'ILS',
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.json.error, /valid shipping country/i);
+  const ordersAfter = await dbGet(`SELECT COUNT(*) AS n FROM orders`);
+  assert.equal(ordersAfter.n, ordersBefore.n, 'no order row of any status should be created for a rejected destination');
+});
+
 test('trust boundary: payment amount lower than expected is rejected, order never marked paid', async () => {
   const product = await seedPrintifyProduct({ price: 300 });
   const axiosMock = installAxiosPostMock();
