@@ -178,6 +178,81 @@ test('regression: a PayPal capture still reaches paid + fulfillment even if proc
   }
 });
 
+// ── Post-claim exception safety: a throw AFTER the atomic paid claim must
+// not misreport an already-successful payment as failed ───────────────────
+//
+// Adversarial-review finding: consumeLeadPromoCode() and the
+// telegram/email/fulfillment dispatch all run AFTER the atomic
+// `UPDATE orders SET status='paid'` claim but BEFORE the success response is
+// sent, with no surrounding try/catch of their own (aside from
+// sendPaymentNotification's internal one and telegram.notifyNewOrder's
+// `.catch(() => null)`). If any of that post-claim code throws
+// synchronously into the route's outer try/catch, the client would receive
+// a 500 "Failed to capture PayPal order" for a payment that was, in fact,
+// already correctly captured and marked paid -- a misleading response, even
+// though the order itself is not lost (recoverStalePaidFulfillments() would
+// still pick it up later since it scans by orders.status='paid').
+
+test('a throw in post-claim bookkeeping (consumeLeadPromoCode) does not misreport an already-paid capture as failed, and fulfillment still proceeds', async () => {
+  const { orderId, price, currency } = await seedPendingOrder({ price: 91 });
+  await dbRun(`UPDATE orders SET promoCode = ? WHERE id = ?`, ['CANARY10', orderId]);
+  const printifyMock = installPrintifySuccessMocks();
+
+  const fakePaypalOrderId = `PPO-POSTCLAIM-${orderId}`;
+  const captureId = `CAPTURE-${fakePaypalOrderId}`;
+
+  const axiosMock = mock.method(axios, 'post', async (url) => {
+    if (url.includes('/v1/oauth2/token')) return { data: { access_token: 'fake-token' } };
+    if (url.endsWith('/capture')) {
+      return {
+        data: {
+          status: 'COMPLETED',
+          purchase_units: [{
+            reference_id: String(orderId), custom_id: String(orderId),
+            payments: { captures: [{ id: captureId, amount: { currency_code: currency, value: String(price) } }] },
+          }],
+        },
+      };
+    }
+    throw new Error(`UNEXPECTED axios.post to ${url}`);
+  });
+
+  const originalDbRun = db.run.bind(db);
+  const dbRunMock = mock.method(db, 'run', function interceptedRun(sql, ...rest) {
+    if (typeof sql === 'string' && sql.includes('UPDATE leads SET is_used')) {
+      const callback = rest[rest.length - 1];
+      if (typeof callback === 'function') {
+        // Simulate a genuine, if rare, DB-layer failure (lock timeout,
+        // I/O error, etc.) in this one specific, otherwise-unprotected
+        // statement -- everything else still goes through the real driver.
+        callback.call({ lastID: 0, changes: 0 }, new Error('SIMULATED_DB_ERROR: leads table temporarily unavailable'));
+        return this;
+      }
+    }
+    return originalDbRun(sql, ...rest);
+  });
+
+  try {
+    const res = await fetch(`${baseUrl}/api/paypal/capture-order`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderID: fakePaypalOrderId }),
+    });
+    const json = await res.json();
+
+    const order = await dbGet(`SELECT status FROM orders WHERE id = ?`, [orderId]);
+    assert.equal(order.status, 'paid', 'the atomic claim must have already committed regardless of what happens afterward');
+
+    assert.equal(res.status, 200, `an already-successfully-captured payment must not be reported as a failure to the client merely because unrelated post-claim bookkeeping (promo code consumption) failed; got status ${res.status} body ${JSON.stringify(json)}`);
+    assert.equal(json.success, true);
+
+    await waitForFulfillmentSettled(orderId);
+  } finally {
+    axiosMock.mock.restore();
+    dbRunMock.mock.restore();
+    printifyMock.restore();
+  }
+});
+
 // ── Stripe: same regression, via the real webhook route ────────────────────
 
 test('regression: a Stripe webhook still reaches paid + fulfillment even if processed_webhooks already has a row for this exact event id', async () => {
