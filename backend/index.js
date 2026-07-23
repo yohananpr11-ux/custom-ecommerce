@@ -718,6 +718,31 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   const order = await dbGetAsync(`SELECT * FROM orders WHERE id = ?`, [orderId]);
   if (!order) return;
 
+  // SECURITY: once an order is genuinely paid, any manual-supplier
+  // product's stock reservation it holds must become PERMANENT, never
+  // reclaimable. Without this, reserveManualProductStock's reclaim query
+  // only looks at stock_reservation_expires_at -- once enough real time
+  // passes past the reservation window (default 15 minutes) after a
+  // successful, paid purchase, a later create-order attempt would
+  // "reclaim" stock that was actually already sold, restoring stock to 1
+  // and allowing a genuine second sale of a stock=1 item. Verified: without
+  // this block, a direct HTTP repro (create -> capture -> paid, backdate
+  // the lease, create again) returns success=true for the second create
+  // and a second paid order becomes possible. Clearing
+  // stock_reservation_expires_at (leaving stock itself at 0) is what makes
+  // the reclaim query permanently refuse to match this row again -- it
+  // requires stock_reservation_expires_at IS NOT NULL. Idempotent and
+  // cheap: safe to run on every call, including re-invocations for an
+  // already-fulfilled order.
+  if (order.status === 'paid') {
+    await dbRunAsync(
+      `UPDATE products SET stock_reservation_expires_at = NULL
+        WHERE supplier_id = 'manual'
+          AND id IN (SELECT productId FROM order_items WHERE orderId = ? AND supplier_id = 'manual')`,
+      [orderId]
+    ).catch((err) => console.error(`[processPaidOrderFulfillment] failed to permanently lock reservation for order #${orderId} (non-fatal, fulfillment continues):`, err.message));
+  }
+
   // Phase 3.4 (hardened): atomic claim via a single UPDATE...RETURNING. This
   // both claims eligible rows and reports exactly which ones THIS invocation
   // won, in one statement — SQLite serializes writers, so once one
@@ -1621,14 +1646,23 @@ app.get('/api/products/:id', (req, res) => {
       // this route resolves by bare sequential integer id with no other
       // filter — an ordinary sequential scan of small ids would otherwise
       // still find them. When the row carries an access_token_hash, this
-      // route requires a matching ?token= query param (SHA-256'd and
-      // compared with a timing-safe comparison against the stored hash,
+      // route requires a matching X-Access-Token request HEADER (SHA-256'd
+      // and compared with a timing-safe comparison against the stored hash,
       // never the raw token itself) and a still-valid expiration, or it
       // returns the exact same 404 shape as a genuinely missing product --
       // never a distinguishable "forbidden" response that would itself leak
       // the row's existence. The raw token is never logged.
+      //
+      // Deliberately a header, never a query string: a query string is
+      // routinely captured by server/proxy/CDN access logs by default (this
+      // route previously accepted ?token=, which this replaces outright --
+      // no query-string fallback is accepted, so an old-style link can never
+      // grant access even accidentally). The token's own transport-of-record
+      // to the browser is a URL FRAGMENT (#access=...), which browsers never
+      // send to any server at all -- see ProductDetailRoute in App.jsx.
       if (row.supplier_id === 'manual' && row.access_token_hash) {
-        const providedToken = typeof req.query.token === 'string' ? req.query.token : '';
+        const headerToken = req.get('x-access-token');
+        const providedToken = typeof headerToken === 'string' ? headerToken : '';
         const providedHash = providedToken ? crypto.createHash('sha256').update(providedToken).digest('hex') : '';
         const hashMatches = providedHash && timingSafeEqualStr(providedHash, row.access_token_hash);
         const notExpired = row.access_token_expires_at && new Date(row.access_token_expires_at).getTime() > Date.now();
@@ -1679,6 +1713,18 @@ app.get('/api/products/:id', (req, res) => {
       row.imagesByColor = imagesByColor;
       row.images = imageData.allImages;
       row.operationalNotice = buildOperationalNotice(row.variants, liveUpdatedAt);
+
+      // SECURITY: `SELECT *` above pulls access_token_hash/
+      // access_token_expires_at into `row` for every product (NULL for an
+      // ordinary one). Neither is ever needed by the frontend and neither
+      // should ever leave the server -- the hash is a one-way digest so
+      // this isn't directly exploitable, but there is no reason a
+      // successful, authenticated response (or any response at all) should
+      // hand internal auth-gate metadata to the client. Stripped
+      // unconditionally so this can never regress for a future field added
+      // to this same gating mechanism either.
+      delete row.access_token_hash;
+      delete row.access_token_expires_at;
 
       return res.json(row);
     } catch (error) {
@@ -2992,6 +3038,21 @@ app.post('/api/paypal/create-order', async (req, res) => {
         user_action: 'PAY_NOW',
       },
     });
+
+    // SECURITY/CORRECTNESS: createPayPalOrder returns response.data
+    // verbatim, with no shape validation of its own -- a malformed or
+    // unexpected PayPal response (missing `id`, wrong type) must not be
+    // silently trusted and reported to the client as success:true with a
+    // broken/undefined orderID, which the client could then hand to
+    // PayPal's own approval SDK in an inconsistent state. Treated
+    // identically to any other create-order failure: the reservation and
+    // order row already made by this point remain exactly as recoverable
+    // as any other crashed/failed attempt (see reserveManualProductStock's
+    // lazy reclaim) -- this only prevents a bad response from masquerading
+    // as a good one.
+    if (!paypalOrder || typeof paypalOrder.id !== 'string' || !paypalOrder.id) {
+      throw new Error('PayPal create-order returned an unexpected/malformed response (missing order id)');
+    }
 
     // Records PayPal's own order id against the local order so
     // capture-order can look the local order up directly from the

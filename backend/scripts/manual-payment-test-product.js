@@ -172,7 +172,13 @@ async function cmdCreate(db, flags) {
 
     console.log(`\n✅ Created product id=${productId}.`);
     console.log(`\n🔑 One-time direct link (copy this now — the raw token is never shown again and is never written to any log):`);
-    console.log(`   /product/${productId}?token=${rawToken}`);
+    // Deliberately a URL FRAGMENT (#access=...), not a query string --
+    // fragments are a client-side-only concept and are never sent to any
+    // server in any HTTP request, so this link cannot leak the token via a
+    // server/proxy/CDN access log even before the frontend gets a chance to
+    // strip it from the visible address bar. See ProductDetailRoute in
+    // frontend/src/App.jsx for the corresponding client-side handling.
+    console.log(`   /product/${productId}#access=${rawToken}`);
     console.log(`\nRun 'disable' after the single real payment test completes.`);
   } catch (err) {
     await run(db, 'ROLLBACK').catch(() => {});
