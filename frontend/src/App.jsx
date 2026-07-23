@@ -1180,10 +1180,14 @@ function ProductDetailPage({ productId, accessToken, addToCart, goToCheckout, sh
     // accessToken is only ever present for a hidden manual-fulfillment test
     // product's direct link (see ProductDetailRoute) -- omitted entirely
     // for every ordinary product, so this never changes normal PDP requests.
-    const fetchUrl = accessToken
-      ? `${API_BASE}/api/products/${productId}?token=${encodeURIComponent(accessToken)}`
-      : `${API_BASE}/api/products/${productId}`;
-    fetch(fetchUrl)
+    //
+    // SECURITY: sent via a dedicated request header, never a query string --
+    // a query string is routinely captured by server/proxy/CDN access logs
+    // (Render, Vercel, and generic Express logging middleware all log the
+    // full request path+query by default) even when application-level
+    // console.log calls are clean. A header is not part of the URL at all.
+    const fetchUrl = `${API_BASE}/api/products/${productId}`;
+    fetch(fetchUrl, accessToken ? { headers: { 'X-Access-Token': accessToken } } : undefined)
       .then(res => {
         if (!res.ok) throw new Error('Product not found or failed to load');
         return res.json();
@@ -1853,8 +1857,32 @@ function ProductDetailRoute(props) {
     );
   }
   // Only ever populated for a hidden manual-fulfillment test product's
-  // direct link (?token=...) -- absent for every ordinary product page.
-  const accessToken = new URLSearchParams(location.search).get('token') || undefined;
+  // direct link (#access=...) -- absent for every ordinary product page.
+  //
+  // SECURITY: deliberately a URL FRAGMENT, not a query string. A fragment
+  // is a client-side-only concept -- browsers never send it to the server
+  // in any HTTP request (not the initial page load, not any subsequent
+  // fetch), so it can never appear in a server/proxy/CDN access log, a
+  // Referer header sent to another origin, or an SSR/prerender request.
+  // Captured into a lazy useState initializer so it is read exactly once,
+  // on mount, before the effect below strips it from the visible URL --
+  // location.hash would already be empty on any later re-render otherwise.
+  const [accessToken] = useState(() => {
+    if (!location.hash) return undefined;
+    const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''));
+    return hashParams.get('access') || undefined;
+  });
+
+  useEffect(() => {
+    if (!location.hash) return;
+    // Strip the fragment from the visible URL/browser-history entry
+    // immediately -- it must never linger in the address bar, be
+    // copyable via "copy link", appear in a screen share, or be written
+    // into browser history at all beyond this single initial replace.
+    window.history.replaceState(null, '', location.pathname + location.search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return <ProductDetailPage productId={parsed} accessToken={accessToken} {...props} />;
 }
 
