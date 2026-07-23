@@ -70,8 +70,8 @@ test.after(async () => {
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort on Windows */ }
 });
 
-async function apiGet(pathname) {
-  const res = await fetch(`${baseUrl}${pathname}`);
+async function apiGet(pathname, headers) {
+  const res = await fetch(`${baseUrl}${pathname}`, headers ? { headers } : undefined);
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON (e.g. feed XML) */ }
@@ -463,31 +463,37 @@ test('GET /api/products/:id for the manual test product returns 404 without a to
   assert.equal(res.status, 404);
 });
 
-test('GET /api/products/:id for the manual test product returns 404 with a wrong/garbage token', async () => {
+test('GET /api/products/:id for the manual test product returns 404 with a wrong/garbage token header', async () => {
   const manual = await seedManualTestProduct();
-  const res = await apiGet(`/api/products/${manual.productId}?token=not-the-real-token-at-all`);
+  const res = await apiGet(`/api/products/${manual.productId}`, { 'X-Access-Token': 'not-the-real-token-at-all' });
   assert.equal(res.status, 404);
 });
 
-test('GET /api/products/:id for the manual test product returns 404 with a correctly-shaped but incorrect token', async () => {
+test('GET /api/products/:id for the manual test product returns 404 with a correctly-shaped but incorrect token header', async () => {
   const manual = await seedManualTestProduct();
   const wrongButSameShapeToken = crypto.randomBytes(32).toString('hex');
-  const res = await apiGet(`/api/products/${manual.productId}?token=${wrongButSameShapeToken}`);
+  const res = await apiGet(`/api/products/${manual.productId}`, { 'X-Access-Token': wrongButSameShapeToken });
   assert.equal(res.status, 404);
 });
 
 test('GET /api/products/:id for the manual test product returns 404 with an expired token', async () => {
   const manual = await seedManualTestProduct({ tokenTtlHours: -1 }); // already expired
-  const res = await apiGet(`/api/products/${manual.productId}?token=${manual.rawToken}`);
+  const res = await apiGet(`/api/products/${manual.productId}`, { 'X-Access-Token': manual.rawToken });
   assert.equal(res.status, 404);
+});
+
+test('GET /api/products/:id no longer accepts the token via ?token= query string at all -- only the X-Access-Token header grants access, closing the prior query-string transport', async () => {
+  const manual = await seedManualTestProduct();
+  const res = await apiGet(`/api/products/${manual.productId}?token=${manual.rawToken}`);
+  assert.equal(res.status, 404, 'the correct token in the query string must NOT grant access -- only the header does');
 });
 
 test('GET /api/products/:id sends Cache-Control: no-store for the token-gated product, on both success and failure, and identically for an ordinary product -- no cache-eligibility signal distinguishes the hidden product', async () => {
   const manual = await seedManualTestProduct();
   const ordinary = await seedRealPrintifyProduct();
 
-  const success = await apiGet(`/api/products/${manual.productId}?token=${manual.rawToken}`);
-  const failure = await apiGet(`/api/products/${manual.productId}?token=wrong`);
+  const success = await apiGet(`/api/products/${manual.productId}`, { 'X-Access-Token': manual.rawToken });
+  const failure = await apiGet(`/api/products/${manual.productId}`, { 'X-Access-Token': 'wrong' });
   const ordinaryRes = await apiGet(`/api/products/${ordinary.productId}`);
 
   assert.equal(success.headers.get('cache-control'), 'no-store');
@@ -495,9 +501,9 @@ test('GET /api/products/:id sends Cache-Control: no-store for the token-gated pr
   assert.equal(ordinaryRes.headers.get('cache-control'), 'no-store');
 });
 
-test('GET /api/products/:id for the manual test product succeeds with the correct, unexpired token', async () => {
+test('GET /api/products/:id for the manual test product succeeds with the correct, unexpired token header', async () => {
   const manual = await seedManualTestProduct();
-  const res = await apiGet(`/api/products/${manual.productId}?token=${manual.rawToken}`);
+  const res = await apiGet(`/api/products/${manual.productId}`, { 'X-Access-Token': manual.rawToken });
   assert.equal(res.status, 200);
   assert.equal(res.json.id, manual.productId);
 });
@@ -520,15 +526,16 @@ test('only a SHA-256 hash of the token is ever stored in the database, never the
   assert.equal(row.access_token_hash, manual.tokenHash);
 });
 
-test('the raw access token never appears in console output on either a successful or a failed token-gated request', async () => {
+test('the raw access token never appears in console output on either a successful or a failed token-gated request, header-based or query-string (rejected) alike', async () => {
   const manual = await seedManualTestProduct();
 
   const lines = await captureConsoleLogs(async () => {
-    await apiGet(`/api/products/${manual.productId}?token=${manual.rawToken}`);
-    await apiGet(`/api/products/${manual.productId}?token=wrong-token-value-entirely`);
+    await apiGet(`/api/products/${manual.productId}`, { 'X-Access-Token': manual.rawToken });
+    await apiGet(`/api/products/${manual.productId}`, { 'X-Access-Token': 'wrong-token-value-entirely' });
     await apiGet(`/api/products/${manual.productId}`);
+    await apiGet(`/api/products/${manual.productId}?token=${manual.rawToken}`);
   });
 
   const joined = lines.join('\n');
-  assert.doesNotMatch(joined, new RegExp(manual.rawToken), 'the raw token must never be logged, on success or failure');
+  assert.doesNotMatch(joined, new RegExp(manual.rawToken), 'the raw token must never be logged, on success, failure, or a rejected query-string attempt');
 });
