@@ -310,6 +310,14 @@ async function handleDropship(orderId, destination, items) {
 async function handleManual(orderId, items) {
   const ref = `MANUAL-${orderId}`;
   await writeItemStatus(items.map(i => i.id), 'submitted', ref);
+
+  // NOTE: stock for manual-supplier products is reserved atomically at
+  // CHECKOUT-CREATE time, not here (see reserveManualProductStock in
+  // index.js). A read-then-decrement at fulfillment time is too late to
+  // prevent two concurrent checkouts from both succeeding for a stock=1
+  // item -- fulfillment can run minutes behind capture. Decrementing again
+  // here would double-consume stock that create-order already reserved.
+
   await telegram.sendMessage(
     `📦 <b>Manual fulfillment required</b>\n` +
     `Order #${orderId} has ${items.length} item(s) with <code>supplier_id='manual'</code>.\n` +

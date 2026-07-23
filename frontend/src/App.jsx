@@ -1161,7 +1161,7 @@ function CustomerReviews({ t, locale }) {
   );
 }
 
-function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
+function ProductDetailPage({ productId, accessToken, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState('');
@@ -1177,7 +1177,17 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    fetch(`${API_BASE}/api/products/${productId}`)
+    // accessToken is only ever present for a hidden manual-fulfillment test
+    // product's direct link (see ProductDetailRoute) -- omitted entirely
+    // for every ordinary product, so this never changes normal PDP requests.
+    //
+    // SECURITY: sent via a dedicated request header, never a query string --
+    // a query string is routinely captured by server/proxy/CDN access logs
+    // (Render, Vercel, and generic Express logging middleware all log the
+    // full request path+query by default) even when application-level
+    // console.log calls are clean. A header is not part of the URL at all.
+    const fetchUrl = `${API_BASE}/api/products/${productId}`;
+    fetch(fetchUrl, accessToken ? { headers: { 'X-Access-Token': accessToken } } : undefined)
       .then(res => {
         if (!res.ok) throw new Error('Product not found or failed to load');
         return res.json();
@@ -1241,7 +1251,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         showToast(GLOBAL_ERROR_TOAST_HE);
         setLoading(false);
       });
-  }, [productId]);
+  }, [productId, accessToken]);
 
   const productVariants = product && Array.isArray(product.variants) ? product.variants : [];
   const productSizes = product && Array.isArray(product.sizes) ? product.sizes : [];
@@ -1557,6 +1567,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     
     addToCart({
       ...product,
+      accessToken,
       title: variantTitle.join(' - '),
       cartId: `${product.id}-${selectedColor}-${selectedSize}`,
       selectedColor,
@@ -1836,6 +1847,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 // Thin wrapper so /product/:productId can render ProductDetailPage with URL params
 function ProductDetailRoute(props) {
   const { productId } = useParams();
+  const location = useLocation();
   const parsed = Number(productId);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return (
@@ -1844,7 +1856,34 @@ function ProductDetailRoute(props) {
       </div>
     );
   }
-  return <ProductDetailPage productId={parsed} {...props} />;
+  // Only ever populated for a hidden manual-fulfillment test product's
+  // direct link (#access=...) -- absent for every ordinary product page.
+  //
+  // SECURITY: deliberately a URL FRAGMENT, not a query string. A fragment
+  // is a client-side-only concept -- browsers never send it to the server
+  // in any HTTP request (not the initial page load, not any subsequent
+  // fetch), so it can never appear in a server/proxy/CDN access log, a
+  // Referer header sent to another origin, or an SSR/prerender request.
+  // Captured into a lazy useState initializer so it is read exactly once,
+  // on mount, before the effect below strips it from the visible URL --
+  // location.hash would already be empty on any later re-render otherwise.
+  const [accessToken] = useState(() => {
+    if (!location.hash) return undefined;
+    const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''));
+    return hashParams.get('access') || undefined;
+  });
+
+  useEffect(() => {
+    if (!location.hash) return;
+    // Strip the fragment from the visible URL/browser-history entry
+    // immediately -- it must never linger in the address bar, be
+    // copyable via "copy link", appear in a screen share, or be written
+    // into browser history at all beyond this single initial replace.
+    window.history.replaceState(null, '', location.pathname + location.search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return <ProductDetailPage productId={parsed} accessToken={accessToken} {...props} />;
 }
 
 function MainApp() {
@@ -2403,7 +2442,20 @@ function MainApp() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('drip_street_cart', JSON.stringify(cart))
+      // The hidden manual-product test flow threads a one-time accessToken
+      // onto its cart item (see ProductDetailPage's addToCart call) so it
+      // survives navigation from the product page to checkout within the
+      // current session. It must never reach durable storage: localStorage
+      // persists indefinitely, well past this token's own short intended
+      // lifetime, and inconsistently with this feature's design elsewhere
+      // (hash-only storage, non-revealing 404s, timing-safe comparison).
+      // Stripped only from the persisted copy -- the in-memory `cart` state
+      // driving this session's own checkout submission is unaffected. If
+      // the page is reloaded before checkout completes, the rehydrated item
+      // simply has no token and checkout correctly rejects it, same as any
+      // other missing-token attempt.
+      const persistable = cart.map(({ accessToken, ...item }) => item);
+      localStorage.setItem('drip_street_cart', JSON.stringify(persistable))
     } catch (e) {
       console.error('Failed to save cart:', e)
     }

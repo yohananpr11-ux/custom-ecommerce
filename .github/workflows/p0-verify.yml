@@ -136,6 +136,11 @@ jobs:
           node --check backend/services/emailService.js
           node --check backend/services/telegram.js
           node --check backend/services/dropship.js
+          node --check backend/scripts/manual-payment-test-product.js
+          node --check backend/tests/manual-payment-test-product.test.js
+          node --check backend/tests/manual-product-checkout-security.test.js
+          node --check backend/scripts/manual-product-reservation-crash-harness.cjs
+          node --check backend/tests/manual-payment-test-product-script-e2e.test.js
 
       # --- Phase 1: admin-route auth. Fully self-contained -- spawns its own
       # child server instances on its own ports and deletes its own throwaway
@@ -234,7 +239,7 @@ jobs:
       # set on that spawn (a bare -r CLI flag does not propagate to spawned
       # children the way NODE_OPTIONS does) and asserts that child's own
       # guard log independently.
-      - name: Run paid-order end-to-end readiness tests (trust boundaries + idempotency + crash recovery + notification safety + PII audit + PayPlus inert-gap)
+      - name: Run paid-order end-to-end readiness tests (trust boundaries + idempotency + crash recovery + notification safety + PII audit + PayPlus inert-gap + manual test product + manual-product checkout token/stock-race security + operator script real-execution E2E)
         working-directory: backend
         env:
           NODE_ENV: test
@@ -247,7 +252,10 @@ jobs:
             tests/paid-order-notifications.test.js \
             tests/paid-order-crash-recovery.test.js \
             tests/paid-order-pii-audit.test.js \
-            tests/paid-order-payplus-inert.test.js
+            tests/paid-order-payplus-inert.test.js \
+            tests/manual-payment-test-product.test.js \
+            tests/manual-product-checkout-security.test.js \
+            tests/manual-payment-test-product-script-e2e.test.js
 
       - name: Assert paid-order end-to-end readiness guard log clean
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-paid-order-e2e.jsonl"
