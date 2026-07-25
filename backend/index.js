@@ -334,6 +334,33 @@ const BUNDLE_ITEM_COUNT = 3;
 const SHIPPING_COST_NIS = 29.90;
 const FREE_SHIPPING_THRESHOLD_NIS = 249;
 
+// Temporary, strictly scoped shipping exemption for exactly ONE hidden
+// manual-fulfillment test product (id=25) used for a single controlled
+// real PayPal payment test. Deliberately NOT "any manual-supplier
+// product" -- a future real manual-supplier product must still be charged
+// shipping exactly like any other product. Every one of these five
+// conditions must hold simultaneously:
+//   - the cart has exactly one line item (never a mixed cart);
+//   - that item's product id is exactly 25;
+//   - its quantity is exactly 1;
+//   - its supplier_id is exactly 'manual' (server-verified, never
+//     client-supplied);
+//   - its type is exactly 'local' (server-verified, never client-supplied).
+// If even one of these does not hold -- a second unit, a second line
+// item, any other product, a future manual product other than id 25 --
+// this returns false and shipping is computed exactly as it always was.
+// Accepts either resolveValidatedOrderItems's item shape ({id, ...}) or
+// an order_items-joined row shape ({productId, ...}); callers normalize
+// to {id, quantity, supplier_id, type} before calling this.
+const TEST_PRODUCT_SHIPPING_EXEMPT_ID = 25;
+const isSoloShippingExemptTestProductCart = (normalizedItems = []) => (
+  normalizedItems.length === 1
+  && Number(normalizedItems[0].id) === TEST_PRODUCT_SHIPPING_EXEMPT_ID
+  && Number(normalizedItems[0].quantity) === 1
+  && normalizedItems[0].supplier_id === 'manual'
+  && normalizedItems[0].type === 'local'
+);
+
 const expandOrderUnits = (items = []) => {
   const units = [];
   items.forEach((item) => {
@@ -387,9 +414,11 @@ const calculateOrderPricing = (items = [], couponCode = null) => {
     ? Math.max(0, subtotalAfterBundle * (Number(currentActiveCoupon.discount_pct) / 100))
     : 0;
   const subtotalAfterDiscounts = Math.max(0, subtotalAfterBundle - couponDiscount);
-  const shippingCost = subtotalAfterDiscounts >= FREE_SHIPPING_THRESHOLD_NIS
+  const shippingCost = isSoloShippingExemptTestProductCart(items)
     ? 0
-    : (subtotalAfterDiscounts > 0 ? SHIPPING_COST_NIS : 0);
+    : (subtotalAfterDiscounts >= FREE_SHIPPING_THRESHOLD_NIS
+        ? 0
+        : (subtotalAfterDiscounts > 0 ? SHIPPING_COST_NIS : 0));
   const totalAmount = Math.max(0, subtotalAfterDiscounts + shippingCost);
 
   return {
@@ -584,7 +613,7 @@ const resolveValidatedOrderItems = async (items = []) => {
       throw new ClientValidationError('Each order item must include a valid product id');
     }
 
-    const product = await dbGetAsync(`SELECT id, title, price, priceUSD, printifyId, supplier_id, stock, access_token_hash, access_token_expires_at FROM products WHERE id = ?`, [productId]);
+    const product = await dbGetAsync(`SELECT id, title, type, price, priceUSD, printifyId, supplier_id, stock, access_token_hash, access_token_expires_at FROM products WHERE id = ?`, [productId]);
     if (!product) {
       throw new ClientValidationError(`Product ${productId} was not found`);
     }
@@ -656,6 +685,10 @@ const resolveValidatedOrderItems = async (items = []) => {
       printifyVariantId: resolvedVariant ? resolvedVariant.printifyVariantId : null,
       // Phase 3: snapshot supplier_id at order-creation time
       supplier_id: product.supplier_id || 'printify',
+      // Trusted (never client-supplied) — see calculateOrderPricing's
+      // TEST_PRODUCT_SHIPPING_EXEMPT_ID check, which requires this exact
+      // server-verified value, not rawItem.type.
+      type: product.type || null,
     });
   }
 
@@ -810,7 +843,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
 
   const claimedIds = claimed.map((row) => row.id);
   const items = await dbAllAsync(
-    `SELECT oi.*, p.title, oi.supplier_id, p.printifyId AS printifyProductId, pv.printifyVariantId
+    `SELECT oi.*, p.title, p.type, oi.supplier_id, p.printifyId AS printifyProductId, pv.printifyVariantId
      FROM order_items oi
      LEFT JOIN products p ON p.id = oi.productId
      LEFT JOIN product_variants pv ON pv.id = oi.variantId
@@ -819,7 +852,16 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   );
 
   const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
-  const shipping = subtotal >= FREE_SHIPPING_THRESHOLD_NIS ? 0 : (subtotal > 0 ? SHIPPING_COST_NIS : 0);
+  // Mirrors calculateOrderPricing's own exemption exactly (see its
+  // comment) so the confirmation email's displayed shipping line matches
+  // what was actually charged, instead of showing a phantom shipping fee
+  // offset by a phantom "discount" to make the total balance.
+  const shippingExempt = isSoloShippingExemptTestProductCart(
+    items.map((item) => ({ id: item.productId, quantity: item.quantity, supplier_id: item.supplier_id, type: item.type }))
+  );
+  const shipping = shippingExempt
+    ? 0
+    : (subtotal >= FREE_SHIPPING_THRESHOLD_NIS ? 0 : (subtotal > 0 ? SHIPPING_COST_NIS : 0));
   const total = Number(order.totalAmount) || 0;
   const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
@@ -3628,7 +3670,7 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           await dbRunAsync(`UPDATE orders SET emailAttempts = ?, lastEmailAttemptAt = ? WHERE id = ?`, [nextAttemptCount, nowIso, order.id]).catch(() => null);
 
           const items = await dbAllAsync(
-            `SELECT oi.*, p.title, p.printifyId AS printifyProductId, pv.printifyVariantId
+            `SELECT oi.*, p.title, p.type, p.printifyId AS printifyProductId, pv.printifyVariantId
              FROM order_items oi
              LEFT JOIN products p ON p.id = oi.productId
              LEFT JOIN product_variants pv ON pv.id = oi.variantId
@@ -3641,7 +3683,15 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           }
 
           const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
-          const shipping = subtotal >= FREE_SHIPPING_THRESHOLD_NIS ? 0 : (subtotal > 0 ? SHIPPING_COST_NIS : 0);
+          // Mirrors calculateOrderPricing's own exemption exactly -- see
+          // its comment -- so a retried confirmation email's displayed
+          // shipping line matches what was actually charged.
+          const shippingExemptRetry = isSoloShippingExemptTestProductCart(
+            items.map((item) => ({ id: item.productId, quantity: item.quantity, supplier_id: item.supplier_id, type: item.type }))
+          );
+          const shipping = shippingExemptRetry
+            ? 0
+            : (subtotal >= FREE_SHIPPING_THRESHOLD_NIS ? 0 : (subtotal > 0 ? SHIPPING_COST_NIS : 0));
           const total = Number(order.totalAmount) || 0;
           const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
@@ -4005,4 +4055,4 @@ app.use((err, req, res, next) => {
 });
 
 // Exported for tests only (no effect when run directly via `node index.js`).
-module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment };
+module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing };
