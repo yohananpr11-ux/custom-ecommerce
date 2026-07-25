@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
+import { sanitizePayPalError, computePaypalForceRerenderKey } from './paypalFlowHelpers'
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom'
 import {
   initAnalytics,
@@ -2080,6 +2081,20 @@ function MainApp() {
   const amountToFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotalAfterLeadPromo);
   const freeShippingProgress = Math.min(100, (subtotalAfterLeadPromo / FREE_SHIPPING_THRESHOLD) * 100);
   const cartTotal = subtotalAfterLeadPromo + shippingCost;
+
+  // Freezes the PayPalButtons forceReRender key while a PayPal flow is
+  // in-flight (popup open / awaiting createOrder-capture), so a late-arriving
+  // async update (currency/exchange-rate geolocation, paypalClientId) can't
+  // destroy-and-remount the button underneath an already-open popup. Outside
+  // an active flow it always tracks the latest values, so a genuine cart or
+  // coupon change still updates the button normally.
+  const paypalForceRerenderKeyRef = useRef([currency, cartTotal, paypalClientId]);
+  paypalForceRerenderKeyRef.current = computePaypalForceRerenderKey(
+    paypalForceRerenderKeyRef.current,
+    [currency, cartTotal, paypalClientId],
+    isPayPalProcessing
+  );
+
   const amountToBundleThreshold = Math.max(0, BUNDLE_ITEM_PRICE - subtotalAfterLeadPromo);
   const bundleValueProgress = Math.min(100, (subtotalAfterLeadPromo / BUNDLE_ITEM_PRICE) * 100);
 
@@ -2933,6 +2948,7 @@ function MainApp() {
       throw new Error('Missing shipping details');
     }
 
+    console.log('[PAYPAL_CREATE_ORDER_REQUEST_START]');
     const response = await fetch(`${API_BASE}/api/paypal/create-order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2940,6 +2956,9 @@ function MainApp() {
     });
 
     const data = await response.json();
+    // Sanitized: HTTP status + whether a usable order id came back, never the
+    // request body, response payload, or any customer/shipping/payment data.
+    console.log('[PAYPAL_CREATE_ORDER_RESPONSE]', { status: response.status, hasOrderID: Boolean(data && data.orderID) });
     if (!response.ok || !data.orderID) {
       throw new Error(data.error || 'Failed to create PayPal order');
     }
@@ -3806,8 +3825,13 @@ function MainApp() {
                     <PayPalButtons
                       fundingSource="paypal"
                       style={{ layout: 'horizontal', label: 'checkout', height: 48, shape: 'rect' }}
-                      forceReRender={[currency, cartTotal, paypalClientId]}
+                      forceReRender={paypalForceRerenderKeyRef.current}
+                      onClick={() => {
+                        // Sanitized: no click-event payload logged, marker only.
+                        console.log('[PAYPAL_BUTTON_CLICKED]');
+                      }}
                       createOrder={async () => {
+                        console.log('[PAYPAL_CREATE_ORDER_CALLBACK_STARTED]');
                         setIsPayPalProcessing(true);
                         try {
                           const orderID = await createPayPalOrder();
@@ -3845,8 +3869,21 @@ function MainApp() {
                           setIsPayPalProcessing(false);
                         }
                       }}
-                      onError={() => {
+                      onCancel={() => {
+                        // Sanitized: fixed marker only, no order/customer data.
+                        console.warn('[PAYPAL_FLOW_CANCELLED]');
+                        showToast(locale === 'he'
+                          ? 'התשלום לא הושלם. לא בוצע חיוב. ניתן לנסות שוב.'
+                          : 'Payment was not completed. No charge was made. You can try again.');
+                        setIsPayPalProcessing(false);
+                      }}
+                      onError={(err) => {
+                        // Sanitized: safe name/message only (truncated), never
+                        // the raw PayPal error object, which can carry
+                        // order/customer-shaped data.
+                        console.error('[PAYPAL_FLOW_ERROR]', sanitizePayPalError(err));
                         showToast(GLOBAL_ERROR_TOAST_HE);
+                        setIsPayPalProcessing(false);
                       }}
                       disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
                     />
