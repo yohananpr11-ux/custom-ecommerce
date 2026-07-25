@@ -26,3 +26,41 @@ export const sanitizePayPalError = (err) => {
 export const computePaypalForceRerenderKey = (previousKey, currentKey, isProcessing) => (
   isProcessing ? previousKey : currentKey
 );
+
+// Builds a funding-source-suffixed diagnostic marker, e.g.
+// "[PAYPAL_BUTTON_CLICKED:card]" -- lets the same console markers used by
+// the single PayPal-wallet button distinguish which of the two
+// PayPalButtons instances (fundingSource="paypal" vs "card") produced them.
+export const buildPaypalMarker = (base, fundingSource) => `${base}:${fundingSource}`;
+
+// --- Shared cross-button payment-flow lock -------------------------------
+// PayPal wallet and PayPal card are two independent <PayPalButtons>
+// instances under one PayPalScriptProvider. Only one of them may have an
+// active flow (click -> createOrder -> onApprove) at a time; these three
+// pure functions decide the lock transitions given the ref's *current*
+// owner (null, "paypal", or "card") and the funding source asking. The
+// caller (App.jsx) does nothing but read/write the ref with these.
+
+// Called from onClick. Returns the lock owner that should result: this
+// funding source, if the lock is free or already owned by it; otherwise
+// the unchanged current owner (the click is a no-op -- another flow is
+// already active).
+export const resolvePaypalClickLockOwner = (currentOwner, fundingSource) => (
+  currentOwner && currentOwner !== fundingSource ? currentOwner : fundingSource
+);
+
+// Called at the very start of createOrder. True only when this funding
+// source currently holds the lock -- i.e. it's safe to proceed to the real
+// network call. False covers both "the other funding source holds it" and
+// "this one's own onClick never acquired it" (defense in depth).
+export const paypalCreateOrderMayProceed = (currentOwner, fundingSource) => (
+  currentOwner === fundingSource
+);
+
+// Called from every terminal-outcome handler (createOrder's catch,
+// onCancel, onError, onApprove's finally). Clears the lock only if this
+// funding source is still the current owner -- never releases a lock that
+// (in some edge case) is already held by a different, still-active flow.
+export const releasePaypalLockIfOwner = (currentOwner, fundingSource) => (
+  currentOwner === fundingSource ? null : currentOwner
+);
