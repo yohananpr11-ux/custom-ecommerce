@@ -2082,17 +2082,30 @@ function MainApp() {
   const freeShippingProgress = Math.min(100, (subtotalAfterLeadPromo / FREE_SHIPPING_THRESHOLD) * 100);
   const cartTotal = subtotalAfterLeadPromo + shippingCost;
 
+  // Marks a PayPal flow as active the instant the SDK acknowledges the
+  // click (see the PayPalButtons onClick prop below) -- a plain ref, not
+  // React state, so it is readable synchronously by the very next render
+  // regardless of what triggers that render. isPayPalProcessing (state)
+  // only flips true once our own createOrder callback starts, which the
+  // SDK invokes asynchronously *after* onClick -- a late-arriving update
+  // (currency/exchange-rate geolocation, paypalClientId) landing in that
+  // gap would otherwise still slip through. Cleared on every terminal
+  // outcome: onCancel, onError, createOrder's own rejection, and
+  // onApprove's completion -- never inside createOrder's success path,
+  // since the flow continues on into onApprove from there.
+  const paypalFlowActiveRef = useRef(false);
+
   // Freezes the PayPalButtons forceReRender key while a PayPal flow is
-  // in-flight (popup open / awaiting createOrder-capture), so a late-arriving
-  // async update (currency/exchange-rate geolocation, paypalClientId) can't
-  // destroy-and-remount the button underneath an already-open popup. Outside
-  // an active flow it always tracks the latest values, so a genuine cart or
-  // coupon change still updates the button normally.
+  // active (from the click through createOrder/onApprove), so a
+  // late-arriving async update can't destroy-and-remount the button
+  // underneath an already-open popup. Outside an active flow it always
+  // tracks the latest values, so a genuine cart or coupon change still
+  // updates the button normally.
   const paypalForceRerenderKeyRef = useRef([currency, cartTotal, paypalClientId]);
   paypalForceRerenderKeyRef.current = computePaypalForceRerenderKey(
     paypalForceRerenderKeyRef.current,
     [currency, cartTotal, paypalClientId],
-    isPayPalProcessing
+    paypalFlowActiveRef.current
   );
 
   const amountToBundleThreshold = Math.max(0, BUNDLE_ITEM_PRICE - subtotalAfterLeadPromo);
@@ -3827,6 +3840,12 @@ function MainApp() {
                       style={{ layout: 'horizontal', label: 'checkout', height: 48, shape: 'rect' }}
                       forceReRender={paypalForceRerenderKeyRef.current}
                       onClick={() => {
+                        // Synchronous and first: closes the window between the
+                        // SDK acknowledging the click and it invoking
+                        // createOrder (asynchronously, afterward), during
+                        // which a late geolocation/config update must not be
+                        // allowed to change the forceReRender key.
+                        paypalFlowActiveRef.current = true;
                         // Sanitized: no click-event payload logged, marker only.
                         console.log('[PAYPAL_BUTTON_CLICKED]');
                       }}
@@ -3837,6 +3856,9 @@ function MainApp() {
                           const orderID = await createPayPalOrder();
                           return orderID;
                         } catch (err) {
+                          // Flow ends here on rejection -- unlike the success
+                          // path, there is no onApprove to clear it later.
+                          paypalFlowActiveRef.current = false;
                           showToast(err.message || GLOBAL_ERROR_TOAST_HE);
                           throw err;
                         } finally {
@@ -3866,10 +3888,15 @@ function MainApp() {
                         } catch (err) {
                           showToast(err.message || GLOBAL_ERROR_TOAST_HE);
                         } finally {
+                          // Flow ends here either way -- successful capture
+                          // (navigating away) or a capture failure surfaced
+                          // via the catch above.
+                          paypalFlowActiveRef.current = false;
                           setIsPayPalProcessing(false);
                         }
                       }}
                       onCancel={() => {
+                        paypalFlowActiveRef.current = false;
                         // Sanitized: fixed marker only, no order/customer data.
                         console.warn('[PAYPAL_FLOW_CANCELLED]');
                         showToast(locale === 'he'
@@ -3878,6 +3905,7 @@ function MainApp() {
                         setIsPayPalProcessing(false);
                       }}
                       onError={(err) => {
+                        paypalFlowActiveRef.current = false;
                         // Sanitized: safe name/message only (truncated), never
                         // the raw PayPal error object, which can carry
                         // order/customer-shaped data.
