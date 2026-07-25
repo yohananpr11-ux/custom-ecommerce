@@ -2,7 +2,14 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
-import { sanitizePayPalError, computePaypalForceRerenderKey } from './paypalFlowHelpers'
+import {
+  sanitizePayPalError,
+  computePaypalForceRerenderKey,
+  buildPaypalMarker,
+  resolvePaypalClickLockOwner,
+  paypalCreateOrderMayProceed,
+  releasePaypalLockIfOwner,
+} from './paypalFlowHelpers'
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom'
 import {
   initAnalytics,
@@ -162,7 +169,11 @@ const translations = {
     shipping_name_english_only: "שם מלא חייב להיות באנגלית בלבד.",
     shipping_address_english_only: "כתובת משלוח חייבת להיות באנגלית בלבד כדי שהמשלוח יגיע נכון.",
     payment_method: "בחר תשלום",
-    payment_card_apple_google: "כרטיס אשראי / Apple Pay / Google Pay",
+    payment_card_generic: "כרטיס אשראי",
+    payment_paypal_wallet_label: "שלם עם PayPal",
+    payment_paypal_card_label: "שלם בכרטיס אשראי או חיוב",
+    payment_paypal_card_secure_note: "פרטי הכרטיס מוזנים ומעובדים בצורה מאובטחת על ידי PayPal ואינם נשמרים באתר.",
+    payment_paypal_card_lock_error: "תשלום אחר כבר בתהליך. נסה שוב בעוד רגע.",
     payment_card_bit: "כרטיס אשראי / ביט",
     payment_stripe: "כרטיס בינלאומי (Stripe)",
     payment_paypal: "PayPal",
@@ -299,7 +310,11 @@ const translations = {
     shipping_name_english_only: "Full name must be entered in English.",
     shipping_address_english_only: "Shipping address must be entered in English so Printify can deliver correctly.",
     payment_method: "Payment Method",
-    payment_card_apple_google: "Credit Card / Apple Pay / Google Pay",
+    payment_card_generic: "Credit Card",
+    payment_paypal_wallet_label: "Pay with PayPal",
+    payment_paypal_card_label: "Pay with credit or debit card",
+    payment_paypal_card_secure_note: "Card details are securely entered and processed by PayPal and are not stored by this website.",
+    payment_paypal_card_lock_error: "Another payment is already in progress. Please try again in a moment.",
     payment_card_bit: "Card Payment",
     payment_stripe: "Stripe ($)",
     payment_paypal: "PayPal",
@@ -2082,18 +2097,24 @@ function MainApp() {
   const freeShippingProgress = Math.min(100, (subtotalAfterLeadPromo / FREE_SHIPPING_THRESHOLD) * 100);
   const cartTotal = subtotalAfterLeadPromo + shippingCost;
 
-  // Marks a PayPal flow as active the instant the SDK acknowledges the
-  // click (see the PayPalButtons onClick prop below) -- a plain ref, not
-  // React state, so it is readable synchronously by the very next render
-  // regardless of what triggers that render. isPayPalProcessing (state)
-  // only flips true once our own createOrder callback starts, which the
-  // SDK invokes asynchronously *after* onClick -- a late-arriving update
+  // Shared cross-button payment-flow lock for the two <PayPalButtons>
+  // instances below (fundingSource="paypal" and "card"). Holds null (no
+  // active flow) or the funding source that currently owns it -- a plain
+  // ref, not React state, so it is readable synchronously by the very next
+  // render regardless of what triggers that render, and so createOrder can
+  // refuse a concurrent second order from the other button before any
+  // network call. Set the instant the SDK acknowledges a click (see the
+  // PayPalButtons onClick prop below); isPayPalProcessing (state) only
+  // flips true once our own createOrder callback starts, which the SDK
+  // invokes asynchronously *after* onClick -- a late-arriving update
   // (currency/exchange-rate geolocation, paypalClientId) landing in that
   // gap would otherwise still slip through. Cleared on every terminal
   // outcome: onCancel, onError, createOrder's own rejection, and
   // onApprove's completion -- never inside createOrder's success path,
-  // since the flow continues on into onApprove from there.
-  const paypalFlowActiveRef = useRef(false);
+  // since the flow continues on into onApprove from there. See
+  // resolvePaypalClickLockOwner / paypalCreateOrderMayProceed /
+  // releasePaypalLockIfOwner in paypalFlowHelpers.js for the transitions.
+  const paypalFlowActiveRef = useRef(null);
 
   // Freezes the PayPalButtons forceReRender key while a PayPal flow is
   // active (from the click through createOrder/onApprove), so a
@@ -2105,7 +2126,7 @@ function MainApp() {
   paypalForceRerenderKeyRef.current = computePaypalForceRerenderKey(
     paypalForceRerenderKeyRef.current,
     [currency, cartTotal, paypalClientId],
-    paypalFlowActiveRef.current
+    Boolean(paypalFlowActiveRef.current)
   );
 
   const amountToBundleThreshold = Math.max(0, BUNDLE_ITEM_PRICE - subtotalAfterLeadPromo);
@@ -2950,7 +2971,11 @@ function MainApp() {
     };
   };
 
-  const createPayPalOrder = async () => {
+  // Shared by both PayPalButtons instances (fundingSource="paypal" and
+  // "card") -- fundingSource here is only for the diagnostic markers below;
+  // the request itself, validation, and server-side pricing are identical
+  // for either funding source.
+  const createPayPalOrder = async (fundingSource) => {
     if (hasInvalidVariant) {
       showToast(t('variant_error_toast'));
       throw new Error('Variant mismatch');
@@ -2961,7 +2986,7 @@ function MainApp() {
       throw new Error('Missing shipping details');
     }
 
-    console.log('[PAYPAL_CREATE_ORDER_REQUEST_START]');
+    console.log(buildPaypalMarker('PAYPAL_CREATE_ORDER_REQUEST_START', fundingSource));
     const response = await fetch(`${API_BASE}/api/paypal/create-order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2971,7 +2996,7 @@ function MainApp() {
     const data = await response.json();
     // Sanitized: HTTP status + whether a usable order id came back, never the
     // request body, response payload, or any customer/shipping/payment data.
-    console.log('[PAYPAL_CREATE_ORDER_RESPONSE]', { status: response.status, hasOrderID: Boolean(data && data.orderID) });
+    console.log(buildPaypalMarker('PAYPAL_CREATE_ORDER_RESPONSE', fundingSource), { status: response.status, hasOrderID: Boolean(data && data.orderID) });
     if (!response.ok || !data.orderID) {
       throw new Error(data.error || 'Failed to create PayPal order');
     }
@@ -2993,6 +3018,102 @@ function MainApp() {
 
     return data;
   };
+
+  // One shared callback implementation for both PayPalButtons instances
+  // (fundingSource="paypal" and "card") -- avoids two copies of this logic
+  // that could silently drift. Only the diagnostic markers and the shared
+  // cross-button lock transitions are parameterized by fundingSource;
+  // validation, createOrder/capturePayPalOrder, amount/currency handling,
+  // and cart-clearing-only-after-verified-success are identical either way.
+  const buildPaypalFundingCallbacks = (fundingSource) => ({
+    onClick: () => {
+      const nextOwner = resolvePaypalClickLockOwner(paypalFlowActiveRef.current, fundingSource);
+      if (nextOwner !== fundingSource) {
+        // Another funding source's flow is already active -- this click is
+        // a no-op; do not touch the lock or log it as a real attempt.
+        return;
+      }
+      // Synchronous and first: closes the window between the SDK
+      // acknowledging the click and it invoking createOrder (asynchronously,
+      // afterward), during which a late geolocation/config update must not
+      // change the forceReRender key, and during which the OTHER button
+      // must not be able to start a second, concurrent order.
+      paypalFlowActiveRef.current = nextOwner;
+      // Sanitized: no click-event payload logged, marker only.
+      console.log(buildPaypalMarker('PAYPAL_BUTTON_CLICKED', fundingSource));
+    },
+    createOrder: async () => {
+      console.log(buildPaypalMarker('PAYPAL_CREATE_ORDER_CALLBACK_STARTED', fundingSource));
+      if (!paypalCreateOrderMayProceed(paypalFlowActiveRef.current, fundingSource)) {
+        // Defense in depth, independent of onClick's own (best-effort)
+        // guard above: refuses before ever reaching the real network call
+        // if this funding source does not currently hold the shared lock.
+        const lockErr = new Error(t('payment_paypal_card_lock_error'));
+        showToast(lockErr.message);
+        throw lockErr;
+      }
+      setIsPayPalProcessing(true);
+      try {
+        const orderID = await createPayPalOrder(fundingSource);
+        return orderID;
+      } catch (err) {
+        // Flow ends here on rejection -- unlike the success path, there is
+        // no onApprove to clear it later.
+        paypalFlowActiveRef.current = releasePaypalLockIfOwner(paypalFlowActiveRef.current, fundingSource);
+        showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+        throw err;
+      } finally {
+        setIsPayPalProcessing(false);
+      }
+    },
+    onApprove: async (data) => {
+      setIsPayPalProcessing(true);
+      try {
+        await capturePayPalOrder(data.orderID);
+        // Capture the order snapshot BEFORE clearing the cart so the
+        // Purchase pixel event on /success can report real value.
+        try {
+          sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
+            orderId: data.orderID,
+            amount: Number(Number(cartTotal || 0).toFixed(2)),
+            currency,
+            method: 'paypal',
+            fundingSource,
+            createdAt: new Date().toISOString(),
+            itemCount: cart.length,
+          }));
+        } catch { /* sessionStorage unavailable in private mode */ }
+        localStorage.removeItem('drip_street_cart');
+        setCart([]);
+        showToast(locale === 'he' ? 'התשלום בוצע בהצלחה! 🎉' : 'Payment Successful! 🎉');
+        navigate('/success');
+      } catch (err) {
+        showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+      } finally {
+        // Flow ends here either way -- successful capture (navigating away)
+        // or a capture failure surfaced via the catch above.
+        paypalFlowActiveRef.current = releasePaypalLockIfOwner(paypalFlowActiveRef.current, fundingSource);
+        setIsPayPalProcessing(false);
+      }
+    },
+    onCancel: () => {
+      paypalFlowActiveRef.current = releasePaypalLockIfOwner(paypalFlowActiveRef.current, fundingSource);
+      // Sanitized: fixed marker only, no order/customer data.
+      console.warn(buildPaypalMarker('PAYPAL_FLOW_CANCELLED', fundingSource));
+      showToast(locale === 'he'
+        ? 'התשלום לא הושלם. לא בוצע חיוב. ניתן לנסות שוב.'
+        : 'Payment was not completed. No charge was made. You can try again.');
+      setIsPayPalProcessing(false);
+    },
+    onError: (err) => {
+      paypalFlowActiveRef.current = releasePaypalLockIfOwner(paypalFlowActiveRef.current, fundingSource);
+      // Sanitized: safe name/message only (truncated), never the raw PayPal
+      // error object, which can carry order/customer-shaped data.
+      console.error(buildPaypalMarker('PAYPAL_FLOW_ERROR', fundingSource), sanitizePayPalError(err));
+      showToast(GLOBAL_ERROR_TOAST_HE);
+      setIsPayPalProcessing(false);
+    },
+  });
 
   // Generate a short, URL-safe order ID. crypto.randomUUID is available in all
   // modern browsers; we keep a tiny fallback for old engines just in case.
@@ -3782,12 +3903,10 @@ function MainApp() {
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'stripe' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
                   <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
                   <span style={{ flex: 1 }}>
-                    <div>{t('payment_card_apple_google')}</div>
+                    <div>{t('payment_card_generic')}</div>
                     <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
                       <span style={{ padding: '2px 6px', background: '#1a1f71', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>VISA</span>
                       <span style={{ padding: '2px 6px', background: '#eb001b', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>MC</span>
-                      <span style={{ padding: '2px 6px', background: '#000', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>Pay</span>
-                      <span style={{ padding: '2px 6px', background: '#4285f4', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>G Pay</span>
                     </div>
                   </span>
                 </label>
@@ -3801,7 +3920,7 @@ function MainApp() {
               {isPayPlusAvailable && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'payplus' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
                   <input type="radio" name="payment" value="payplus" checked={paymentMethod === 'payplus'} onChange={() => setPaymentMethod('payplus')} />
-                  <span>{t('payment_card_apple_google')}</span>
+                  <span>{t('payment_card_generic')}</span>
                 </label>
               )}
             </div>
@@ -3834,87 +3953,30 @@ function MainApp() {
                   }}>
                     ⚡ {locale === 'he' ? 'קופת תשלום אקספרס מאובטחת' : 'Secure Express Checkout'} ⚡
                   </div>
-                  <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card,credit,paylater,venmo' }}>
+                  <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'credit,paylater,venmo' }}>
+                    <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                      {t('payment_paypal_wallet_label')}
+                    </div>
                     <PayPalButtons
                       fundingSource="paypal"
                       style={{ layout: 'horizontal', label: 'checkout', height: 48, shape: 'rect' }}
                       forceReRender={paypalForceRerenderKeyRef.current}
-                      onClick={() => {
-                        // Synchronous and first: closes the window between the
-                        // SDK acknowledging the click and it invoking
-                        // createOrder (asynchronously, afterward), during
-                        // which a late geolocation/config update must not be
-                        // allowed to change the forceReRender key.
-                        paypalFlowActiveRef.current = true;
-                        // Sanitized: no click-event payload logged, marker only.
-                        console.log('[PAYPAL_BUTTON_CLICKED]');
-                      }}
-                      createOrder={async () => {
-                        console.log('[PAYPAL_CREATE_ORDER_CALLBACK_STARTED]');
-                        setIsPayPalProcessing(true);
-                        try {
-                          const orderID = await createPayPalOrder();
-                          return orderID;
-                        } catch (err) {
-                          // Flow ends here on rejection -- unlike the success
-                          // path, there is no onApprove to clear it later.
-                          paypalFlowActiveRef.current = false;
-                          showToast(err.message || GLOBAL_ERROR_TOAST_HE);
-                          throw err;
-                        } finally {
-                          setIsPayPalProcessing(false);
-                        }
-                      }}
-                      onApprove={async (data) => {
-                        setIsPayPalProcessing(true);
-                        try {
-                          await capturePayPalOrder(data.orderID);
-                          // Capture the order snapshot BEFORE clearing the cart so the
-                          // Purchase pixel event on /success can report real value.
-                          try {
-                            sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
-                              orderId: data.orderID,
-                              amount: Number(Number(cartTotal || 0).toFixed(2)),
-                              currency,
-                              method: 'paypal',
-                              createdAt: new Date().toISOString(),
-                              itemCount: cart.length,
-                            }));
-                          } catch { /* sessionStorage unavailable in private mode */ }
-                          localStorage.removeItem('drip_street_cart');
-                          setCart([]);
-                          showToast(locale === 'he' ? 'התשלום בוצע בהצלחה! 🎉' : 'Payment Successful! 🎉');
-                          navigate('/success');
-                        } catch (err) {
-                          showToast(err.message || GLOBAL_ERROR_TOAST_HE);
-                        } finally {
-                          // Flow ends here either way -- successful capture
-                          // (navigating away) or a capture failure surfaced
-                          // via the catch above.
-                          paypalFlowActiveRef.current = false;
-                          setIsPayPalProcessing(false);
-                        }
-                      }}
-                      onCancel={() => {
-                        paypalFlowActiveRef.current = false;
-                        // Sanitized: fixed marker only, no order/customer data.
-                        console.warn('[PAYPAL_FLOW_CANCELLED]');
-                        showToast(locale === 'he'
-                          ? 'התשלום לא הושלם. לא בוצע חיוב. ניתן לנסות שוב.'
-                          : 'Payment was not completed. No charge was made. You can try again.');
-                        setIsPayPalProcessing(false);
-                      }}
-                      onError={(err) => {
-                        paypalFlowActiveRef.current = false;
-                        // Sanitized: safe name/message only (truncated), never
-                        // the raw PayPal error object, which can carry
-                        // order/customer-shaped data.
-                        console.error('[PAYPAL_FLOW_ERROR]', sanitizePayPalError(err));
-                        showToast(GLOBAL_ERROR_TOAST_HE);
-                        setIsPayPalProcessing(false);
-                      }}
                       disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
+                      {...buildPaypalFundingCallbacks('paypal')}
                     />
+                    <div style={{ fontSize: '11px', color: '#888', margin: '16px 0 6px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                      {t('payment_paypal_card_label')}
+                    </div>
+                    <PayPalButtons
+                      fundingSource="card"
+                      style={{ layout: 'horizontal', label: 'pay', height: 48, shape: 'rect' }}
+                      forceReRender={paypalForceRerenderKeyRef.current}
+                      disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
+                      {...buildPaypalFundingCallbacks('card')}
+                    />
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '8px', lineHeight: 1.4 }}>
+                      {t('payment_paypal_card_secure_note')}
+                    </div>
                   </PayPalScriptProvider>
                   <div style={{
                     marginTop: '16px',
