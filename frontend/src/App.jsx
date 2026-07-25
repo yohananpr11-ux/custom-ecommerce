@@ -34,6 +34,21 @@ const ABANDONED_CART_FINGERPRINT_KEY = 'drip_street_abandoned_cart_fingerprint_v
 const CHECKOUT_COMPLETED_KEY = 'drip_street_checkout_completed_v1';
 const SHIPPING_COST = 29.90;
 const FREE_SHIPPING_THRESHOLD = 249;
+// Temporary, strictly scoped shipping exemption for exactly ONE hidden
+// manual-fulfillment test product (id=25) -- mirrors backend/index.js's
+// isSoloShippingExemptTestProductCart exactly (see its comment there for
+// the full rationale). Deliberately NOT "any manual-supplier product":
+// every one of these five conditions must hold, or shipping is computed
+// exactly as it always was for every normal product and every future
+// manual-supplier product other than id 25.
+const TEST_PRODUCT_SHIPPING_EXEMPT_ID = 25;
+const isSoloShippingExemptTestProductCart = (cartItems = []) => (
+  cartItems.length === 1
+  && Number(cartItems[0].id) === TEST_PRODUCT_SHIPPING_EXEMPT_ID
+  && Number(cartItems[0].quantity) === 1
+  && cartItems[0].supplier_id === 'manual'
+  && cartItems[0].type === 'local'
+);
 const BUNDLE_ITEM_PRICE = 229;
 const BUNDLE_ITEM_COUNT = 3;
 const JEWELRY_UPSELL_MOCK = [
@@ -2059,7 +2074,9 @@ function MainApp() {
   const leadPromoDiscount = activeLeadPromo ? subtotalAfterDiscounts * 0.10 : 0;
   const subtotalAfterLeadPromo = Math.max(0, subtotalAfterDiscounts - leadPromoDiscount);
   const isFreeShipping = subtotalAfterLeadPromo >= FREE_SHIPPING_THRESHOLD;
-  const shippingCost = isFreeShipping ? 0 : (subtotalAfterLeadPromo > 0 ? SHIPPING_COST : 0);
+  const shippingCost = isSoloShippingExemptTestProductCart(cart)
+    ? 0
+    : (isFreeShipping ? 0 : (subtotalAfterLeadPromo > 0 ? SHIPPING_COST : 0));
   const amountToFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotalAfterLeadPromo);
   const freeShippingProgress = Math.min(100, (subtotalAfterLeadPromo / FREE_SHIPPING_THRESHOLD) * 100);
   const cartTotal = subtotalAfterLeadPromo + shippingCost;
