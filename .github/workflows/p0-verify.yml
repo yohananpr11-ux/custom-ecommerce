@@ -121,6 +121,7 @@ jobs:
           node --check backend/tests/legacy-schema-migration.test.js
           node --check backend/tests/local-product-preservation.test.js
           node --check backend/tests/observability.test.js
+          node --check backend/tests/cors-allowed-origins.test.js
           node --check backend/services/fulfillment-recovery.js
           node --check backend/services/printify.js
           node --check backend/scripts/recovery-restart-harness.cjs
@@ -217,6 +218,28 @@ jobs:
       #   NETWORK GUARD: CLEAN
       - name: Assert P0 backend unit-test guard log clean
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-nodetest.jsonl"
+
+      # Kept as its own step rather than folded into the group above: that
+      # group is a multi-file `node --test` invocation, which runs its files
+      # concurrently against each other; adding this file to it was
+      # empirically observed (locally, repeatedly) to intermittently trip a
+      # pre-existing, unrelated startup-migration race in other files in
+      # that group (index.js does not await db.js's migration Promise.all
+      # before app.listen() -- a known, already-documented gap elsewhere in
+      # this codebase, out of scope to fix here). Isolating this file
+      # avoids adding load to that already-marginal group. Same pattern as
+      # the standalone network-guard-negative-control.test.js step below.
+      - name: Run P0 backend unit tests (CORS allowlist)
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          HERMETIC_TEST_MODE: "true"
+          DISABLE_BACKGROUND_JOBS: "true"
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-cors.jsonl
+        run: node -r ./scripts/network-guard.cjs --test tests/cors-allowed-origins.test.js
+
+      - name: Assert CORS allowlist test guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-cors.jsonl"
 
       # --- Phase 1c: paid-order end-to-end readiness suite. Boots the real
       # exported Express app (app.listen(0) on an ephemeral port) and

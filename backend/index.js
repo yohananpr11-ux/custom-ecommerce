@@ -281,6 +281,12 @@ const API_BASE_URL = normalizeUrl(
 
 const CORS_ALLOWED_ORIGINS = Array.from(new Set([
   FRONTEND_BASE_URL,
+  // JOAKIM domain (purchased 2026-07-26, not yet connected to Vercel/DNS) —
+  // added alongside the old Drip Street origins during the migration
+  // window; see the domain-migration plan for when the old ones can be
+  // removed. Exact-match strings only, no wildcard.
+  'https://shopjoakim.com',
+  'https://www.shopjoakim.com',
   'https://dripstreetshop.com',
   'https://www.dripstreetshop.com',
   'http://localhost:5173',
