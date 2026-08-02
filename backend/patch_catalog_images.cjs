@@ -9,10 +9,11 @@ const sqlite3 = require('sqlite3').verbose();
 
 const DB_PATH = path.resolve(__dirname, 'ecommerce.db');
 
+// Dashboard-sourced URLs — owner-verified, do not auto-replace
 const PATCHES = [
   {
     id: 16,
-    imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
+    imageUrl: 'https://cf.cjdropshipping.com/quick/product/6d882da2-44a2-450c-95cc-2778c9f5990c.jpg',
   },
   {
     id: 17,
@@ -22,6 +23,19 @@ const PATCHES = [
     id: 18,
     imageUrl: 'https://cf.cjdropshipping.com/quick/product/88af505d-2f06-4dc1-a84b-6cc0530a5c89.jpg',
     spu: 'CJLX2853160',
+  },
+  {
+    id: 19,
+    imageUrl: 'https://cf.cjdropshipping.com/4187ed51-dcee-488c-b5ac-b8c0ef366dc0.jpg',
+    colorVariants: [
+      { color: 'Silver', colorHex: '#C0C0C0', imageUrl: 'https://cf.cjdropshipping.com/4187ed51-dcee-488c-b5ac-b8c0ef366dc0.jpg' },
+      { color: 'Gold',   colorHex: '#C8A900', imageUrl: 'https://cf.cjdropshipping.com/abdd9fb4-c597-4452-9836-6a16d70cfca0.jpg' },
+      { color: 'Black',  colorHex: '#1A1A1A', imageUrl: 'https://cf.cjdropshipping.com/2054/4883093832835.jpg' },
+    ],
+  },
+  {
+    id: 20,
+    imageUrl: 'https://cf.cjdropshipping.com/1614328451324.jpg',
   },
   {
     id: 21,
@@ -59,26 +73,34 @@ const all = (sql, params = []) =>
         'UPDATE products SET imageUrl = ? WHERE id = ?',
         [patch.imageUrl, patch.id]
       );
-      const variantChanges = await run(
-        'UPDATE product_variants SET imageUrl = ? WHERE productId = ?',
-        [patch.imageUrl, patch.id]
-      );
-      console.log(
-        `[patch] id=${patch.id} imageUrl updated (products: ${productChanges} row, variants: ${variantChanges} rows)`
-      );
+      console.log(`[patch] id=${patch.id} imageUrl updated (products: ${productChanges} row)`);
+
+      if (patch.colorVariants) {
+        // Replace all variants for this product with the specified color variants
+        await run('DELETE FROM product_variants WHERE productId = ?', [patch.id]);
+        const productRow = await all('SELECT price, printifyId FROM products WHERE id = ?', [patch.id]);
+        const price = productRow[0]?.price || 0;
+        const spu = productRow[0]?.printifyId || '';
+        for (const cv of patch.colorVariants) {
+          await run(
+            `INSERT INTO product_variants (productId, printifyVariantId, color, colorHex, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
+             VALUES (?, ?, ?, ?, 'One Size', ?, 0, 999, 1, 1, ?)`,
+            [patch.id, spu, cv.color, cv.colorHex || null, price, cv.imageUrl]
+          );
+          console.log(`[patch] id=${patch.id} added variant color=${cv.color}`);
+        }
+      } else {
+        const variantChanges = await run(
+          'UPDATE product_variants SET imageUrl = ? WHERE productId = ?',
+          [patch.imageUrl, patch.id]
+        );
+        console.log(`[patch] id=${patch.id} variant imageUrl updated (${variantChanges} rows)`);
+      }
 
       if (patch.spu) {
-        const productSpuChanges = await run(
-          'UPDATE products SET printifyId = ? WHERE id = ?',
-          [patch.spu, patch.id]
-        );
-        const variantSpuChanges = await run(
-          'UPDATE product_variants SET printifyVariantId = ? WHERE productId = ?',
-          [patch.spu, patch.id]
-        );
-        console.log(
-          `[patch] id=${patch.id} SPU updated to ${patch.spu} (products: ${productSpuChanges} row, variants: ${variantSpuChanges} rows)`
-        );
+        await run('UPDATE products SET printifyId = ? WHERE id = ?', [patch.spu, patch.id]);
+        await run('UPDATE product_variants SET printifyVariantId = ? WHERE productId = ?', [patch.spu, patch.id]);
+        console.log(`[patch] id=${patch.id} SPU updated to ${patch.spu}`);
       }
     }
 

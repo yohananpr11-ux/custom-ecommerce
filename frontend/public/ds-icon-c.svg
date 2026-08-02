@@ -1,0 +1,8 @@
+<svg viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Option C: Square-framed D — icon inside precise equal-margin frame -->
+  <!-- Square border -->
+  <rect x="1.5" y="1.5" width="53" height="53" stroke="currentColor" stroke-width="3"/>
+  <!-- D mark centered inside with 12px margin -->
+  <path d="M13 13H24A15 15 0 0 1 24 43H13Z" fill="currentColor"/>
+  <path d="M19 20H23A8 8 0 0 1 23 36H19Z" fill="#121212"/>
+</svg>

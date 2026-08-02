@@ -120,13 +120,15 @@ class PrintifyService {
         const enabledVariants = p.variants ? p.variants.filter(v => v.is_enabled) : [];
         let baseCostCents = 0;
         if (enabledVariants.length > 0) {
-          baseCostCents = Math.min(...enabledVariants.map(v => v.cost || v.price || 0));
+          // Use MAX cost so formula-based pricing covers the most expensive variant (large/dark)
+          baseCostCents = Math.max(...enabledVariants.map(v => v.cost || v.price || 0));
         }
 
-        // Use pricing engine for fixed target prices
+        // Use pricing engine — passes max variant cost so 30% margin holds on every size
         const pricingEngine = require('./pricing');
         const baseCostUSD = baseCostCents / 100;
-        const retailPrice = pricingEngine.calculateOptimalPriceNIS(baseCostUSD, 4.5, title, 'printify');
+        const minRetailILS = this._getMinRetailPriceILS(title, description);
+        const retailPrice = pricingEngine.calculateOptimalPriceNIS(baseCostUSD, 14, title, minRetailILS);
 
         // Detect fabric info from product tags or blueprint
         const fabric = this._detectFabric(title, description);
@@ -138,12 +140,12 @@ class PrintifyService {
           db.get(`SELECT id FROM products WHERE title = ? AND type = 'printify'`, [title], (err, existing) => {
             if (err) return reject(err);
             if (existing) {
-              db.run(`UPDATE products SET price = ?, imageUrl = ?, backImageUrl = ?, images = ?, description = ?, printifyId = ?, fabric = ?, careInstructions = ?, deliveryInfo = ? WHERE id = ?`,
-                [retailPrice, frontImageUrl, backImageUrl, JSON.stringify({ allImages, variantImageMap }), description, p.id, fabric, careInstructions, deliveryInfo, existing.id],
+              db.run(`UPDATE products SET price = ?, imageUrl = ?, backImageUrl = ?, images = ?, description = ?, printifyId = ?, fabric = ?, careInstructions = ?, deliveryInfo = ?, supplierShippingCostUSD = 14, minRetailPriceILS = ? WHERE id = ?`,
+                [retailPrice, frontImageUrl, backImageUrl, JSON.stringify({ allImages, variantImageMap }), description, p.id, fabric, careInstructions, deliveryInfo, minRetailILS, existing.id],
                 () => resolve(existing.id));
             } else {
-              db.run(`INSERT INTO products (title, description, price, imageUrl, backImageUrl, images, stock, type, printifyId, fabric, careInstructions, deliveryInfo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [title, description, retailPrice, frontImageUrl, backImageUrl, JSON.stringify({ allImages, variantImageMap }), 999, 'printify', p.id, fabric, careInstructions, deliveryInfo],
+              db.run(`INSERT INTO products (title, description, price, imageUrl, backImageUrl, images, stock, type, printifyId, fabric, careInstructions, deliveryInfo, supplierShippingCostUSD, minRetailPriceILS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 14, ?)`,
+                [title, description, retailPrice, frontImageUrl, backImageUrl, JSON.stringify({ allImages, variantImageMap }), 999, 'printify', p.id, fabric, careInstructions, deliveryInfo, minRetailILS],
                 function() { resolve(this.lastID); });
             }
           });
@@ -223,11 +225,22 @@ class PrintifyService {
     }
   }
 
+  _getMinRetailPriceILS(title, description) {
+    const lower = (title + ' ' + description).toLowerCase();
+    if (lower.includes('hoodie') || lower.includes('sweatshirt') || lower.includes('heavy blend') || lower.includes('18500')) {
+      return 199.90;
+    }
+    return null;
+  }
+
   _detectFabric(title, description) {
     const lower = (title + ' ' + description).toLowerCase();
-    if (lower.includes('softstyle') || lower.includes('64000')) return '100% Ring-Spun Cotton (Heathers: Cotton/Polyester blend). Softstyle® fabric.';
+    if (lower.includes('softstyle') || lower.includes('64000')) return '100% Ring-Spun Cotton, 4.5 oz. Softstyle® pre-shrunk fabric. (Heathers: 90% Cotton / 10% Polyester)';
     if (lower.includes('bella') || lower.includes('canvas') || lower.includes('3001')) return '100% Airlume Combed & Ring-Spun Cotton, 4.2 oz. Side-seamed. Retail fit.';
-    if (lower.includes('heavy blend') || lower.includes('18500') || lower.includes('hoodie')) return '50% Cotton / 50% Polyester, 8.0 oz Heavy Blend™ Fleece. Double-lined hood.';
+    if (lower.includes('heavy blend') || lower.includes('18500') || lower.includes('hoodie') || lower.includes('sweatshirt')) return '50% Cotton / 50% Polyester, 8.0 oz Heavy Blend™ Fleece. Double-lined hood. Air jet yarn for softer feel.';
+    if (lower.includes('tank')) return '100% Airlume Combed & Ring-Spun Cotton, 3.7 oz. Lightweight retail fit. Side-seamed for structure.';
+    // Generic tees: Printify default blueprint is Gildan 64000 Softstyle
+    if (lower.includes('t-shirt') || lower.includes('tee') || lower.includes('shirt')) return '100% Ring-Spun Cotton, 4.5 oz. Softstyle® pre-shrunk fabric. (Heathers: 90% Cotton / 10% Polyester)';
     return 'Premium quality fabric. See product description for details.';
   }
 

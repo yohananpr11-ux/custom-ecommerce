@@ -1,65 +1,105 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import POLICIES from '../config/supplierPolicies.js';
 
 const POLICY_CONTENT = {
   shipping: {
-    title: 'Shipping Policy',
-    blocks: [
-      { heading: 'Processing Window', copy: 'Every order is prepared and quality-checked before dispatch. Most orders leave production within 2-5 business days.' },
-      { heading: 'Transit Estimates', copy: 'Express shipping times depend on destination and customs flow. Typical delivery ranges from 6-20 business days.' },
-      { heading: 'Tracking & Support', copy: 'A tracking link is sent once the carrier scans your parcel. If tracking stalls for more than 72 hours, contact support for a fast follow-up.' },
-    ],
+    en: {
+      title: 'Shipping Policy',
+      blocks: [
+        {
+          heading: 'Clothing — Production & Dispatch',
+          copy: `${POLICIES.printify.en.cartDelivery}. Orders are prepared and quality-checked before dispatch.`,
+        },
+        {
+          heading: 'Jewelry — Dispatch & Delivery',
+          copy: `${POLICIES.dropship.en.cartDelivery}. Jewelry ships internationally from our fulfillment partner.`,
+        },
+        {
+          heading: 'Tracking & Support',
+          copy: 'A tracking link is sent once the carrier scans your parcel. If tracking stalls for more than 72 hours, contact support for a fast follow-up.',
+        },
+      ],
+    },
+    he: {
+      title: 'מדיניות משלוחים',
+      blocks: [
+        {
+          heading: 'ביגוד — ייצור ומשלוח',
+          copy: `${POLICIES.printify.he.cartDelivery}. כל הזמנה עוברת הכנה ובקרת איכות לפני יציאה.`,
+        },
+        {
+          heading: 'תכשיטים — שליחה והגעה',
+          copy: `${POLICIES.dropship.he.cartDelivery}. תכשיטים נשלחים בינלאומי משותף הלוגיסטיקה שלנו.`,
+        },
+        {
+          heading: 'מעקב ותמיכה',
+          copy: 'לינק מעקב נשלח מיד לאחר סריקה של חברת השילוח. אם אין התקדמות יותר מ-72 שעות, שירות הלקוחות מטפל מיידית.',
+        },
+      ],
+    },
   },
   refund: {
-    title: 'Refund Policy',
-    blocks: [
-      { heading: 'Quality Guarantee', copy: 'If an item arrives damaged, misprinted, or defective, we replace it or refund it after validation.' },
-      { heading: 'Claim Window', copy: 'Submit your request within 30 days of delivery with your order number and clear photos of the issue.' },
-      { heading: 'Non-Returnable Cases', copy: 'Because products are made on demand, we cannot process refunds for wrong-size selections or buyer remorse after production starts.' },
-    ],
+    en: {
+      title: 'Quality Guarantee',
+      blocks: [
+        {
+          heading: 'Clothing — 30-Day Guarantee',
+          copy: POLICIES.printify.en.returnIntro,
+        },
+        {
+          heading: 'Jewelry — 14-Day Guarantee',
+          copy: POLICIES.dropship.en.returnIntro,
+        },
+        {
+          heading: 'How to Submit a Claim',
+          copy: 'Contact us at support with your order number, a description of the issue, and clear photos. We review all claims within 1–2 business days.',
+        },
+      ],
+    },
+    he: {
+      title: 'אחריות איכות',
+      blocks: [
+        {
+          heading: 'ביגוד — אחריות 30 יום',
+          copy: POLICIES.printify.he.returnIntro,
+        },
+        {
+          heading: 'תכשיטים — אחריות 14 יום',
+          copy: POLICIES.dropship.he.returnIntro,
+        },
+        {
+          heading: 'כיצד לפתוח פנייה',
+          copy: 'צרו קשר עם שירות הלקוחות עם מספר הזמנה, תיאור הבעיה ותמונות ברורות. אנחנו בודקים כל פנייה תוך 1–2 ימי עסקים.',
+        },
+      ],
+    },
   },
   terms: {
-    title: 'Terms of Service',
-    blocks: [
-      { heading: 'Order Agreement', copy: 'By placing an order you agree to our production and fulfillment workflow, pricing, and shipping terms.' },
-      { heading: 'Product Representation', copy: 'We optimize product imagery for consistency, but minor color differences can occur across screens and print batches.' },
-      { heading: 'Liability Scope', copy: 'Our liability is limited to the item value paid, excluding external carrier or customs delays outside our control.' },
-    ],
+    en: {
+      title: 'Terms of Service',
+      blocks: [
+        { heading: 'Order Agreement', copy: 'By placing an order you agree to our production and fulfillment workflow, pricing, and shipping terms.' },
+        { heading: 'Product Representation', copy: 'We optimize product imagery for consistency, but minor color differences can occur across screens and production batches.' },
+        { heading: 'Liability Scope', copy: 'Our liability is limited to the item value paid, excluding external carrier or customs delays outside our control.' },
+      ],
+    },
+    he: {
+      title: 'תנאי שימוש',
+      blocks: [
+        { heading: 'הסכמת הזמנה', copy: 'ביצוע הזמנה מהווה הסכמה לתהליך הייצור, התנאים המסחריים ומדיניות המשלוחים.' },
+        { heading: 'דיוק תצוגת מוצרים', copy: 'אנחנו שומרים על אחידות גבוהה, אך ייתכנו הבדלים קלים בגוון בין מסכים ובין אצוות ייצור.' },
+        { heading: 'הגבלת אחריות', copy: 'האחריות שלנו מוגבלת לערך הפריט ששולם, ואינה כוללת עיכובים של גורמי שילוח או מכס.' },
+      ],
+    },
   },
 };
 
 function PolicyModal({ policy, locale, onClose }) {
-  const base = POLICY_CONTENT[policy];
-  if (!base) return null;
-
-  const localized = locale === 'he'
-    ? {
-        shipping: {
-          title: 'מדיניות משלוחים',
-          blocks: [
-            { heading: 'זמן הכנה', copy: 'כל הזמנה עוברת הכנה ובקרת איכות לפני יציאה. ברוב המקרים המשלוח יוצא תוך 2-5 ימי עסקים.' },
-            { heading: 'טווחי הגעה', copy: 'זמני הגעה תלויים ביעד ובתהליכי מכס. לרוב ההגעה נעה בין 6-20 ימי עסקים.' },
-            { heading: 'מעקב ותמיכה', copy: 'לינק מעקב נשלח מיד לאחר סריקה של חברת השילוח. אם אין התקדמות יותר מ-72 שעות, שירות הלקוחות מטפל מיידית.' },
-          ],
-        },
-        refund: {
-          title: 'מדיניות החזרים',
-          blocks: [
-            { heading: 'אחריות איכות', copy: 'אם פריט הגיע פגום או עם הדפס לא תקין, נציע החלפה או החזר מלא לאחר בדיקה.' },
-            { heading: 'חלון פתיחת פנייה', copy: 'אפשר לפתוח פנייה עד 30 יום ממועד המסירה עם מספר הזמנה ותמונות ברורות.' },
-            { heading: 'מקרים ללא החזר', copy: 'מאחר והפריטים מיוצרים לפי הזמנה, לא ניתן לבצע החזר על בחירת מידה שגויה או שינוי דעת לאחר תחילת ייצור.' },
-          ],
-        },
-        terms: {
-          title: 'תנאי שימוש',
-          blocks: [
-            { heading: 'הסכמת הזמנה', copy: 'ביצוע הזמנה מהווה הסכמה לתהליך הייצור, התנאים המסחריים ומדיניות המשלוחים.' },
-            { heading: 'דיוק תצוגת מוצרים', copy: 'אנחנו שומרים על אחידות גבוהה, אך ייתכנו הבדלים קלים בגוון בין מסכים ובין אצוות הדפסה.' },
-            { heading: 'הגבלת אחריות', copy: 'האחריות שלנו מוגבלת לערך הפריט ששולם, ואינה כוללת עיכובים של גורמי שילוח או מכס.' },
-          ],
-        },
-      }[policy]
-    : base;
+  const policyData = POLICY_CONTENT[policy];
+  if (!policyData) return null;
+  const lang      = locale === 'he' ? 'he' : 'en';
+  const localized = policyData[lang];
 
   return (
     <div className="footer-policy-overlay" onClick={onClose}>
@@ -82,11 +122,12 @@ function PolicyModal({ policy, locale, onClose }) {
 
 export default function Footer({ locale = 'en' }) {
   const [activePolicy, setActivePolicy] = useState(null);
+  const [newsletterSubmitted, setNewsletterSubmitted] = useState(false);
 
   const copy = useMemo(() => {
     if (locale === 'he') {
       return {
-        newsletterTitle: 'מועדון DRIP STREET',
+        newsletterTitle: 'מועדון JØAKIM',
         newsletterSubtitle: 'הצטרפו לעדכונים, דרופים מוקדמים וקוד הטבה להזמנה הראשונה.',
         newsletterPlaceholder: 'כתובת האימייל שלך',
         newsletterCta: 'הצטרף',
@@ -103,10 +144,8 @@ export default function Footer({ locale = 'en' }) {
 
   const handleNewsletterSubmit = (e) => {
     e.preventDefault();
-    const email = e.target.querySelector('input')?.value;
-    if (email) {
-      alert(`Thank you for subscribing, ${email}! Welcome to the club.`);
-      e.target.reset();
+    if (e.target.querySelector('input')?.value) {
+      setNewsletterSubmitted(true);
     }
   };
 
@@ -116,13 +155,10 @@ export default function Footer({ locale = 'en' }) {
         
         {/* Brand Column */}
         <div className="footer-brand-col" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Phase 12: with the rembg-stripped transparent logo, footer mirrors
-              the navbar's clean rendering — no badge, no shadow, just the
-              metallic D floating on the dark footer canvas at 72px tall. */}
           <img
-            src="/logo-new.png"
-            alt="Drip Street Logo"
-            style={{ height: '72px', width: 'auto', objectFit: 'contain', alignSelf: 'flex-start' }}
+            src="/joakim-approved-full-logo.png?v=2"
+            alt="Jøakim"
+            style={{ height: '100px', width: 'auto', objectFit: 'contain', display: 'block', opacity: 0.90 }}
           />
           <p style={{ fontSize: '14px', lineHeight: '1.6', opacity: 0.6, margin: 0 }}>
             Minimalist streetwear designed for ultimate confidence, superior fit, and premium everyday aesthetics. Built with high-grade materials.
@@ -171,52 +207,60 @@ export default function Footer({ locale = 'en' }) {
         {/* Column 4: Newsletter */}
         <div className="footer-newsletter-col" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', textAlign: locale === 'he' ? 'right' : 'left' }}>{copy.newsletterTitle}</h3>
-          <p style={{ fontSize: '13px', opacity: 0.6, margin: 0, textAlign: locale === 'he' ? 'right' : 'left' }}>{copy.newsletterSubtitle}</p>
-          <form onSubmit={handleNewsletterSubmit} style={{ display: 'flex', gap: '8px' }}>
-            <input 
-              type="email" 
-              placeholder={copy.newsletterPlaceholder}
-              required 
-              dir={locale === 'he' ? 'rtl' : 'ltr'}
-              style={{
-                flex: 1,
-                padding: '10px 14px',
-                borderRadius: '4px',
-                border: '1px solid var(--border-color)',
-                background: 'var(--color-black-300)',
-                color: 'var(--color-white)',
-                fontSize: '13px',
-                outline: 'none'
-              }} 
-            />
-            <button 
-              type="submit" 
-              data-track="newsletter_submit"
-              style={{
-                padding: '10px 24px',
-                borderRadius: '4px',
-                border: 'none',
-                background: 'var(--color-white)',
-                color: 'var(--color-black-500)',
-                fontWeight: '700',
-                fontSize: '13px',
-                cursor: 'pointer',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                whiteSpace: 'nowrap',
-                flexShrink: 0
-              }}
-            >
-              {copy.newsletterCta}
-            </button>
-          </form>
+          {newsletterSubmitted ? (
+            <p style={{ fontSize: '13px', color: '#C8B89A', margin: 0, textAlign: locale === 'he' ? 'right' : 'left' }}>
+              {locale === 'he' ? 'תודה. נהיה בקשר.' : 'You\'re in. We\'ll be in touch.'}
+            </p>
+          ) : (
+            <>
+              <p style={{ fontSize: '13px', opacity: 0.6, margin: 0, textAlign: locale === 'he' ? 'right' : 'left' }}>{copy.newsletterSubtitle}</p>
+              <form onSubmit={handleNewsletterSubmit} style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="email"
+                  placeholder={copy.newsletterPlaceholder}
+                  required
+                  dir={locale === 'he' ? 'rtl' : 'ltr'}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--color-black-300)',
+                    color: 'var(--color-white)',
+                    fontSize: '13px',
+                    outline: 'none'
+                  }}
+                />
+                <button
+                  type="submit"
+                  data-track="newsletter_submit"
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: 'var(--color-white)',
+                    color: 'var(--color-black-500)',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  {copy.newsletterCta}
+                </button>
+              </form>
+            </>
+          )}
         </div>
 
       </div>
 
       <div className="container" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
         <p style={{ fontSize: '13px', opacity: 0.5, margin: 0 }}>
-          &copy; 2026 Drip Street. All rights reserved.
+          &copy; 2026 JØAKIM™. All rights reserved.
         </p>
         <div className="footer-socials" style={{ display: 'flex', gap: '16px' }}>
           <a href="#" style={{ color: 'inherit', textDecoration: 'none', fontSize: '13px', opacity: 0.5 }}>Instagram</a>

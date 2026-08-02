@@ -1,51 +1,58 @@
 import LegalPageLayout from '../components/LegalPageLayout';
 
-const sectionStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '10px',
-};
-
-const headingStyle = {
-  color: 'var(--color-white)',
-  fontSize: '18px',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  margin: 0,
-};
-
-const noteStyle = {
-  margin: 0,
-  color: 'var(--color-text-tertiary-gray)',
-  fontSize: '14px',
-};
+const noteStyle = { margin: 0, color: 'var(--color-text-tertiary-gray)', fontSize: '14px' };
 
 export default function Shipping() {
   return (
     <LegalPageLayout title="Shipping Policy" breadcrumb="Shipping">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        <section style={sectionStyle}>
-          <h2 style={headingStyle}>מדיניות משלוחים</h2>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>ב-Drip Street אנו שואפים לספק חוויית משלוח חלקה, שקופה ואמינה. הזמנות עוברות עיבוד, אריזה ושילוח בהתאם לזמינות המלאי וליעד המסירה.</p>
+
+        <section style={{ lineHeight: 1.9 }}>
+          <h2 style={{ color: 'var(--color-white)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '8px' }}>מדיניות משלוחים</h2>
+          <p dir="rtl" style={{ margin: 0 }}>
+            ב-Drip Street אנו עובדים עם שני ספקי הגשמה שונים — כל אחד עם זמני עיבוד ומשלוח משלו.
+          </p>
         </section>
 
-        <section style={sectionStyle}>
-          <h3 style={headingStyle}>1. זמן עיבוד</h3>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>רוב ההזמנות מטופלות תוך 2-5 ימי עסקים. זמנים עשויים להשתנות בתקופות עומס, חגים או במקרה של חוסר זמני במלאי.</p>
+        {/* ── PRINTIFY ── */}
+        <section style={{ border: '1px solid var(--border-color)', padding: '20px', borderRadius: '8px', lineHeight: 1.9 }}>
+          <h3 style={{ color: 'var(--color-white)', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 12px 0' }}>
+            א. ביגוד — Printify (הדפסה לפי הזמנה)
+          </h3>
+          <ul dir="rtl" style={{ margin: '0 0 8px 0', paddingLeft: '20px' }}>
+            <li><strong>ייצור:</strong> 2–5 ימי עסקים</li>
+            <li><strong>משלוח:</strong> 5–25 ימי עסקים בהתאם ליעד</li>
+            <li><strong>ישראל / מזרח תיכון:</strong> בדרך כלל 12–30 ימי עסקים (ייצור + משלוח)</li>
+          </ul>
+          <p dir="rtl" style={{ margin: 0, fontSize: '14px', opacity: 0.8 }}>
+            כל פריט ביגוד מיוצר לאחר ההזמנה — הדפסה, בדיקה ואריזה במתקן Printify.
+          </p>
         </section>
 
-        <section style={sectionStyle}>
-          <h3 style={headingStyle}>2. חלונות אספקה</h3>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>זמני המשלוח תלויים ביעד ובחברת השילוח. בדרך כלל ההגעה מתבצעת בתוך 6-20 ימי עסקים מרגע יציאת ההזמנה לדרך.</p>
+        {/* ── CJ ── */}
+        <section style={{ border: '1px solid var(--border-color)', padding: '20px', borderRadius: '8px', lineHeight: 1.9 }}>
+          <h3 style={{ color: 'var(--color-white)', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 12px 0' }}>
+            ב. תכשיטים ואביזרים — CJ Dropshipping
+          </h3>
+          <ul dir="rtl" style={{ margin: '0 0 8px 0', paddingLeft: '20px' }}>
+            <li><strong>עיבוד ומשלוח:</strong> 1–3 ימי עסקים מהמחסן</li>
+            <li><strong>משלוח:</strong> 7–20 ימי עסקים</li>
+            <li><strong>ישראל:</strong> בדרך כלל 10–20 ימי עסקים סה"כ</li>
+          </ul>
+          <p dir="rtl" style={{ margin: 0, fontSize: '14px', opacity: 0.8 }}>
+            הפריטים מוכנים מראש במחסן CJ ומשוגרים לאחר בדיקת איכות קצרה.
+          </p>
         </section>
 
-        <section style={sectionStyle}>
-          <h3 style={headingStyle}>3. מעקב ועדכונים</h3>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>לאחר מסירת החבילה לחברת השילוח, יישלח קישור מעקב. אם לא מופיע עדכון במשך יותר מ-72 שעות, ניתן לפנות אלינו דרך התמיכה ואנחנו נבצע בדיקה מול הספק.</p>
+        {/* ── Tracking ── */}
+        <section style={{ lineHeight: 1.9 }}>
+          <h3 style={{ color: 'var(--color-white)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '8px' }}>מעקב</h3>
+          <p dir="rtl" style={{ margin: 0 }}>
+            לאחר מסירת החבילה לחברת השילוח, יישלח קישור מעקב למייל. אם לא מופיע עדכון במשך יותר מ-72 שעות — פנו אלינו ב-<a href="mailto:support@dripstreetshop.com" style={{ color: 'var(--color-white)' }}>support@dripstreetshop.com</a>.
+          </p>
         </section>
 
-        <p dir="rtl" style={noteStyle}>עודכן לאחרונה: 1 ביוני 2026</p>
+        <p dir="rtl" style={noteStyle}>עודכן לאחרונה: יוני 2026</p>
       </div>
     </LegalPageLayout>
   );

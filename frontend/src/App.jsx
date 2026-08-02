@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
@@ -11,12 +11,31 @@ import {
   trackInitiateCheckout,
   trackPurchase,
 } from './utils/analytics.js'
+import {
+  recordProductView,
+  recordAddToCart as recordAddToCartBehavior,
+  recordTimeOnProduct,
+  getSmartProductOrder,
+  getUserProfile,
+  getConversionIntent,
+} from './utils/intelligence.js'
 import './index.css'
+import {
+  getDeliveryLabel,
+  getReturnBadge,
+  getReturnDetail,
+  getTrackingNote,
+  getCartDeliveryEstimates,
+} from './config/supplierPolicies.js'
 
 // Shared Components
 import Footer from './components/Footer'
 import CookieConsent from './components/CookieConsent'
 import BackButton from './components/BackButton'
+// import logoPerfected from './assets/logo-perfected.png';
+// import perfectFitKeysImg from './assets/perfect-fit-keys.png';
+// import PerfectFitKeys from './components/PerfectFitKeys';
+
 
 // Compliance & Legal Pages
 import PrivacyPolicy from './pages/PrivacyPolicy'
@@ -36,29 +55,7 @@ const SHIPPING_COST = 29.90;
 const FREE_SHIPPING_THRESHOLD = 249;
 const BUNDLE_ITEM_PRICE = 229;
 const BUNDLE_ITEM_COUNT = 3;
-const JEWELRY_UPSELL_MOCK = [
-  {
-    id: 'jewel-urban-chain',
-    title: 'Urban Chain Necklace',
-    subtitle: 'Stainless steel streetwear layering essential',
-    price: 89,
-    imageUrl: '/logo-new.png',
-  },
-  {
-    id: 'jewel-statement-ring',
-    title: 'Statement Signet Ring',
-    subtitle: 'Mirror-polish finish with daily-wear comfort',
-    price: 74,
-    imageUrl: '/logo-new.png',
-  },
-  {
-    id: 'jewel-twin-bracelet',
-    title: 'Twin Link Bracelet',
-    subtitle: 'Adjustable fit for stacked street looks',
-    price: 68,
-    imageUrl: '/logo-new.png',
-  },
-];
+
 
 const isLikelyValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim().toLowerCase());
 
@@ -93,153 +90,13 @@ class ErrorBoundary extends React.Component {
 }
 
 const translations = {
-  he: {
-    logo: "DRIP STREET",
-    announcement: "משלוח חינם בהזמנה מ-249 ₪ | 3 חולצות ב-229 ₪",
-    search_placeholder: "חפש פריטים...",
-    cart: "סל קניות",
-    hero_title: "DRIP STREET",
-    hero_subtitle: "סטריטוור מינימליסטי ליום יום.",
-    shop_now: "קנה עכשיו",
-    trust_secure: "תשלום מאובטח",
-    trust_shipping: "משלוח מהיר",
-    trust_returns: "החזרות קלות",
-    language_currency: "שפה וערה",
-    add_to_cart: "הוסף לסל",
-    buy_now: "קנה עכשיו",
-    all: "הכל",
-    new_arrivals: "חדש",
-    best_sellers: "הנמכרים ביותר",
-    hoodies: "קפוצ'ונים",
-    tshirts: "חולצות",
-    tank_tops: "גופיות",
-    jewelry: "תכשיטים",
-    fabric_fit: "חומר וגזרה",
-    care_instructions: "טיפול",
-    delivery_info: "משלוח",
-    product_description: "תיאור",
-    material_care: "חומרים וטיפול",
-    shipping_returns: "משלוחים והחזרות",
-    color: "צבע",
-    size: "מידה",
-    quantity: "כמות",
-    configure_product_title: "בחר את ההתאמה המושלמת שלך",
-    configure_product_subtitle: "לפני הוספה לסל, בחר צבע, מידה וכמות בדיוק כמו שמתאים לך.",
-    choose_color: "בחר צבע",
-    choose_size: "בחר מידה",
-    choose_quantity: "בחר כמות",
-    add_selected_to_cart: "הוסף את הבחירה לסל",
-    continue_shopping: "המשך בקנייה",
-    cart_customize: "התאם את הפריט שלך",
-    review_title: "לפני תשלום — בדיקת בחירה",
-    review_subtitle: "אלה הפריטים שבחרת בקפידה. אפשר לעדכן כל פרט לפני ביצוע ההזמנה.",
-    low_stock: "ביקוש גבוה - מלאי מוגבל",
-    select_available_variant: "בחר צבע ומידה זמינים כדי להוסיף לסל",
-    empty_cart_toast: "הסל ריק, הוסף פריטים כדי להמשיך",
-    variant_error_toast: "נמצאה שגיאה בוריאנט. רענן את העמוד ובחר מחדש",
-    checkout: "קופה",
-    checkout_secure: "קופה מאובטחת",
-    shipping_details: "פרטי משלוח",
-    full_name: "שם מלא",
-    email: "אימייל",
-    address: "כתובת (רחוב, עיר, מיקוד)",
-    shipping_name_english_only: "שם מלא חייב להיות באנגלית בלבד.",
-    shipping_address_english_only: "כתובת משלוח חייבת להיות באנגלית בלבד כדי שהמשלוח יגיע נכון.",
-    payment_method: "בחר תשלום",
-    payment_card_apple_google: "כרטיס אשראי / Apple Pay / Google Pay",
-    payment_card_bit: "כרטיס אשראי / ביט",
-    payment_stripe: "כרטיס בינלאומי (Stripe)",
-    payment_paypal: "PayPal",
-    payment_meshulam_card: "כרטיס אשראי ישראלי",
-    payment_meshulam_card_sub: "ויזה · מאסטרקארד · ישראכרט · Apple Pay",
-    payment_meshulam_bit: "תשלום ב-Bit",
-    payment_meshulam_bit_sub: "סריקת QR מהאפליקציה",
-    payment_meshulam_processing: "מעביר אותך לעמוד תשלום מאובטח...",
-    payment_unavailable: "אמצעי התשלום שבחרת לא זמין כרגע. נסה PayPal.",
-    order_summary: "סיכום הזמנה",
-    subtotal: "סכום ביניים",
-    bundle_deal: "🎁 מבצע 3 חולצות",
-    bundle_active: "🎉 מבצע 3 חולצות הופעל!",
-    bundle_hint: "הוסף חולצה נוספת לקבלת מחיר המבצע",
-    shipping: "משלוח",
-    free: "חינם",
-    vat: "מע״מ",
-    total: "לתשלום",
-    complete_order: "בצע הזמנה",
-    success_title: "🎉 התשלום בוצע!",
-    success_desc: "תודה! ההזמנה שלך מעובדת ועל הדרך אליך.",
-    return_home: "חזרה לחנות",
-    shipping_unlocked: "🎉 משלוח חינם!",
-    shipping_hint: "הוסף עוד {amount} למשלוח חינם",
-    cart_empty: "הסל ריק",
-    support_chat: "מני 🤖",
-    support_placeholder: "שאלה קצרה? אני כאן לעזור",
-    escalated_msg: "חיברנו אותך לנציג, תשובה תישלח בקרוב",
-    flash_sale: "מבצע לזמן קצר: קוד {code} נותן {discount}% הנחה",
-    coupon_label: "קופון",
-    contact_title: "צור קשר",
-    contact_name_placeholder: "איך קוראים לך?",
-    contact_email_placeholder: "האימייל שלך",
-    contact_message_placeholder: "איך אפשר לעזור?",
-    contact_send: "שליחה",
-    legal_privacy: "מדיניות פרטיות",
-    legal_terms: "תנאי שימוש",
-    legal_refund: "מדיניות החזרות",
-    legal_contact: "שירות לקוחות",
-    legal_back: "חזרה לחנות",
-    legal_intro: "אנחנו שומרים על פרטיות, שקיפות ושירות הוגן בכל הזמנה.",
-    legal_info_collect_title: "איזה מידע אנחנו אוספים",
-    legal_info_collect_text: "אנחנו אוספים רק פרטים שנדרשים לביצוע הזמנה ושירות לקוחות.",
-    legal_payments_title: "אבטחת תשלומים",
-    legal_payments_text: "התשלום מעובד בצורה מאובטחת דרך ספקי סליקה חיצוניים.",
-    legal_refunds_title: "החלפות והחזרות",
-    legal_refunds_text: "ניתן לפנות לשירות הלקוחות תוך 14 יום מקבלת המשלוח בהתאם למדיניות.",
-    not_found_title: "העמוד לא נמצא",
-    search_aria: "חיפוש מוצרים",
-    open_cart_aria: "פתיחת סל קניות",
-    close_cart_aria: "סגירת סל קניות",
-    toggle_chat_aria: "פתיחת צ׳אט תמיכה",
-    loading: "טוען...",
-    product_not_found: "המוצר לא נמצא",
-    shop_rights: "© 2026 Drip Street. כל הזכויות שמורות.",
-    popup_title: "הצטרפו למועדון שלנו וקבלו 10% הנחה לקנייה הראשונה.",
-    popup_subtitle: "השאירו אימייל וקבלו קוד אישי חד פעמי.",
-    popup_placeholder: "האימייל שלך...",
-    popup_cta: "קבל את ההנחה",
-    popup_dismiss: "לא עכשיו, תודה",
-    popup_success: "תודה! הקוד נשלח לאימייל שלך.",
-    popup_already_registered: "האימייל כבר רשום במערכת",
-    popup_unique_code: "הקוד הייחודי שלך",
-    popup_copy: "העתק קוד",
-    popup_copied: "הועתק!",
-    promo_code: "קוד קופון",
-    promo_apply: "החל",
-    promo_applied: "קוד הופעל",
-    promo_invalid: "קוד לא תקין או שכבר נוצל",
-    rating_label: "מבוסס על בסיס ביקורות",
-    reviews_title: "מה אומרים הלקוחות",
-    trending_title: "טרנדינג עכשיו",
-    why_title: "למה DRIP STREET?",
-    why_shipping: "משלוח לכל העולם",
-    why_shipping_desc: "משלוח בינלאומי מהיר ואמין לכל יעד.",
-    why_secure: "תשלום מאובטח 100%",
-    why_secure_desc: "SSL מוצפן + Stripe, PayPal, ויזה.",
-    why_quality: "איכות פרימיום",
-    why_quality_desc: "בד נוח עם הדפסה חדה שלא דוהה.",
-    why_returns: "אחריות איכות פרימיום",
-    why_returns_desc: "הדפסה מושלמת. פריט פגום יוחלף מיד.",
-    seo_title: "DRIP STREET | סטריטוור מינימליסטי",
-    seo_description: "סטריטוור פרימיום מינימליסטי לחיי היומיום. חולצות אוברסייז, גופיות קיץ ובייסיקס איכותיים. משלוח לכל העולם.",
-    taxes_shipping_note: "מסים ומשלוח יחושבו בקופה",
-    payment_icons_label: "אנחנו מקבלים"
-  },
   en: {
-    logo: "DRIP STREET",
-    announcement: "Complimentary shipping from 249 ILS cart subtotal | 3-item bundle from $61",
+    logo: "JØAKIM",
+    announcement: "Complimentary shipping from $249 cart subtotal | 3-item bundle from $61",
     search_placeholder: "Search items...",
     cart: "Cart",
-    hero_title: "DRIP STREET",
-    hero_subtitle: "Minimal streetwear built for confidence.",
+    hero_title: "JØAKIM",
+    hero_subtitle: "Freedom. Style. Attitude.",
     shop_now: "Shop Now",
     trust_secure: "Secure Payment",
     trust_shipping: "Fast Shipping",
@@ -256,66 +113,61 @@ const translations = {
     jewelry: "Jewelry",
     fabric_fit: "Fabric & Fit",
     care_instructions: "Care Instructions",
-    delivery_info: "Delivery Info",
+    delivery_info: "Shipping & Delivery",
     product_description: "Description",
     material_care: "Material & Care",
     shipping_returns: "Shipping & Returns",
     color: "Color",
     size: "Size",
     quantity: "Quantity",
-    configure_product_title: "Choose Your Perfect Fit",
-    configure_product_subtitle: "Before adding to cart, select the color, size, and quantity that suit you best.",
-    choose_color: "Choose color",
-    choose_size: "Choose size",
-    choose_quantity: "Choose quantity",
-    add_selected_to_cart: "Add Selection to Cart",
+    configure_product_title: "CHOOSE YOUR PERFECT FIT",
+    configure_product_subtitle: "Select your preferred color, size, and quantity below.",
+    choose_color: "Choose Color",
+    choose_size: "Choose Size",
+    choose_quantity: "Choose Quantity",
+    add_selected_to_cart: "Add to Cart",
     continue_shopping: "Continue Shopping",
-    cart_customize: "Customize Your Item",
-    review_title: "Before Payment — Final Selection Review",
-    review_subtitle: "These are the exact items you selected. You can refine every detail before completing payment.",
+    cart_customize: "Customize Item",
+    review_title: "Before Checkout - Review Items",
+    review_subtitle: "Review your selected items. You can adjust details before placing your order.",
     low_stock: "High Demand - Limited Stock",
     select_available_variant: "Please select an available color and size",
-    empty_cart_toast: "Your cart is empty, add items to continue",
-    variant_error_toast: "Variant mismatch detected, refresh and select again",
+    empty_cart_toast: "Your cart is empty. Add items to continue.",
+    variant_error_toast: "Variant error. Please refresh and try again.",
     checkout: "Checkout",
     checkout_secure: "Secure Checkout",
     shipping_details: "Shipping Details",
     full_name: "Full Name",
     email: "Email Address",
-    address: "Full Address (Street, City, Zip)",
-    shipping_name_english_only: "Full name must be entered in English.",
-    shipping_address_english_only: "Shipping address must be entered in English so Printify can deliver correctly.",
-    payment_method: "Payment Method",
+    address: "Address (Street, City, Zip)",
+    shipping_name_english_only: "Full name must be in English only.",
+    shipping_address_english_only: "Shipping address must be in English only to ensure proper delivery.",
+    payment_method: "Select Payment Method",
     payment_card_apple_google: "Credit Card / Apple Pay / Google Pay",
-    payment_card_bit: "Card Payment",
-    payment_stripe: "Stripe ($)",
+    payment_card_bit: "Credit Card",
+    payment_stripe: "International Card (Stripe)",
     payment_paypal: "PayPal",
-    payment_meshulam_card: "Credit Card (Israel)",
-    payment_meshulam_card_sub: "Visa · Mastercard · Isracard · Apple Pay",
-    payment_meshulam_bit: "Pay with Bit",
-    payment_meshulam_bit_sub: "Scan QR from the Bit app",
-    payment_meshulam_processing: "Redirecting to secure payment page...",
-    payment_unavailable: "Selected payment method is unavailable right now. Please use PayPal.",
+    payment_unavailable: "Selected payment method is currently unavailable. Please use PayPal.",
     order_summary: "Order Summary",
     subtotal: "Subtotal",
-    bundle_deal: "🎁 3-item bundle",
-    bundle_active: "🎉 3-item bundle applied successfully!",
-    bundle_hint: "Add one more item to unlock the bundle price!",
+    bundle_deal: "🎁 3-Item Bundle Deal",
+    bundle_active: "🎉 3-Item Bundle Deal Applied!",
+    bundle_hint: "Add another shirt to unlock the bundle deal price",
     shipping: "Shipping",
-    free: "FREE",
-    vat: "VAT (0% - Osek Patur)",
+    free: "Free",
+    vat: "VAT",
     total: "Total",
     complete_order: "Complete Order",
-    success_title: "Payment Successful! 🎉",
-    success_desc: "Thank you for your order. We are processing it now.",
-    return_home: "Return to Store",
-    shipping_unlocked: "🎉 You've unlocked free shipping",
-    shipping_hint: "Add {amount} more for free shipping!",
+    success_title: "🎉 Payment Complete!",
+    success_desc: "Thank you! Your order is being processed and is on its way.",
+    return_home: "Return to Shop",
+    shipping_unlocked: "🎉 Free Shipping unlocked!",
+    shipping_hint: "Add {amount} more for free shipping",
     cart_empty: "Your cart is empty",
-    support_chat: "Chat with Meni 🤖",
-    support_placeholder: "Ask Meni about sizes, care, or delivery...",
-    escalated_msg: "Escalated to human support. We will reply to your chat shortly.",
-    flash_sale: "Limited offer: Use code {code} for {discount}% off",
+    support_chat: "Meni 🤖",
+    support_placeholder: "Ask a question...",
+    escalated_msg: "Connected to support. We will reply shortly.",
+    flash_sale: "Limited Time Sale: Use code {code} for {discount}% off",
     coupon_label: "Coupon",
     contact_title: "Contact Us",
     contact_name_placeholder: "Your Name",
@@ -325,11 +177,10 @@ const translations = {
     legal_privacy: "Privacy Policy",
     legal_terms: "Terms of Service",
     legal_refund: "Refund Policy",
-    legal_contact: "Contact Support",
-    legal_back: "Back to Store",
-    legal_intro: "We are committed to privacy, transparency, and fair service.",
+    legal_contact: "Customer Support",
+    legal_back: "Back to Shop",
+    legal_intro: "We value your privacy, transparency, and fair service on every order.",
     legal_info_collect_title: "Information We Collect",
-    legal_info_collect_text: "We collect only the information needed to process your order and support requests.",
     legal_payments_title: "Payment Security",
     legal_payments_text: "Payments are securely processed by external payment providers.",
     legal_refunds_title: "Returns & Refunds",
@@ -341,7 +192,7 @@ const translations = {
     toggle_chat_aria: "Toggle chat support",
     loading: "Loading...",
     product_not_found: "Product not found",
-    shop_rights: "© 2026 Drip Street. All rights reserved.",
+    shop_rights: "© 2026 JØAKIM™. All rights reserved.",
     popup_title: "Join our club and get 10% off your first purchase.",
     popup_subtitle: "Enter your email to unlock your unique one-time code.",
     popup_placeholder: "Your email address...",
@@ -356,95 +207,25 @@ const translations = {
     promo_apply: "Apply",
     promo_applied: "Code applied",
     promo_invalid: "Promo code is invalid or already used",
-    rating_label: "based on reviews",
-    reviews_title: "What Customers Are Saying",
-    trending_title: "Trending Now",
-    why_title: "Why DRIP STREET?",
-    why_shipping: "Worldwide Shipping",
-    why_shipping_desc: "Fast, tracked international delivery to any destination.",
-    why_secure: "100% Secure Checkout",
-    why_secure_desc: "SSL-encrypted + Stripe, PayPal, and more.",
-    why_quality: "Premium Quality",
-    why_quality_desc: "Soft fabric with sharp, fade-resistant prints.",
-    why_returns: "Premium Quality Guarantee",
-    why_returns_desc: "Flawless prints. Defective items replaced immediately.",
-    seo_title: "DRIP STREET | Minimalist Streetwear",
-    seo_description: "Premium minimal streetwear built for confidence. Shop oversized tees, summer tanks, and high-quality basics. Worldwide shipping.",
+    trending_title: "ALSO FROM THE DROP",
+    seo_title: "JØAKIM | Freedom. Style. Attitude.",
+    seo_description: "Premium streetwear and jewelry designed for everyday confidence. Shop tees, hoodies, chains, and bracelets. Worldwide tracked shipping.",
     taxes_shipping_note: "Taxes and shipping calculated at checkout",
     payment_icons_label: "We accept"
   }
 };
 
 /** Product title translations from Printify defaults to Hebrew */
-const productTitleMap = {
-  'Unisex Softstyle T-Shirt': 'טי-שירט יוניסקס בייסיק',
-  'Unisex Jersey Short Sleeve Tee': 'טי-שירט פרימיום',
-  'Unisex Heavy Blend™ Hooded Sweatshirt': 'קפוצ\'ון אוברסייז קלאסי',
-  'Gildan 64000': 'טי-שירט Gildan',
-  'Bella+Canvas 3001': 'טי-שירט Bella+Canvas',
-  'Gildan 18500': 'קפוצ\'ון Gildan',
-  'Drum Machine Blueprint': 'טי-שירט Blueprint',
-  'Retro Synth': 'טי-שירט Synth ריטרו',
-  'Circuit Board': 'טי-שירט Circuit Board',
-  'Minimal Grid': 'טי-שירט מינימליסטי',
-};
-
-const hebrewProductTitleRules = [
-  { test: (s) => s.includes('drum machine'), title: 'טי-שירט דראם משין' },
-  { test: (s) => s.includes('retro palm'), title: 'טי-שירט דקלים רטרו' },
-  { test: (s) => s.includes('urban frequency'), title: 'טי-שירט אורבן פריקוונסי' },
-  { test: (s) => s.includes('ramen shop'), title: 'טי-שירט ראמן שופ' },
-  { test: (s) => s.includes('minimal botanical'), title: 'טי-שירט בוטני מינימליסטי' },
-  { test: (s) => s.includes('sunset road'), title: 'טי-שירט סאנסט רואד' },
-  { test: (s) => s.includes('eiffel tower') || s.includes('paris'), title: 'טי-שירט פריז אייפל' },
-  { test: (s) => s.includes('samurai'), title: 'טי-שירט סמוראי' },
-  { test: (s) => s.includes('tank'), title: 'גופיית קיץ מינימליסטית' },
-  { test: (s) => s.includes('hoodie') || s.includes('sweatshirt'), title: 'קפוצ׳ון אוברסייז קלאסי' },
-  { test: (s) => s.includes('tee') || s.includes('t-shirt') || s.includes('shirt'), title: 'טי-שירט יוניסקס פרימיום' },
-];
-
-const hebrewColorMap = {
-  black: 'שחור',
-  white: 'לבן',
-  sportgrey: 'אפור',
-  sportgreyheather: 'אפור',
-  heather: 'אפור',
-  red: 'אדום',
-  navy: 'כחול כהה',
-  blue: 'כחול',
-  green: 'ירוק',
-  sand: 'חול',
-  natural: 'שמנת',
-  tan: 'בז׳',
-  autumn: 'כתום',
-  mauve: 'ורוד מעושן',
-  vintagewhite: 'לבן וינטג׳',
-  canvasred: 'אדום',
-};
-
-function localizeColorName(color, locale) {
-  if (locale !== 'he') return color;
-  const normalized = String(color || '').toLowerCase().replace(/[^a-z]/g, '');
-  return hebrewColorMap[normalized] || color;
+function localizeColorName(color) {
+  return color;
 }
 
-function getProductTitle(title, locale) {
-  if (locale === 'he') {
-    if (productTitleMap[title]) return productTitleMap[title];
-    const normalized = String(title || '').toLowerCase();
-    const rule = hebrewProductTitleRules.find((entry) => entry.test(normalized));
-    if (rule) return rule.title;
-  }
+function getProductTitle(title) {
   return title;
 }
 
-function getCartDisplayTitle(rawTitle, locale) {
-  const text = String(rawTitle || '');
-  if (locale !== 'he') return text;
-  const parts = text.split(' - ');
-  const base = getProductTitle(parts[0] || '', locale);
-  const rest = parts.slice(1).map((part, idx) => (idx === 0 ? localizeColorName(part, locale) : part));
-  return [base, ...rest].join(' - ');
+function getCartDisplayTitle(rawTitle) {
+  return rawTitle;
 }
 
 function splitVariantTitle(rawTitle) {
@@ -456,76 +237,47 @@ function splitVariantTitle(rawTitle) {
   };
 }
 
-function getLocalizedProductDescription(product, locale) {
-  if (locale !== 'he') return product.description || 'Premium quality, clean fit, everyday comfort.';
-  if (isTeeProduct(product)) return 'חולצה איכותית מבד נעים, גזרה מחמיאה ונוחות מקסימלית לשימוש יומיומי.';
-  if (String(product.title || '').toLowerCase().includes('tank')) return 'גופייה קלילה לקיץ, נוחה ונעימה עם מראה נקי ומדויק.';
-  return 'קפוצ׳ון איכותי עם בד נעים, ישיבה טובה ונוחות גבוהה לכל היום.';
+function getLocalizedProductDescription(product) {
+  return product.description || 'Premium quality, clean fit, everyday comfort.';
 }
 
-function getLocalizedFabric(product, locale) {
-  if (locale !== 'he') return product.fabric || 'Premium cotton blend';
-  if (String(product.title || '').toLowerCase().includes('tank')) return 'בד קליל ונושם שמתאים במיוחד לעונות חמות.';
-  return 'בד איכותי, נעים למגע, עם גזרה מחמיאה ונוחה.';
+function getLocalizedFabric(product) {
+  return product.fabric || 'Premium cotton blend';
 }
 
-function getLocalizedCare(product, locale) {
-  if (locale !== 'he') return product.careInstructions || 'Machine wash cold.';
-  return 'כביסה עדינה במים קרים, להפוך את הפריט לפני כביסה, ללא גיהוץ ישיר על ההדפס.';
+function getLocalizedCare(product) {
+  return product.careInstructions || 'Machine wash cold.';
 }
 
-function getLocalizedDelivery(product, locale) {
-  const operational = product && product.operationalNotice ? product.operationalNotice : null;
-  if (operational) {
-    const [prodMin, prodMax] = operational.productionRangeDays || [2, 5];
-    const [shipMin, shipMax] = operational.shippingRangeDays || [7, 14];
-    if (locale !== 'he') {
-      return `Live fulfillment window: ${prodMin}-${prodMax} business days production + ${shipMin}-${shipMax} business days shipping.`;
-    }
-    return `נתוני זמינות חיים: ייצור ${prodMin}-${prodMax} ימי עסקים ומשלוח ${shipMin}-${shipMax} ימי עסקים.`;
-  }
-
-  if (locale !== 'he') return product.deliveryInfo || 'Standard delivery.';
-  return product.deliveryInfo || 'זמני משלוח מתעדכנים לפי זמינות בזמן אמת.';
+function getLocalizedDelivery(product, locale = 'en') {
+  return getDeliveryLabel(product, locale);
 }
 
 const isJewelryProduct = (product = {}) => deriveProductCategory(product) === 'Jewelry';
 
-const getSizeGuideContent = (product, locale) => {
+const getSizeGuideContent = (product) => {
   const jewelry = isJewelryProduct(product);
 
   if (jewelry) {
     return {
-      title: locale === 'he' ? 'מדריך מידות לתכשיטים' : 'Jewelry Size Guide',
-      subtitle: locale === 'he'
-        ? 'בחר אורך שרשרת לפי נקודת הישיבה הרצויה על הצוואר והחזה.'
-        : 'Choose your chain length based on where you want it to sit.',
-      note: locale === 'he'
-        ? 'למראה שכבות דרמטי, 22-24 אינץ׳ הם האורך המומלץ.'
-        : 'For layered looks, 22-24 inches usually works best.',
-      columns: locale === 'he'
-        ? ['אורך', 'סגנון ישיבה', 'למי זה מתאים']
-        : ['Length', 'Fit Style', 'Best For'],
+      title: 'Jewelry Size Guide',
+      subtitle: 'Choose your chain length based on where you want it to sit.',
+      note: 'For layered looks, 22-24 inches usually works best.',
+      columns: ['Length', 'Fit Style', 'Best For'],
       rows: [
-        ['18" / 45cm', locale === 'he' ? 'צמוד לבסיס הצוואר' : 'Close neckline', locale === 'he' ? 'מראה נקי' : 'Clean minimal look'],
-        ['20" / 50cm', locale === 'he' ? 'על עצם הבריח' : 'At collarbone', locale === 'he' ? 'אורך יומיומי' : 'Everyday classic'],
-        ['22" / 55cm', locale === 'he' ? 'מתחת לעצם הבריח' : 'Below collarbone', locale === 'he' ? 'לוק סטריט' : 'Streetwear presence'],
-        ['24" / 60cm', locale === 'he' ? 'אמצע חזה עליון' : 'Upper chest', locale === 'he' ? 'שכבות בולטות' : 'Layered statement'],
+        ['18" / 45cm', 'Close neckline', 'Clean minimal look'],
+        ['20" / 50cm', 'At collarbone', 'Everyday classic'],
+        ['22" / 55cm', 'Below collarbone', 'Streetwear presence'],
+        ['24" / 60cm', 'Upper chest', 'Layered statement'],
       ],
     };
   }
 
   return {
-    title: locale === 'he' ? 'מדריך מידות לביגוד' : 'Apparel Size Guide',
-    subtitle: locale === 'he'
-      ? 'מדוד חולצה מועדפת והשווה לטבלה להתאמה מדויקת.'
-      : 'Measure a favorite tee and compare for the best fit.',
-    note: locale === 'he'
-      ? 'אם אתה בין מידות, למראה אוברסייז בחר מידה אחת למעלה.'
-      : 'Between sizes? Size up for an oversized silhouette.',
-    columns: locale === 'he'
-      ? ['מידה', 'חזה', 'אורך גוף', 'כתפיים']
-      : ['Size', 'Chest', 'Body Length', 'Shoulders'],
+    title: 'Apparel Size Guide',
+    subtitle: 'Measure a favorite tee and compare for the best fit.',
+    note: 'Between sizes? Size up for an oversized silhouette.',
+    columns: ['Size', 'Chest', 'Body Length', 'Shoulders'],
     rows: [
       ['S', '96-101 cm', '69 cm', '43 cm'],
       ['M', '102-107 cm', '72 cm', '46 cm'],
@@ -537,8 +289,6 @@ const getSizeGuideContent = (product, locale) => {
 };
 
 function SizeGuideModal({ product, locale, onClose }) {
-  const guide = useMemo(() => getSizeGuideContent(product, locale), [product, locale]);
-
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') onClose();
@@ -554,72 +304,39 @@ function SizeGuideModal({ product, locale, onClose }) {
 
   return (
     <div className="size-guide-overlay" onClick={onClose}>
-      <div className="size-guide-modal" onClick={(event) => event.stopPropagation()} dir={locale === 'he' ? 'rtl' : 'ltr'}>
+      <div className="size-guide-modal size-guide-modal-custom" onClick={(event) => event.stopPropagation()} dir={locale === 'he' ? 'rtl' : 'ltr'} style={{ maxWidth: '900px', width: '90%' }}>
         <button type="button" className="size-guide-close" onClick={onClose} aria-label={locale === 'he' ? 'סגור חלון' : 'Close modal'}>×</button>
-        <div className="size-guide-header">
-          <span>{locale === 'he' ? 'מדריך מידות 📏' : 'Size Guide 📏'}</span>
-          <h3>{guide.title}</h3>
-          <p>{guide.subtitle}</p>
-        </div>
-        <div className="size-guide-table-wrap">
-          <table className="size-guide-table">
-            <thead>
-              <tr>
-                {guide.columns.map((column) => <th key={column}>{column}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {guide.rows.map((row) => (
-                <tr key={row.join('-')}>
-                  {row.map((cell) => <td key={cell}>{cell}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="size-guide-note">{guide.note}</div>
+        {/* <PerfectFitKeys product={product} locale={locale} /> */}
       </div>
     </div>
   );
 }
 
-function CartDemandBanner({ locale, totalItems }) {
-  const headline = locale === 'he'
-    ? '🔥 ביקוש גבוה! פריטים פופולריים נעלמים מהר מהסל.'
-    : '🔥 High Demand! Popular pieces are moving fast right now.';
-  const detail = locale === 'he'
-    ? `יש כרגע ${totalItems} פריטים בסל שלך. השלם תשלום כדי לנעול מלאי ומחיר.`
-    : `You currently have ${totalItems} item${totalItems === 1 ? '' : 's'} in your cart. Complete checkout to lock stock and price.`;
 
-  return (
-    <div className="cart-demand-banner">
-      <div className="cart-demand-pulse" aria-hidden="true" />
-      <div>
-        <strong>{headline}</strong>
-        <p>{detail}</p>
-      </div>
-    </div>
-  );
-}
+const TRUST_ICONS = {
+  lock: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1L2 3.5V8C2 11.3 4.6 14.4 8 15C11.4 14.4 14 11.3 14 8V3.5L8 1Z" stroke="currentColor" strokeWidth="1.2" fill="none"/></svg>,
+  ship: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1 9H11M11 9L8 6M11 9L8 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M5 4H13C13.6 4 14 4.4 14 5V11C14 11.6 13.6 12 13 12H5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>,
+  qual: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2L9.6 6H14L10.5 8.5L11.8 13L8 10.5L4.2 13L5.5 8.5L2 6H6.4L8 2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="none"/></svg>,
+};
 
 function CartTrustSignals({ locale }) {
   const badges = locale === 'he'
     ? [
-        { icon: '🔐', title: 'קופה מוצפנת SSL' },
-        { icon: '🚚', title: 'משלוח אקספרס מבוטח' },
-        { icon: '🛡', title: 'אחריות איכות מלאה' },
+        { icon: TRUST_ICONS.lock, title: 'קופה מוצפנת SSL' },
+        { icon: TRUST_ICONS.ship, title: 'משלוח מבוטח עם מעקב' },
+        { icon: TRUST_ICONS.qual, title: 'אחריות איכות מלאה' },
       ]
     : [
-        { icon: '🔐', title: 'SSL Encrypted Checkout' },
-        { icon: '🚚', title: 'Insured Express Shipping' },
-        { icon: '🛡', title: 'Quality Guarantee' },
+        { icon: TRUST_ICONS.lock, title: 'SSL Encrypted Checkout' },
+        { icon: TRUST_ICONS.ship, title: 'Tracked & Insured Shipping' },
+        { icon: TRUST_ICONS.qual, title: 'Quality Guarantee' },
       ];
 
   return (
     <div className="cart-trust-grid">
       {badges.map((badge) => (
         <div key={badge.title} className="cart-trust-card">
-          <span>{badge.icon}</span>
+          <span className="cart-trust-icon">{badge.icon}</span>
           <b>{badge.title}</b>
         </div>
       ))}
@@ -689,7 +406,7 @@ const calculateBundlePricing = (cart) => {
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
 // Phase 11.1: fallback OG share image is the new metallic D logo.
-const GLOBAL_OG_IMAGE_URL = 'https://dripstreetshop.com/logo-new.png';
+const GLOBAL_OG_IMAGE_URL = 'https://dripstreetshop.com/joakim-og.png';
 const GLOBAL_ERROR_TOAST_HE = 'A temporary error occurred, please try again';
 const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
@@ -699,6 +416,38 @@ const ENGLISH_SHIPPING_TEXT_REGEX = /^[A-Za-z0-9\s.,'\-/#()]+$/;
 
 const normalizeValue = (value) => String(value || '').trim().toLowerCase();
 const normalizeSizeLabel = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+const formatSizeDisplay = (s) => s === 'ONESIZE' ? 'ONE SIZE' : s;
+
+const normalizeArrayField = (value) => {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value.filter((v) => v != null);
+  if (typeof value === 'string' && value.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((v) => v != null) : [value];
+    } catch { return [value]; }
+  }
+  return [value];
+};
+
+const PLACEHOLDER_IMG = '/shirt-black-design.png';
+
+function extractProductImageUrl(product) {
+  if (!product) return PLACEHOLDER_IMG;
+  const raw =
+    product.imageUrl ??
+    product.image ??
+    (Array.isArray(product.images) ? product.images[0] : null);
+  if (!raw) return PLACEHOLDER_IMG;
+  if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+    try {
+      const arr = JSON.parse(raw);
+      const first = Array.isArray(arr) ? arr[0] : null;
+      return typeof first === 'string' && first ? first : PLACEHOLDER_IMG;
+    } catch { return PLACEHOLDER_IMG; }
+  }
+  return typeof raw === 'string' && raw.trim() ? raw : PLACEHOLDER_IMG;
+}
 
 const triggerHapticTap = () => {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
@@ -710,13 +459,13 @@ const extractImageUrl = (value) => {
   if (!value) return null;
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    return trimmed ? trimmed : null;
+    return (trimmed && trimmed !== 'undefined') ? trimmed : null;
   }
   if (typeof value === 'object') {
-    const candidate = value.src || value.url || value.image_url || value.imageUrl;
+    const candidate = value.src || value.url || value.image_url || value.imageUrl || value.swatch;
     if (typeof candidate === 'string') {
       const trimmed = candidate.trim();
-      return trimmed ? trimmed : null;
+      return (trimmed && trimmed !== 'undefined') ? trimmed : null;
     }
   }
   return null;
@@ -777,6 +526,9 @@ const getOrderedDisplaySizes = (sizes = []) => {
       const rankA = SIZE_RANK[a] || Number.MAX_SAFE_INTEGER;
       const rankB = SIZE_RANK[b] || Number.MAX_SAFE_INTEGER;
       if (rankA !== rankB) return rankA - rankB;
+      const numA = parseFloat(a);
+      const numB = parseFloat(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
       return a.localeCompare(b);
     });
 };
@@ -788,10 +540,11 @@ const findMatchingVariant = (variants, selectedColor, selectedSize) => {
   const normalizedSize = normalizeSizeLabel(selectedSize);
 
   return variants.find((variant) => (
-    normalizeValue(variant.color) === normalizedColor
+    variant
+    && normalizeValue(variant.color) === normalizedColor
     && normalizeSizeLabel(variant.size) === normalizedSize
-    && Number(variant.isEnabled) !== 0
-    && Number(variant.isAvailable) !== 0
+    && Number(variant.isEnabled || 0) !== 0
+    && Number(variant.isAvailable || 0) !== 0
   )) || null;
 };
 
@@ -801,9 +554,10 @@ const findFirstAvailableVariantForColor = (variants, selectedColor) => {
   const normalizedColor = normalizeValue(selectedColor);
 
   return variants.find((variant) => (
-    normalizeValue(variant.color) === normalizedColor
-    && Number(variant.isEnabled) !== 0
-    && Number(variant.isAvailable) !== 0
+    variant
+    && normalizeValue(variant.color) === normalizedColor
+    && Number(variant.isEnabled || 0) !== 0
+    && Number(variant.isAvailable || 0) !== 0
   )) || null;
 };
 
@@ -824,6 +578,25 @@ const buildDynamicCategories = (products = []) => {
   return ['All', ...derived];
 };
 
+const DROP_CONFIG = {
+  '01': { id: '01', label: 'DROP 01', season: 'SS26', status: 'live' },
+  '02': { id: '02', label: 'DROP 02', season: 'SS26', status: 'coming_soon' },
+  '03': { id: '03', label: 'DROP 03', season: 'FW26', status: 'archive' },
+};
+
+function getProductDrop(product) {
+  return DROP_CONFIG['01'];
+}
+
+function getDropTag(product, locale) {
+  const drop = getProductDrop(product);
+  const category = isJewelryProduct(product)
+    ? (locale === 'he' ? 'תכשיטים' : 'JEWELRY')
+    : (locale === 'he' ? 'סטריטוור' : 'STREETWEAR');
+  const dropLabel = locale === 'he' ? `דרופ ${drop.id}` : drop.label;
+  return `${category} · ${drop.season} · ${dropLabel}`;
+}
+
 const getRecommendationProducts = (products = [], cart = [], activeProductId = null) => {
   const cartIds = new Set((cart || []).map((item) => Number(item.id)).filter(Number.isFinite));
 
@@ -843,12 +616,21 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
   const [currentSrc, setCurrentSrc] = useState(src || fallbackSrc);
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const imgRef = useRef(null);
 
   useEffect(() => {
     setCurrentSrc(src || fallbackSrc);
     setFailed(false);
     setLoaded(false);
   }, [src, fallbackSrc]);
+
+  // Catch already-cached images that fire onLoad before React attaches the listener
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setLoaded(true);
+    }
+  }, [currentSrc]);
 
   const handleError = () => {
     if (currentSrc !== fallbackSrc) {
@@ -863,7 +645,7 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
     return (
       <div className={`${className} image-fallback-card`} role="img" aria-label={alt}>
         <div className="skeleton image-fallback-skeleton" />
-        <span className="image-fallback-label">DRIP STREET</span>
+        <span className="image-fallback-label">JØAKIM</span>
       </div>
     );
   }
@@ -872,6 +654,7 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
     <div className="guarded-image-shell">
       {!loaded && <div className="skeleton guarded-image-skeleton" />}
       <img
+        ref={imgRef}
         loading={loading}
         fetchPriority={fetchPriority}
         src={currentSrc}
@@ -885,29 +668,6 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
   );
 }
 
-function PromoDealBadge({ locale, curSym, displayVal }) {
-  if (locale === 'he') {
-    return (
-      <span className="deal-badge" dir="rtl">
-        <bdi className="deal-badge-text deal-badge-text-rtl">
-          <span className="deal-badge-token deal-badge-token-count">3</span>
-          <span className="deal-badge-token">פריטים</span>
-          <span className="deal-badge-token">ב-229₪</span>
-        </bdi>
-      </span>
-    );
-  }
-
-  return (
-    <span className="deal-badge">
-      <span className="deal-badge-text">
-        <span className="deal-badge-token">3 items</span>
-        <span className="deal-badge-token">for</span>
-        <span className="deal-badge-token">{curSym}{displayVal(BUNDLE_ITEM_PRICE).toFixed(2)}</span>
-      </span>
-    </span>
-  );
-}
 
 function CartUpsellRail({ items, onQuickAdd, curSym, displayVal }) {
   if (!items.length) return null;
@@ -929,7 +689,7 @@ function CartUpsellRail({ items, onQuickAdd, curSym, displayVal }) {
               <span>{item.subtitle}</span>
               <div className="cart-upsell-meta">
                 <b>{curSym}{displayVal(item.price).toFixed(2)}</b>
-                <button type="button" onClick={() => onQuickAdd(item)}>Add</button>
+                <button type="button" className="upsell-add-btn" onClick={() => onQuickAdd(item)}>Add</button>
               </div>
             </div>
           </article>
@@ -1119,53 +879,6 @@ function LeadCapturePopup({ t, currentPath }) {
   );
 }
 
-// ─── StarRating ───────────────────────────────────────────────────────────────
-function StarRating({ score = 5, count = 47, t }) {
-  return (
-    <div className="star-rating-row">
-      <span className="star-rating-stars" aria-label={`${score} out of 5`}>
-        {[1,2,3,4,5].map((s) => (
-          <span key={s} className={`star ${s <= Math.round(score) ? 'filled' : 'empty'}`}>★</span>
-        ))}
-      </span>
-      <span className="star-rating-score">{score.toFixed(1)}</span>
-      <span className="star-rating-count">({count} {t('rating_label')})</span>
-    </div>
-  );
-}
-
-// ─── CustomerReviews ──────────────────────────────────────────────────────────
-const REVIEWS_HE = [
-  { name: 'יואב ל.', date: 'מאי 2026', text: 'חולצה ממש איכותית, הבד נעים ועדין. ההדפסה חדה ומדויקת. קיבלתי המון מחמאות.', score: 5 },
-  { name: 'שירה מ.', date: 'אפריל 2026', text: 'הזמנתי כמה פריטים ו-100% מרוצה. המשלוח היה מהיר והאריזה מושקעת. ממליצה בחום!', score: 5 },
-  { name: 'ניב ב.', date: 'מרץ 2026', text: 'סטייל מינימליסטי בדיוק כמו שרציתי. כבר הזמנתי שוב.', score: 5 },
-];
-const REVIEWS_EN = [
-  { name: 'Yoav L.', date: 'May 2026', text: "Really high quality tee — the fabric is super soft and the print is laser-sharp. Got so many compliments.", score: 5 },
-  { name: 'Shira M.', date: 'April 2026', text: "Ordered several items and I'm 100% satisfied. Fast shipping and the packaging feels premium. Highly recommend!", score: 5 },
-  { name: 'Niv B.', date: 'March 2026', text: "Exactly the minimalist aesthetic I was looking for. Already placed a second order.", score: 5 },
-];
-
-function CustomerReviews({ t, locale }) {
-  const reviews = locale === 'he' ? REVIEWS_HE : REVIEWS_EN;
-  return (
-    <div className="customer-reviews">
-      <h3 className="reviews-section-title">{t('reviews_title')}</h3>
-      <div className="reviews-list">
-        {reviews.map((review, i) => (
-          <div key={i} className="review-card">
-            <div className="review-header">
-              <span className="review-name">{review.name}</span>
-              <span className="review-date">{review.date}</span>
-            </div>
-            <div className="review-stars">{'★'.repeat(review.score)}</div>
-            <p className="review-text">{review.text}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, currency, curSym, locale }) {
   const [product, setProduct] = useState(null);
@@ -1178,7 +891,11 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
   const [showStickyCta, setShowStickyCta] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [timeOnPage, setTimeOnPage] = useState(0);
+  const [ctaHovered, setCtaHovered] = useState(false);
   const mainCtaRef = useRef(null);
+  const timeOnPageRef = useRef(0);
+  const scrollDepthRef = useRef(0);
   const mobileCarouselRef = useRef(null);
 
   useEffect(() => {
@@ -1189,13 +906,14 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         return res.json();
       })
       .then(data => {
-        // Build imagesByColor mapping from variants and images
-        if (data.variants && data.images) {
+        // Build imagesByColor mapping from variants and images safely
+        if (data && Array.isArray(data.variants) && Array.isArray(data.images) && data.type !== 'dropship' && data.supplier_id !== 'dropship') {
           const imagesByColor = {};
           const variantIdToColor = {};
           
           // Map variant IDs to colors
           data.variants.forEach(v => {
+            if (!v) return;
             const vid = v.printifyVariantId || v.variantId || v.id;
             if (vid) {
               variantIdToColor[vid] = v.color;
@@ -1204,18 +922,16 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           
           // Group images by variant ID (extracted from URL path)
           const imagesByVariantId = {};
-          if (Array.isArray(data.images)) {
-            data.images.forEach(img => {
-              const imgSrc = typeof img === 'string' ? img : (img?.src || '');
-              if (!imgSrc) return;
-              const variantMatch = imgSrc.match(/\/mockup\/[^/]+\/(\d+)\//);
-              if (variantMatch) {
-                const variantId = variantMatch[1];
-                if (!imagesByVariantId[variantId]) imagesByVariantId[variantId] = [];
-                imagesByVariantId[variantId].push(img);
-              }
-            });
-          }
+          data.images.forEach(img => {
+            const imgSrc = typeof img === 'string' ? img : (img?.src || '');
+            if (!imgSrc) return;
+            const variantMatch = imgSrc.match(/\/mockup\/[^/]+\/(\d+)\//);
+            if (variantMatch) {
+              const variantId = variantMatch[1];
+              if (!imagesByVariantId[variantId]) imagesByVariantId[variantId] = [];
+              imagesByVariantId[variantId].push(img);
+            }
+          });
           
           // Map images to colors
           Object.entries(imagesByVariantId).forEach(([variantId, images]) => {
@@ -1232,14 +948,22 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         
         // Fire analytics view_item
         trackViewItem(data, currency);
+        recordProductView(String(data.id), isJewelryProduct(data) ? 'jewelry' : 'streetwear');
 
-        // Select first non-black color
-        if (data.colors && data.colors.length > 0) {
-          const nonBlackColor = data.colors.find(c => c.name.toLowerCase() !== 'black');
-          setSelectedColor(nonBlackColor ? nonBlackColor.name : data.colors[0].name);
+        // Select first non-black color safely; normalizeArrayField handles JSON-string fields from DB
+        const dataColors = normalizeArrayField(data?.colors);
+        if (data && dataColors.length > 0) {
+          const nonBlackColor = dataColors.find(c => c && c.name && c.name.toLowerCase() !== 'black');
+          setSelectedColor(nonBlackColor ? nonBlackColor.name : (dataColors[0]?.name || ''));
+        } else {
+          setSelectedColor('');
         }
-        const orderedSizes = getOrderedDisplaySizes(data.sizes || []);
-        if (orderedSizes.length > 0) setSelectedSize(orderedSizes[0]);
+        const orderedSizes = getOrderedDisplaySizes(data?.sizes || []);
+        if (orderedSizes.length > 0) {
+          setSelectedSize(orderedSizes[0]);
+        } else {
+          setSelectedSize('');
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -1247,10 +971,36 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
         showToast(GLOBAL_ERROR_TOAST_HE);
         setLoading(false);
       });
+
+    return () => {
+      if (productId) recordTimeOnProduct(String(productId), timeOnPageRef.current);
+    };
   }, [productId]);
 
-  const productVariants = product && Array.isArray(product.variants) ? product.variants : [];
-  const productSizes = product && Array.isArray(product.sizes) ? product.sizes : [];
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeOnPage(prev => {
+        const next = prev + 5;
+        timeOnPageRef.current = next;
+        return next;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      if (docHeight > 0) {
+        scrollDepthRef.current = Math.round((window.scrollY / docHeight) * 100);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const productVariants = product && Array.isArray(product?.variants) ? product.variants : [];
+  const productSizes = product && Array.isArray(product?.sizes) ? product.sizes : [];
   const orderedDisplaySizes = useMemo(() => getOrderedDisplaySizes(productSizes), [productSizes]);
 
   const selectedVariant = useMemo(() => (
@@ -1262,9 +1012,10 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     const sizes = new Set();
     productVariants.forEach((variant) => {
       if (
+        variant &&
         normalizeValue(variant.color) === normalizedColor
-        && Number(variant.isEnabled) !== 0
-        && Number(variant.isAvailable) !== 0
+        && Number(variant.isEnabled || 0) !== 0
+        && Number(variant.isAvailable || 0) !== 0
         && (!isClothingSize(normalizeSizeLabel(variant.size)) || (SIZE_RANK[normalizeSizeLabel(variant.size)] || Number.MAX_SAFE_INTEGER) <= MAX_ALLOWED_SIZE_RANK)
       ) {
         sizes.add(normalizeSizeLabel(variant.size));
@@ -1286,13 +1037,13 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   const activeImages = useMemo(() => {
     if (!product) return [];
 
-    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
     
     // Safely extract product images array
     let productImages = [];
-    if (Array.isArray(product.images)) {
+    if (Array.isArray(product?.images)) {
       productImages = product.images;
-    } else if (typeof product.images === 'string') {
+    } else if (typeof product?.images === 'string') {
       try {
         const parsed = JSON.parse(product.images);
         if (Array.isArray(parsed)) {
@@ -1303,13 +1054,13 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
           productImages = [product.images];
         }
       } catch {
-        if (product.images.includes(',')) {
+        if (product?.images?.includes(',')) {
           productImages = product.images.split(',').map(s => s.trim()).filter(Boolean);
         } else {
           productImages = [product.images];
         }
       }
-    } else if (product.images) {
+    } else if (product?.images) {
       productImages = [product.images];
     }
 
@@ -1319,7 +1070,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     );
     if (mappedVariantImages.length > 0) return mappedVariantImages;
 
-    const imagesByColor = product.imagesByColor && typeof product.imagesByColor === 'object'
+    const imagesByColor = (product?.imagesByColor && typeof product.imagesByColor === 'object')
       ? product.imagesByColor
       : null;
 
@@ -1330,13 +1081,30 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
 
       if (matchingColorEntry && Array.isArray(matchingColorEntry[1])) {
         const colorImages = matchingColorEntry[1].map((entry) => extractImageUrl(entry)).filter(Boolean);
-        if (colorImages.length > 0) return colorImages;
+        if (colorImages.length > 0) {
+          // Gallery = selected-color image(s) first, then one clean image per other color
+          const seen = new Set(colorImages);
+          const otherColorImages = Object.entries(imagesByColor)
+            .filter(([name]) => normalizeValue(name) !== normalizeValue(selectedColor))
+            .flatMap(([, imgs]) => imgs.map((e) => extractImageUrl(e)).filter(Boolean))
+            .filter((img) => !seen.has(img));
+          return [...colorImages, ...otherColorImages];
+        }
       }
     }
 
     if (selectedVariant?.imageUrl || selectedVariant?.image_url) {
-      const variantImage = extractImageUrl(selectedVariant.imageUrl || selectedVariant.image_url);
-      if (variantImage) return [variantImage];
+      const variantImage = extractImageUrl(selectedVariant?.imageUrl || selectedVariant?.image_url);
+      if (variantImage) {
+        if (productImages.length > 0) {
+          const galleryImages = productImages.map((e) => extractImageUrl(e)).filter(Boolean);
+          if (galleryImages.length > 0) {
+            const others = galleryImages.filter((img) => img !== variantImage);
+            return [variantImage, ...others];
+          }
+        }
+        return [variantImage];
+      }
     }
 
     if (productImages.length > 0) {
@@ -1345,10 +1113,10 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     }
 
     const fallbackImage = pickFirstImageUrl(
-      product.imageUrl,
-      product.image_url,
-      product.backImageUrl,
-      product.backImage_url,
+      product?.imageUrl,
+      product?.image_url,
+      product?.backImageUrl,
+      product?.backImage_url,
       GLOBAL_IMAGE_FALLBACK
     );
     return [fallbackImage || GLOBAL_IMAGE_FALLBACK];
@@ -1379,15 +1147,12 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       assets.push({ type: 'placeholder', kind: 'image', key: 'ph-image', label: 'Image Placeholder' });
     }
 
-    assets.push({ type: 'placeholder', kind: 'video', key: 'ph-video', label: locale === 'he' ? 'וידאו מוצר בקרוב' : 'Product Video Coming Soon' });
-    assets.push({ type: 'placeholder', kind: 'gif', key: 'ph-gif', label: locale === 'he' ? 'תצוגת GIF בקרוב' : 'GIF Motion Preview Coming Soon' });
-
     return assets;
   }, [activeImages, product, locale]);
 
   const activeMedia = mediaAssets[activeImageIndex] || mediaAssets[0] || null;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setActiveImageIndex(0);
     if (mobileCarouselRef.current) mobileCarouselRef.current.scrollLeft = 0;
   }, [selectedColor, productId]);
@@ -1446,10 +1211,10 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
     return () => observer.disconnect();
   }, [isMobileViewport]);
 
-  const selectedVariantStock = selectedVariant && Number.isFinite(Number(selectedVariant.stockQty))
-    ? Number(selectedVariant.stockQty)
+  const selectedVariantStock = selectedVariant && Number.isFinite(Number(selectedVariant?.stockQty))
+    ? Number(selectedVariant?.stockQty)
     : null;
-  const isOutOfStock = selectedVariantStock === 0 || (selectedVariant && Number(selectedVariant.isAvailable) === 0);
+  const isOutOfStock = selectedVariantStock === 0 || (selectedVariant && Number(selectedVariant?.isAvailable || 0) === 0);
   const hasLiveInventory = Boolean(product?.operationalNotice?.isLiveInventory);
   const isLowStock = hasLiveInventory && selectedVariantStock !== null && selectedVariantStock > 0 && selectedVariantStock < LOW_STOCK_THRESHOLD;
 
@@ -1480,10 +1245,12 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
       );
     }
 
+    const imageSrc = extractImageUrl(asset.src) || GLOBAL_IMAGE_FALLBACK;
+
     return (
       <GuardedProductImage
-        src={asset.src}
-        alt={`${product.title} ${asset.label}`}
+        src={imageSrc}
+        alt={`${product?.title || ''} ${asset?.label || ''}`}
         className={variant === 'thumb' ? 'pdp-thumb-img' : 'pdp-image'}
         loading={variant === 'main' ? 'eager' : 'lazy'}
         fetchPriority={variant === 'main' ? 'high' : 'auto'}
@@ -1522,91 +1289,97 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
   const materialCareContent = locale === 'he'
     ? {
         intro: isJewelry
-          ? 'פלדת אל-חלד איכותית עם ציפוי מוזהב וגימור מבריק שמיועד לנוכחות יומיומית.'
+          ? (product?.id === 18
+              ? 'תליון פלדת טיטניום עם שרשרת חוט קלוע. מומלץ להימנע ממגע ממושך עם מים לשמירת החוט.'
+              : 'פלדת אל-חלד או טיטניום היפואלרגנית עם ציפוי מוגן מהתחמצנות וגימור מלוטש.')
           : `${getLocalizedFabric(product, locale)} ${getLocalizedCare(product, locale)}`,
         bullets: isJewelry
-          ? ['היפואלרגני ומתאים לשימוש יומיומי', 'ברק חלק עם ליטוש מדויק', 'מתאים לשכבות או לענידה בודדת']
+          ? ['היפואלרגני ומתאים לשימוש יומיומי', 'גימור מלוטש ללא קילוף או השחרה', 'מתאים לשכבות או לענידה בודדת']
           : ['בד פרימיום עם תחושת משקל נכונה', 'נוחות גבוהה ליום שלם', 'שומר על צורה ונראות גם אחרי כביסות'],
       }
     : {
         intro: isJewelry
-          ? 'Premium stainless steel with a deep gold finish built for everyday shine and comfort.'
+          ? (product?.id === 18
+              ? 'Titanium steel pendant with polished finish on a braided rope chain. Avoid prolonged water exposure to preserve the rope.'
+              : 'Hypoallergenic stainless or titanium steel with an anti-tarnish polished finish.')
           : `${getLocalizedFabric(product, locale)} ${getLocalizedCare(product, locale)}`,
         bullets: isJewelry
-          ? ['Hypoallergenic everyday wear', 'Polished premium shine', 'Strong solo piece or layering staple']
+          ? ['Hypoallergenic — safe for everyday wear', 'Polished finish, no flaking or tarnishing', 'Wears alone or stacks with other pieces']
           : ['Premium-weight fabrication', 'All-day comfort and structure', 'Designed to keep its shape after repeated wear'],
       };
-  const shippingReturnsContent = locale === 'he'
-    ? {
-        intro: getLocalizedDelivery(product, locale),
-        bullets: ['מספר מעקב נשלח מיד לאחר יציאה למחסן השילוח', 'החזרות והחלפות מטופלות מול שירות הלקוחות במהירות', 'במקרה של פגם ייצור נטפל בהחלפה או בזיכוי ללא עיכוב'],
-      }
-    : {
-        intro: getLocalizedDelivery(product, locale),
-        bullets: ['Tracking is emailed once the parcel is scanned by the carrier', 'Easy support-led returns and replacements', 'Manufacturing defects are handled quickly with a replacement or refund'],
-      };
+  const _returnDetail = getReturnDetail(product, locale);
+  const shippingReturnsContent = {
+    intro: getLocalizedDelivery(product, locale),
+    bullets: [
+      getTrackingNote(product, locale),
+      ..._returnDetail.bullets,
+    ],
+  };
 
   const handleAdd = (mode = 'cart') => {
     let variantId = null;
-    if (product.variants && product.variants.length > 0) {
+    if (Array.isArray(product?.variants) && product.variants.length > 0) {
       const matchedVariant = findMatchingVariant(product.variants, selectedColor, selectedSize);
-      if (!matchedVariant || !matchedVariant.id) {
+      if (!matchedVariant || !matchedVariant?.id) {
         showToast(t('select_available_variant'));
         return false;
       }
       variantId = matchedVariant.id;
     }
     
-    const variantTitle = [product.title];
+    const variantTitle = [product?.title || ''];
     if (selectedColor) variantTitle.push(selectedColor);
     if (selectedSize) variantTitle.push(selectedSize);
     
     addToCart({
       ...product,
       title: variantTitle.join(' - '),
-      cartId: `${product.id}-${selectedColor}-${selectedSize}`,
+      cartId: `${product?.id}-${selectedColor}-${selectedSize}`,
       selectedColor,
       selectedSize,
       variantId
     }, { openCart: mode !== 'buy', quantity: selectedQty, onAdded: mode === 'buy' ? () => goToCheckout() : null });
 
+    recordAddToCartBehavior(String(product?.id));
     return true;
   };
 
-  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / 3.75)) : product.price;
+  const displayPrice = currency === 'USD' ? (product?.priceUSD || (product?.price / 3.75)) : product?.price;
 
   const absoluteImageUrl = activeImages[0]
-    ? (activeImages[0].startsWith('http') ? activeImages[0] : `https://dripstreetshop.com${activeImages[0]}`)
+    ? (typeof activeImages[0] === 'string' && activeImages[0].startsWith('http') ? activeImages[0] : `https://dripstreetshop.com${activeImages[0]}`)
     : GLOBAL_OG_IMAGE_URL;
 
   const jsonLd = {
     "@context": "https://schema.org/",
     "@type": "Product",
-    "name": getProductTitle(product.title, locale),
-    "image": activeImages.map(img => img.startsWith('http') ? img : `https://dripstreetshop.com${img}`),
+    "name": getProductTitle(product?.title || '', locale),
+    "image": activeImages.map(img => (typeof img === 'string' && img.startsWith('http')) ? img : `https://dripstreetshop.com${img}`),
     "description": getLocalizedProductDescription(product, locale),
     "offers": {
       "@type": "Offer",
-      "url": `https://dripstreetshop.com/product/${product.id}`,
+      "url": `https://dripstreetshop.com/product/${product?.id}`,
       "priceCurrency": currency,
-      "price": Number(displayPrice.toFixed(2)),
+      "price": Number((displayPrice || 0).toFixed(2)),
       "availability": isOutOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock"
     }
   };
 
+  const conversionIntent = getConversionIntent({ timeOnPage, scrollDepth: scrollDepthRef.current, ctaHovered });
+
   return (
     <>
       <Helmet>
-        <title>{`${getProductTitle(product.title, locale)} | Drip Street`}</title>
+        <title>{`${getProductTitle(product?.title || '', locale)} | JØAKIM`}</title>
         <meta name="description" content={getLocalizedProductDescription(product, locale)} />
-        <link rel="canonical" href={`https://dripstreetshop.com/product/${product.id}`} />
-        <meta property="og:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <link rel="canonical" href={`https://dripstreetshop.com/product/${product?.id}`} />
+        <meta property="og:title" content={`${getProductTitle(product?.title || '', locale)} | Drip Street`} />
         <meta property="og:description" content={getLocalizedProductDescription(product, locale)} />
-        <meta property="og:url" content={`https://dripstreetshop.com/product/${product.id}`} />
+        <meta property="og:url" content={`https://dripstreetshop.com/product/${product?.id}`} />
         <meta property="og:type" content="product" />
         <meta property="og:image" content={absoluteImageUrl} />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <meta name="twitter:title" content={`${getProductTitle(product?.title || '', locale)} | Drip Street`} />
         <meta name="twitter:description" content={getLocalizedProductDescription(product, locale)} />
         <meta name="twitter:image" content={absoluteImageUrl} />
         <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>
@@ -1615,7 +1388,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
          lockup, search, and cart) is already visible on this route. Rendering
          a second header here caused a visible duplicate "DRIP STREET" bar. */}
       <div className="container pdp-container">
-        <div style={{ width: '100%', marginBottom: '12px' }}>
+        <div style={{ gridColumn: '1 / -1', width: '100%', marginBottom: '12px' }}>
           <BackButton />
         </div>
         <div className="pdp-images">
@@ -1659,41 +1432,52 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
               </div>
             </div>
           )}
+        </div>
 
-          <div className="pdp-purchase-panel">
-            <div className="pdp-price">{curSym}{displayPrice.toFixed(2)}</div>
+        <div className="pdp-info-wrapper">
+          <div className="pdp-info">
+            <span className="pdp-collection-tag">{getDropTag(product, locale)}</span>
+            <h1>{getProductTitle(product?.title || '', locale)}</h1>
 
-            {product.colors && product.colors.length > 0 && (
+            <div className="pdp-purchase-panel">
+              <div className="pdp-price">{curSym}{(displayPrice || 0).toFixed(2)}</div>
+              <p className="pdp-clarity-line">
+                {locale === 'he'
+                  ? 'מס כלול · משלוח חינם מ-$249 · תשלום מאובטח'
+                  : 'Tax included · Free shipping from $249 · Secure checkout'}
+              </p>
+
+            {normalizeArrayField(product?.colors).length > 0 && (
               <div className="pdp-section">
                 <h3>{t('color')}</h3>
                 <div className="pdp-options">
-                  {product.colors.map(c => (
+                  {normalizeArrayField(product?.colors).map(c => (
                     <button
-                      key={c.name}
-                      className={`color-btn ${selectedColor === c.name ? 'active' : ''}`}
-                      style={{ backgroundColor: c.hex }}
-                      onClick={() => setSelectedColor(c.name)}
-                      aria-label={`${t('color')} ${localizeColorName(c.name, locale)}`}
-                      title={c.name}
+                      key={c?.name || ''}
+                      className={`color-btn ${selectedColor === c?.name ? 'active' : ''}`}
+                      style={{ backgroundColor: c?.hex || 'transparent' }}
+                      onClick={() => setSelectedColor(c?.name || '')}
+                      aria-label={`${t('color')} ${localizeColorName(c?.name || '', locale)}`}
+                      title={c?.name || ''}
                     />
                   ))}
                 </div>
               </div>
             )}
 
-            {orderedDisplaySizes.length > 0 && (
+            {Array.isArray(orderedDisplaySizes) && orderedDisplaySizes.length > 0 && (
               <div className="pdp-section">
                 <div className="pdp-section-headline">
                   <h3>{t('size')}</h3>
                   <button type="button" className="size-guide-link" onClick={() => setIsSizeGuideOpen(true)}>
-                    {locale === 'he' ? 'מדריך מידות 📏' : 'Size Guide 📏'}
+                    {locale === 'he' ? 'מדריך מידות' : 'Size Guide'}
                   </button>
                 </div>
                 {isOutOfStock && <div className="low-stock-badge out-of-stock">{locale === 'he' ? 'אזל מהמלאי' : 'Out of stock'}</div>}
                 {!isOutOfStock && isLowStock && <div className="low-stock-badge"><span className="stock-pulse-dot" />{t('low_stock')}</div>}
                 <div className="pdp-options premium-size-grid">
-                  {orderedDisplaySizes.map((sizeOption) => {
-                    const unavailable = availableSizesForColor.size > 0 && !availableSizesForColor.has(sizeOption);
+                  {(orderedDisplaySizes || []).map((sizeOption) => {
+                    const unavailable = (availableSizesForColor?.size || 0) > 0 && !availableSizesForColor?.has(sizeOption);
                     return (
                       <button
                         key={sizeOption}
@@ -1704,7 +1488,7 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
                           setSelectedSize(sizeOption);
                         }}
                       >
-                        {sizeOption}
+                        {formatSizeDisplay(sizeOption)}
                       </button>
                     );
                   })}
@@ -1712,20 +1496,12 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
               </div>
             )}
 
-            <div className="pdp-section">
-              <h3>{t('quantity')}</h3>
-              <div className="pdp-qty-row">
-                <button type="button" onClick={() => setSelectedQty((prev) => Math.max(1, prev - 1))}>−</button>
-                <span>{selectedQty}</span>
-                <button type="button" onClick={() => setSelectedQty((prev) => Math.min(10, prev + 1))}>+</button>
-              </div>
-            </div>
-
             <motion.button
               ref={mainCtaRef}
               className="checkout-btn add-to-cart-large"
               whileTap={{ scale: 0.985 }}
               data-track="pdp_add_to_cart"
+              onMouseEnter={() => setCtaHovered(true)}
               onClick={() => {
                 triggerHapticTap();
                 handleAdd('cart');
@@ -1737,41 +1513,12 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
               {t('buy_now')}
             </button>
 
-            <div className="purchase-signal-card">
-              <strong>Material & Fit</strong>
-              <ul>
-                <li>Premium Heavyweight Cotton</li>
-                <li>Soft interior with clean exterior finish</li>
-                <li>Relaxed silhouette for everyday layering</li>
-              </ul>
+            <div className="pdp-delivery-meta">
+              <span>{getLocalizedDelivery(product, locale)}</span>
+              <span>{getReturnBadge(product, locale)}</span>
             </div>
 
-            <div className="shipping-trust-strip">
-              <span>Tracked shipping worldwide</span>
-              <span>Easy 14-day returns</span>
             </div>
-
-            <div className="trust-badges">
-              <div className="trust-badge-item">
-                <div className="trust-badge-icon">🔒</div>
-                <div className="trust-badge-text">{t('trust_secure')}</div>
-              </div>
-              <div className="trust-badge-item">
-                <div className="trust-badge-icon">⚡</div>
-                <div className="trust-badge-text">{t('trust_shipping')}</div>
-              </div>
-              <div className="trust-badge-item">
-                <div className="trust-badge-icon">↩️</div>
-                <div className="trust-badge-text">{t('trust_returns')}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="pdp-info-wrapper">
-          <div className="pdp-info">
-            <h1>{getProductTitle(product.title, locale)}</h1>
-            <StarRating score={4.9} count={47} t={t} />
 
             <div className="pdp-accordion">
               <div className="accordion-item">
@@ -1809,32 +1556,31 @@ function ProductDetailPage({ productId, addToCart, goToCheckout, showToast, t, c
                 </div>
               </div>
             </div>
-            <CustomerReviews t={t} locale={locale} />
           </div>
         </div>
       </div>
 
       {showStickyCta && (
         <div className="sticky-buy-bar">
-          <div className="sticky-buy-meta">
-            <strong>{getProductTitle(product.title, locale)}</strong>
-            <span>{curSym}{displayPrice.toFixed(2)}</span>
+          <div className="sticky-buy-main">
+            <strong className="sticky-product-name">{getProductTitle(product?.title || '', locale)}</strong>
+            <button
+              className="sticky-buy-btn"
+              data-track="pdp_sticky_add_to_cart"
+              onClick={() => {
+                triggerHapticTap();
+                handleAdd('cart');
+              }}
+            >
+              {curSym}{(Number(displayPrice) || 0).toFixed(2)} — {locale === 'he' ? 'הוסף' : 'ADD'}
+            </button>
           </div>
-          <button
-            className="sticky-buy-btn"
-            data-track="pdp_sticky_add_to_cart"
-            onClick={() => {
-              triggerHapticTap();
-              handleAdd('cart');
-            }}
-          >
-            {t('add_to_cart')}
-          </button>
+          <div className="sticky-trust-row">
+            {locale === 'he' ? 'תשלום מאובטח · משלוח מהיר · החזרה קלה' : 'Secure checkout · Fast shipping · Easy returns'}
+          </div>
         </div>
       )}
       {isSizeGuideOpen && <SizeGuideModal product={product} locale={locale} onClose={() => setIsSizeGuideOpen(false)} />}
-      <Footer locale={locale} />
-      <CookieConsent />
     </>
   );
 }
@@ -1851,6 +1597,99 @@ function ProductDetailRoute(props) {
     );
   }
   return <ProductDetailPage productId={parsed} {...props} />;
+}
+
+// ─── Custom Grayscale-to-Color hoverable cards ──────────────────────────────
+function HardwareCard({ product, locale, currency, exchangeRate, curSym, navigate }) {
+  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+  return (
+    <article className="hardware-card" data-product-id={product.id}>
+      <button type="button" className="hardware-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
+        <img
+          src={extractProductImageUrl(product)}
+          alt={getProductTitle(product.title, locale)}
+          loading="lazy"
+          className={`${product.id === 18 ? 'crop-pendant ' : ''}silver-glow`}
+          onError={(e) => setImageFallback(e)}
+          style={{ objectPosition: product.id === 18 ? 'top center' : 'center' }}
+        />
+      </button>
+      <div className="hardware-meta">
+        <h3>{getProductTitle(product.title, locale)}</h3>
+        <span>{curSym}{displayPrice.toFixed(2)}</span>
+      </div>
+      <button type="button" className="hardware-cta" onClick={() => navigate(`/product/${product.id}`)}>
+        View Item
+      </button>
+    </article>
+  );
+}
+
+function BestSellerCard({ product, locale, currency, exchangeRate, curSym, navigate, openQuickAdd }) {
+  const [hovered, setHovered] = useState(false);
+  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+  return (
+    <article
+      className="best-seller-card"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button type="button" className="best-seller-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
+        <img
+          loading="lazy"
+          src={extractProductImageUrl(product)}
+          alt={getProductTitle(product.title, locale)}
+          onError={(e) => setImageFallback(e)}
+          style={{
+            filter: hovered ? 'grayscale(0) contrast(1.02)' : 'grayscale(1) contrast(1.02)',
+            transition: 'filter 0.4s ease, transform 0.4s ease'
+          }}
+        />
+      </button>
+      <div className="best-seller-content">
+        <h3>{getProductTitle(product.title, locale)}</h3>
+        <span>{curSym}{displayPrice.toFixed(2)}</span>
+        <div className="best-seller-actions">
+          <button type="button" className="quick-add-btn" onClick={() => openQuickAdd(product)}>Quick Add</button>
+          <button type="button" className="best-seller-link-btn" onClick={() => navigate(`/product/${product.id}`)}>View Product</button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function TrendingCard({ product, locale, currency, exchangeRate, curSym, navigate }) {
+  const [hovered, setHovered] = useState(false);
+  const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
+
+  return (
+    <button
+      type="button"
+      className="trending-card"
+      onClick={() => navigate(`/product/${product.id}`)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="trending-card-img-wrap">
+        <img
+          loading="lazy"
+          src={extractProductImageUrl(product)}
+          alt={getProductTitle(product.title, locale)}
+          onError={(e) => setImageFallback(e)}
+          style={{
+            filter: hovered ? 'grayscale(0) contrast(1.02)' : 'grayscale(1) contrast(1.02)',
+            transition: 'filter 0.4s ease, transform 0.4s ease'
+          }}
+        />
+      </div>
+      <div className="trending-card-info">
+        <span className="trending-card-title">{getProductTitle(product.title, locale)}</span>
+        <span className="trending-card-price">{curSym}{displayPrice.toFixed(2)}</span>
+      </div>
+    </button>
+  );
 }
 
 function MainApp() {
@@ -1875,16 +1714,36 @@ function MainApp() {
     paypalEnabled: true,
     stripeEnabled: false,
     payplusEnabled: false,
-    meshulamEnabled: true,
   })
+
+  const heroTee = useMemo(() => {
+    return products.find(p => p.id === 5) || products.find(p => (p.title || '').toLowerCase().includes('tee'));
+  }, [products]);
+
+  const heroHoodie = useMemo(() => {
+    return products.find(p => p.id === 10) || products.find(p => (p.title || '').toLowerCase().includes('hoodie'));
+  }, [products]);
   const [isPayPalProcessing, setIsPayPalProcessing] = useState(false)
-  const [isMeshulamProcessing, setIsMeshulamProcessing] = useState(false)
+  const [isSecondaryPaymentProcessing, setIsSecondaryPaymentProcessing] = useState(false)
+  const [cardFields, setCardFields] = useState({
+    number: '',
+    expiry: '',
+    cvv: '',
+    name: ''
+  });
+  const [cardFocused, setCardFocused] = useState({
+    number: false,
+    expiry: false,
+    cvv: false,
+    name: false
+  });
   const [checkoutForm, setCheckoutForm] = useState({
     customerName: '',
     customerEmail: '',
     address: '',
     firstName: '',
     lastName: '',
+    phonePrefix: '+1',
     phone: '',
     addressLine1: '',
     addressLine2: '',
@@ -1896,6 +1755,7 @@ function MainApp() {
   const [shippingCountry, setShippingCountry] = useState('IL')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('All')
+  const [activeDropFilter, setActiveDropFilter] = useState(null)
   const [activeCoupon, setActiveCoupon] = useState(null)
   const [promoInput, setPromoInput] = useState('')
   const [activeLeadPromo, setActiveLeadPromo] = useState(null)
@@ -1907,17 +1767,15 @@ function MainApp() {
   const [quickAddQuantity, setQuickAddQuantity] = useState(1)
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
+  const [userProfile] = useState(() => getUserProfile())
 
-  const [locale, setLocale] = useState(() => localStorage.getItem('drip_street_locale') || 'en');
-  const [currency, setCurrency] = useState('USD')
-  const [exchangeRate, setExchangeRate] = useState(3.75)
+  const locale = 'en';
+  const setLocale = () => {};
+  const toggleLocale = () => {};
+  const currency = 'USD';
+  const setCurrency = () => {};
+  const [exchangeRate, setExchangeRate] = useState(3.75);
   const [isHeaderScrolled, setIsHeaderScrolled] = useState(false)
-
-  const toggleLocale = () => {
-    const nextLocale = locale === 'he' ? 'en' : 'he';
-    setLocale(nextLocale);
-    localStorage.setItem('drip_street_locale', nextLocale);
-  };
 
   // Glass header deepens after first scroll
   useEffect(() => {
@@ -2039,7 +1897,7 @@ function MainApp() {
     return {
       sessionId: chatSessionId,
       customerEmail: String(checkoutForm.customerEmail || '').trim().toLowerCase(),
-      customerPhone: String(checkoutForm.phone || '').trim(),
+      customerPhone: String((checkoutForm.phonePrefix || '') + ' ' + (checkoutForm.phone || '')).trim(),
       currency,
       locale,
       totalValue: Number(Number(cartTotal || 0).toFixed(2)),
@@ -2236,14 +2094,18 @@ function MainApp() {
       showToast(event.detail && event.detail.message ? event.detail.message : GLOBAL_ERROR_TOAST_HE);
     };
 
+    const handleAppToast = (e) => showToast(e.detail?.message || '');
+
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
     window.addEventListener('error', handleWindowError);
     window.addEventListener('app:error-toast', handleBoundaryToast);
+    window.addEventListener('app:toast', handleAppToast);
 
     return () => {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       window.removeEventListener('error', handleWindowError);
       window.removeEventListener('app:error-toast', handleBoundaryToast);
+      window.removeEventListener('app:toast', handleAppToast);
     };
   }, []);
 
@@ -2286,22 +2148,68 @@ function MainApp() {
           .catch(() => null);
       });
 
-    fetch(`${API_BASE}/api/products`)
-      .then(res => res.json())
-      .then(data => { setProducts(data); setIsLoading(false); })
-      .catch(err => {
-        console.error(err);
-        showToast(GLOBAL_ERROR_TOAST_HE);
-        setIsLoading(false);
-      })
-      
-    fetch(`${API_BASE}/api/coupons/active`)
-      .then(res => res.json())
-      .then(data => { if(data.coupon) setActiveCoupon(data.coupon) })
-      .catch((err) => {
-        console.error(err);
-      })
+    let _productsMounted = true;
+    let _displayLoaded = false; // true once any products are shown to the user
+    const CACHE_KEY = 'joakim_products_v1';
+    const CACHE_TTL = 25 * 60 * 1000; // 25 min
 
+    // ── Layer 1: localStorage cache (returning visitors — zero latency) ──
+    try {
+      const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+      if (Array.isArray(cached.products) && cached.products.length > 0) {
+        const age = Date.now() - (cached.ts || 0);
+        if (age < CACHE_TTL) {
+          setProducts(cached.products);
+          setIsLoading(false);
+          _displayLoaded = true;
+        }
+      }
+    } catch (_) {}
+
+    // ── Layer 2: static fallback snapshot (first-time visitors — ~10ms fetch) ──
+    if (!_displayLoaded) {
+      fetch('/catalog-fallback.json')
+        .then(r => r.json())
+        .then(arr => {
+          if (!_productsMounted || _displayLoaded) return; // live API already resolved
+          if (Array.isArray(arr) && arr.length > 0) {
+            setProducts(arr);
+            setIsLoading(false);
+            _displayLoaded = true;
+          }
+        })
+        .catch(() => {}); // silent — live API is still in flight
+    }
+
+    // ── Layer 3: live API (always runs in background, updates cache) ──
+    const RETRY_DELAYS = [6000, 12000, 20000];
+    const loadProducts = (attempt) => {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 55000); // covers Render cold-start wake time
+      fetch(`${API_BASE}/api/products`, { signal: ctrl.signal })
+        .then(res => { clearTimeout(tid); if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
+        .then(data => {
+          if (!_productsMounted) return;
+          const arr = Array.isArray(data) ? data : (Array.isArray(data?.products) ? data.products : []);
+          if (arr.length > 0) {
+            try { localStorage.setItem(CACHE_KEY, JSON.stringify({ products: arr, ts: Date.now() })); } catch (_) {}
+            setProducts(arr);
+          }
+          setIsLoading(false);
+        })
+        .catch(err => {
+          clearTimeout(tid);
+          if (!_productsMounted) return;
+          if (attempt < RETRY_DELAYS.length) {
+            setTimeout(() => loadProducts(attempt + 1), RETRY_DELAYS[attempt]);
+          } else {
+            console.error('[Products] live API failed after all retries:', err.message);
+            if (!_displayLoaded) setIsLoading(false); // last resort: show empty only if nothing else loaded
+          }
+        });
+    };
+    loadProducts(0);
+      
     // Load Chat History
     fetch(`${API_BASE}/api/chat/history/${chatSessionId}`)
       .then(res => res.json())
@@ -2316,7 +2224,7 @@ function MainApp() {
     // Listen for global open cart events (e.g. from PDP)
     const handleOpenCart = () => openCartDrawer();
     window.addEventListener('open-cart', handleOpenCart);
-    return () => window.removeEventListener('open-cart', handleOpenCart);
+    return () => { _productsMounted = false; window.removeEventListener('open-cart', handleOpenCart); };
   }, [chatSessionId])
 
   useEffect(() => {
@@ -2345,14 +2253,11 @@ function MainApp() {
     return text;
   };
 
-  const curSym = currency === 'USD' ? '$' : '₪';
-  const displayVal = (nisValue) => (currency === 'USD' ? (nisValue / exchangeRate) : nisValue);
+  const curSym = currency === 'ILS' ? '₪' : '$';
+  const displayVal = (nisValue) => currency === 'USD' ? Math.ceil(nisValue / exchangeRate) : nisValue;
   const isPayPalAvailable = Boolean(checkoutConfig.paypalEnabled && paypalClientId);
   const isStripeAvailable = Boolean(checkoutConfig.stripeEnabled);
   const isPayPlusAvailable = Boolean(checkoutConfig.payplusEnabled);
-  // Meshulam (Grow) — Israeli payment processor. Always offered in the UI;
-  // the backend returns a clear "not configured" error if env vars are missing.
-  const isMeshulamAvailable = Boolean(checkoutConfig.meshulamEnabled !== false);
   const shippingValidationMessage = (() => {
     const f = checkoutForm;
     const namesProvided = (f.firstName || '').trim() || (f.lastName || '').trim();
@@ -2373,33 +2278,30 @@ function MainApp() {
     if (!isValidEnglishShippingValue(f.address, { requireLetter: true })) return t('shipping_address_english_only');
     return '';
   })();
+  // Stripe stays out of the active selector entirely while it remains
+  // hidden/disabled (backend forces stripeEnabled=false) — not just
+  // deprioritized. Any unrecognized paymentMethod value fails closed.
   const isSelectedPaymentAvailable = (() => {
     if (paymentMethod === 'paypal') return isPayPalAvailable;
-    if (paymentMethod === 'stripe') return isStripeAvailable;
-    if (paymentMethod === 'meshulam_card' || paymentMethod === 'meshulam_bit') return isMeshulamAvailable;
-    return isPayPlusAvailable;
+    if (paymentMethod === 'payplus') return isPayPlusAvailable;
+    return false;
   })();
 
   useEffect(() => {
     if (paymentMethod) return;
-    // Meshulam (local) is the preferred default for the Israeli storefront.
-    if (isMeshulamAvailable) setPaymentMethod('meshulam_card');
-    else if (isStripeAvailable) setPaymentMethod('stripe');
+    if (isPayPalAvailable) setPaymentMethod('paypal');
     else if (isPayPlusAvailable) setPaymentMethod('payplus');
-    else if (isPayPalAvailable) setPaymentMethod('paypal');
-  }, [isMeshulamAvailable, isStripeAvailable, isPayPlusAvailable, isPayPalAvailable, paymentMethod]);
+  }, [isPayPalAvailable, isPayPlusAvailable, paymentMethod]);
 
   useEffect(() => {
     const availableMethods = [];
-    if (isMeshulamAvailable) availableMethods.push('meshulam_card', 'meshulam_bit');
     if (isPayPalAvailable) availableMethods.push('paypal');
     if (isPayPlusAvailable) availableMethods.push('payplus');
-    if (isStripeAvailable) availableMethods.push('stripe');
 
     if (availableMethods.length > 0 && !availableMethods.includes(paymentMethod)) {
       setPaymentMethod(availableMethods[0]);
     }
-  }, [isMeshulamAvailable, isPayPalAvailable, isPayPlusAvailable, isStripeAvailable, paymentMethod]);
+  }, [isPayPalAvailable, isPayPlusAvailable, paymentMethod]);
 
   const closeCartDrawer = () => {
     setIsCartOpen(false);
@@ -2427,11 +2329,13 @@ function MainApp() {
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
+      if (p.type === 'dropship' || p.supplier_id === 'dropship') return false;
       const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesCategory = activeCategory === 'All' || deriveProductCategory(p) === activeCategory
-      return matchesSearch && matchesCategory
+      const matchesDrop = activeDropFilter === null || getProductDrop(p)?.id === activeDropFilter
+      return matchesSearch && matchesCategory && matchesDrop
     })
-  }, [products, searchQuery, activeCategory])
+  }, [products, searchQuery, activeCategory, activeDropFilter])
 
   const cartRecommendations = useMemo(
     () => getRecommendationProducts(products, cart, quickAddProduct?.id || null),
@@ -2439,9 +2343,26 @@ function MainApp() {
   )
 
   const jewelryUpsellCandidates = useMemo(() => {
+    if (!products || products.length === 0) return [];
     const cartIds = new Set(cart.map((item) => String(item.id || item.cartId || '')));
-    return JEWELRY_UPSELL_MOCK.filter((item) => !cartIds.has(String(item.id))).slice(0, 3);
-  }, [cart]);
+    const candidates = products.filter((item) => !cartIds.has(String(item.id)));
+    
+    const accessories = candidates.filter(p => {
+      const t = String(p.title || p.name || '').toLowerCase();
+      return t.includes('ring') || t.includes('bracelet') || t.includes('chain') || t.includes('necklace') || t.includes('pendant');
+    });
+    
+    const selected = accessories.length >= 3 ? accessories : candidates;
+    
+    return selected.slice(0, 3).map(p => ({
+      ...p,
+      id: String(p.id),
+      title: getProductTitle(p.title || p.name, locale),
+      subtitle: p.subtitle || 'Premium Drip Street collection',
+      price: typeof p.basePrice === 'number' ? p.basePrice : (p.price || 0),
+      imageUrl: extractProductImageUrl(p)
+    }));
+  }, [cart, products, locale]);
 
   const quickAddAvailableSizes = useMemo(() => {
     if (!quickAddProduct || !quickAddColor) return [];
@@ -2467,7 +2388,7 @@ function MainApp() {
     );
     if (mappedVariantImages.length > 0) return mappedVariantImages[0];
 
-    const imagesByColor = quickAddProduct.imagesByColor && typeof quickAddProduct.imagesByColor === 'object'
+    const imagesByColor = (quickAddProduct.type !== 'dropship' && quickAddProduct.supplier_id !== 'dropship' && quickAddProduct.imagesByColor && typeof quickAddProduct.imagesByColor === 'object')
       ? quickAddProduct.imagesByColor
       : null;
 
@@ -2522,10 +2443,10 @@ function MainApp() {
     setIsQuickAddLoading(true);
     let resolvedProduct = product;
 
-    const hasDetailedVariants = Array.isArray(product.variants) && product.variants.length > 0;
+    const hasDetailedVariants = Array.isArray(product?.variants) && product.variants.length > 0;
     if (!hasDetailedVariants) {
       try {
-        const response = await fetch(`${API_BASE}/api/products/${product.id}`);
+        const response = await fetch(`${API_BASE}/api/products/${product?.id}`);
         if (response.ok) {
           const detail = await response.json();
           if (detail && detail.id) resolvedProduct = detail;
@@ -2535,11 +2456,11 @@ function MainApp() {
       }
     }
 
-    const defaultVariant = Array.isArray(resolvedProduct.variants) && resolvedProduct.variants.length > 0
-      ? resolvedProduct.variants.find((variant) => Number(variant.isEnabled) !== 0 && Number(variant.isAvailable) !== 0)
+    const defaultVariant = Array.isArray(resolvedProduct?.variants) && resolvedProduct.variants.length > 0
+      ? resolvedProduct.variants.find((variant) => variant && Number(variant?.isEnabled || 0) !== 0 && Number(variant?.isAvailable || 0) !== 0)
       : null;
-    const defaultColor = defaultVariant?.color || resolvedProduct.colors?.[0]?.name || '';
-    const variants = Array.isArray(resolvedProduct.variants) ? resolvedProduct.variants : [];
+    const defaultColor = defaultVariant?.color || resolvedProduct?.colors?.[0]?.name || '';
+    const variants = Array.isArray(resolvedProduct?.variants) ? resolvedProduct.variants : [];
     let defaultSize = getOrderedDisplaySizes(resolvedProduct.sizes || [])[0] || '';
 
     if (defaultColor && variants.length > 0) {
@@ -2842,7 +2763,7 @@ function MainApp() {
       // Structured shipping (new — what Printify actually uses)
       firstName: f.firstName.trim(),
       lastName: f.lastName.trim(),
-      phone: f.phone.trim(),
+      phone: (f.phonePrefix || '') + ' ' + f.phone.trim(),
       addressLine1: f.addressLine1.trim(),
       addressLine2: f.addressLine2.trim(),
       city: f.city.trim(),
@@ -2873,10 +2794,13 @@ function MainApp() {
       throw new Error('Missing shipping details');
     }
 
+    const payload = buildCheckoutPayload();
+    payload.currency = 'USD'; // Force USD for PayPal digital wallet support
+
     const response = await fetch(`${API_BASE}/api/paypal/create-order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildCheckoutPayload())
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json();
@@ -2902,6 +2826,43 @@ function MainApp() {
     return data;
   };
 
+  const handleCardNumberChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 16) value = value.slice(0, 16);
+    const parts = [];
+    for (let i = 0; i < value.length; i += 4) {
+      parts.push(value.slice(i, i + 4));
+    }
+    setCardFields(prev => ({ ...prev, number: parts.join(' ') }));
+  };
+
+  const handleCardExpiryChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 4) value = value.slice(0, 4);
+    if (value.length > 2) {
+      setCardFields(prev => ({ ...prev, expiry: `${value.slice(0, 2)}/${value.slice(2)}` }));
+    } else {
+      setCardFields(prev => ({ ...prev, expiry: value }));
+    }
+  };
+
+  const handleCardCvvChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 4) value = value.slice(0, 4);
+    setCardFields(prev => ({ ...prev, cvv: value }));
+  };
+
+  const handleCardNameChange = (e) => {
+    setCardFields(prev => ({ ...prev, name: e.target.value }));
+  };
+
+  // Submits via whichever secondary method (payplus/stripe) is currently
+  // selected — this button only renders when one of those is available.
+  const handlePayNowClick = (e) => {
+    e.preventDefault();
+    submitCheckout(e);
+  };
+
   // Generate a short, URL-safe order ID. crypto.randomUUID is available in all
   // modern browsers; we keep a tiny fallback for old engines just in case.
   const generateOrderId = () => {
@@ -2911,98 +2872,6 @@ function MainApp() {
       }
     } catch { /* ignore */ }
     return `DS-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
-  };
-
-  const submitMeshulamPayment = async () => {
-    if (isMeshulamProcessing) return;
-    if (hasInvalidVariant) {
-      showToast(t('variant_error_toast'));
-      return;
-    }
-    if (!isCheckoutFormValid) {
-      showToast(shippingValidationMessage || t('shipping_details'));
-      return;
-    }
-    if (!isMeshulamAvailable) {
-      showToast(t('payment_unavailable'));
-      return;
-    }
-    if (!cart || cart.length === 0) {
-      showToast(t('cart_empty') || t('payment_unavailable'));
-      return;
-    }
-
-    setIsMeshulamProcessing(true);
-    try {
-      const fullName = `${(checkoutForm.firstName || '').trim()} ${(checkoutForm.lastName || '').trim()}`.trim()
-        || (checkoutForm.customerName || '').trim();
-
-      // Build the cart-items payload that the backend will persist into
-      // order_items so the Meshulam webhook can dispatch them to CJ on success.
-      const itemsPayload = (cart || []).map((item) => ({
-        productId: item.id,
-        variantId: item.variantId || null,
-        quantity: Number(item.quantity) || 1,
-        price: Number(item.price) || 0,
-        selectedColor: item.selectedColor || null,
-        selectedSize: item.selectedSize || null,
-      }));
-
-      const response = await fetch(`${API_BASE}/api/payment/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: Number(Number(cartTotal || 0).toFixed(2)),
-          paymentMethod, // meshulam_card or meshulam_bit
-          customer: {
-            fullName,
-            email: (checkoutForm.customerEmail || '').trim(),
-            phone: (checkoutForm.phone || '').trim(),
-          },
-          shipping: {
-            firstName: (checkoutForm.firstName || '').trim(),
-            lastName: (checkoutForm.lastName || '').trim(),
-            addressLine1: (checkoutForm.addressLine1 || '').trim(),
-            addressLine2: (checkoutForm.addressLine2 || '').trim(),
-            city: (checkoutForm.city || '').trim(),
-            region: (checkoutForm.region || '').trim(),
-            postalCode: (checkoutForm.postalCode || '').trim(),
-            country: (checkoutForm.country || 'IL').toUpperCase(),
-          },
-          items: itemsPayload,
-          currency,
-          locale,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok && data.ok === true && data.redirectUrl) {
-        // Persist a pending-order snapshot keyed on the REAL internal orderId
-        // the backend returned — used by the /success page for reconciliation.
-        try {
-          sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
-            orderId: data.orderId,
-            amount: Number(Number(cartTotal || 0).toFixed(2)),
-            method: paymentMethod,
-            createdAt: new Date().toISOString(),
-            itemCount: cart.length,
-          }));
-        } catch { /* sessionStorage may be unavailable in private mode */ }
-
-        showToast(t('payment_meshulam_processing'));
-        // Do NOT clear the cart here — only after the success webhook lands.
-        window.location.href = data.redirectUrl;
-        return;
-      }
-
-      const reason = data && (data.details || data.error);
-      showToast(reason || t('payment_unavailable'));
-    } catch (err) {
-      console.error('[meshulam] checkout failed:', err);
-      showToast(err.message || GLOBAL_ERROR_TOAST_HE);
-    } finally {
-      setIsMeshulamProcessing(false);
-    }
   };
 
   const submitCheckout = async (e) => {
@@ -3023,12 +2892,7 @@ function MainApp() {
       return;
     }
 
-    // Meshulam: hosted-page redirect flow.
-    if (paymentMethod === 'meshulam_card' || paymentMethod === 'meshulam_bit') {
-      await submitMeshulamPayment();
-      return;
-    }
-
+    setIsSecondaryPaymentProcessing(true);
     try {
       const endpoint = paymentMethod === 'stripe' ? '/api/checkout/stripe' : '/api/checkout/payplus';
       const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -3046,6 +2910,8 @@ function MainApp() {
     } catch (err) {
       console.error('Checkout failed:', err);
       showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+    } finally {
+      setIsSecondaryPaymentProcessing(false);
     }
   }
 
@@ -3131,7 +2997,7 @@ function MainApp() {
                       src={itemThumbnail}
                       alt={item.title}
                       style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, background: '#1a1a1a' }}
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; e.currentTarget.style.display = 'block'; }}
                     />
                   )}
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -3188,7 +3054,6 @@ function MainApp() {
             displayVal={displayVal}
           />
 
-          {cart.length > 0 && <CartDemandBanner locale={locale} totalItems={totalItems} />}
         </div>
 
         <div className="cart-footer">
@@ -3228,7 +3093,7 @@ function MainApp() {
 
           <div className="cart-promo-section" style={{ marginTop: '12px', marginBottom: '8px', padding: '12px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#aaa', marginBottom: '8px' }}>
-              🎟️ {t('promo_code')}?
+              {t('promo_code')}?
             </div>
             <div className="cart-promo-row">
               <input
@@ -3262,6 +3127,21 @@ function MainApp() {
             <span>{t('shipping')}</span>
             <span style={{ color: isFreeShipping ? '#4caf50' : '#aaa' }}>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
           </div>
+
+          {cart.length > 0 && (() => {
+            const estimates = getCartDeliveryEstimates(cart, locale);
+            if (!estimates.length) return null;
+            return (
+              <div className="cart-delivery-estimates">
+                {estimates.map(({ supplierId, categoryLabel, deliveryLine }) => (
+                  <div key={supplierId} className="cart-delivery-row">
+                    <span className="cart-delivery-cat">{categoryLabel}</span>
+                    <span className="cart-delivery-line">{deliveryLine}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           <div className="cart-total">
             <span>{t('total')}</span>
@@ -3312,7 +3192,7 @@ function MainApp() {
   }, [location.pathname]);
 
   // Purchase — fires when the user lands on /success. Pulls the order snapshot
-  // saved by the Meshulam/PayPal flow into sessionStorage so we report a real value.
+  // saved by the checkout flow into sessionStorage so we report a real value.
   useEffect(() => {
     if (location.pathname !== '/success') return;
     let snapshot = null;
@@ -3420,7 +3300,7 @@ function MainApp() {
                           src={itemThumbnail}
                           alt={item.title}
                           style={{ width: '96px', height: '96px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, background: '#1a1a1a' }}
-                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; e.currentTarget.style.display = 'block'; }}
                         />
                       )}
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -3454,7 +3334,6 @@ function MainApp() {
                 {t('order_summary')}
               </h3>
 
-              <CartDemandBanner locale={locale} totalItems={totalItems} />
 
               {totalItems > 0 && !isFreeShipping && (
                 <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
@@ -3527,7 +3406,7 @@ function MainApp() {
               {/* Coupon entry */}
               <div style={{ padding: '14px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '16px' }}>
                 <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#aaa', marginBottom: '10px' }}>
-                  🎟️ {t('promo_code')}?
+                  {t('promo_code')}?
                 </div>
                 {!(activeLeadPromo || activeCoupon) ? (
                   <>
@@ -3589,19 +3468,69 @@ function MainApp() {
     return (
       <>
         <Helmet>
-          <title>Secure Checkout | Drip Street</title>
-          <meta name="description" content="Complete your order securely at Drip Street checkout." />
+          <title>Secure Checkout | JØAKIM</title>
+          <meta name="description" content="Complete your order securely at JØAKIM checkout." />
           <link rel="canonical" href="https://dripstreetshop.com/checkout" />
-          <meta property="og:title" content="Secure Checkout | Drip Street" />
-          <meta property="og:description" content="Complete your order securely at Drip Street checkout." />
+          <meta property="og:title" content="Secure Checkout | JØAKIM" />
+          <meta property="og:description" content="Complete your order securely at JØAKIM checkout." />
           <meta property="og:url" content="https://dripstreetshop.com/checkout" />
           <meta property="og:image" content={GLOBAL_OG_IMAGE_URL} />
           <meta name="twitter:card" content="summary_large_image" />
           <meta name="twitter:image" content={GLOBAL_OG_IMAGE_URL} />
         </Helmet>
-        <div className="container checkout-page">
-          <div style={{ marginTop: '24px' }}><BackButton label="Back to Cart" fallback="/cart" /></div>
-        <h1 style={{ marginTop: '16px' }}>{t('checkout_secure')}</h1>
+        <div className="container checkout-page" style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 20px' }}>
+          {/* Header/Logo Placeholder */}
+          <div className="checkout-premium-logo" style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '30px 0 10px 0',
+            width: '100%',
+            textAlign: 'center'
+          }}>
+            <img src="/joakim-approved-full-logo.png?v=2" alt="Jøakim" style={{ height: '64px', width: 'auto', objectFit: 'contain' }} />
+          </div>
+
+          <div style={{ marginTop: '12px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setIsCartOpen(true);
+                navigate('/cart');
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 14px',
+                marginBottom: '20px',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '999px',
+                color: '#aaa',
+                fontSize: '12px',
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)';
+                e.currentTarget.style.color = '#fff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                e.currentTarget.style.color = '#aaa';
+              }}
+            >
+              <span aria-hidden="true" style={{ fontSize: '14px', lineHeight: 1 }}>←</span>
+              <span>{locale === 'he' ? 'חזרה לעגלה' : 'Back to Cart'}</span>
+            </button>
+          </div>
+        <h1 style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>🔒 {t('checkout_secure')}</h1>
         <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '32px' }}>
           <form className="contact-form" onSubmit={submitCheckout} style={{ flex: '1', minWidth: '300px' }}>
             <h3>{t('shipping_details')}</h3>
@@ -3641,15 +3570,32 @@ function MainApp() {
                 onChange={(e) => setCheckoutForm((prev) => ({ ...prev, customerEmail: e.target.value }))}
                 onBlur={handleEmailBlur}
               />
-              <input
-                name="phone"
-                type="tel"
-                placeholder="Phone (e.g. +972 50 123 4567)"
-                autoComplete="tel"
-                required
-                value={checkoutForm.phone}
-                onChange={(e) => setCheckoutForm((prev) => ({ ...prev, phone: e.target.value }))}
-              />
+              <div style={{ display: 'flex', gap: '0' }}>
+                <select
+                  className="checkout-select-dark"
+                  value={checkoutForm.phonePrefix || '+1'}
+                  onChange={(e) => setCheckoutForm((prev) => ({ ...prev, phonePrefix: e.target.value }))}
+                  style={{ width: '120px', borderRight: 'none', borderTopRightRadius: '0', borderBottomRightRadius: '0', background: '#121212', color: '#fff' }}
+                >
+                  <option value="+1">+1 US/CA</option>
+                  <option value="+44">+44 UK</option>
+                  <option value="+972">+972 IL</option>
+                  <option value="+33">+33 FR</option>
+                  <option value="+49">+49 DE</option>
+                  <option value="+86">+86 CN</option>
+                  <option value="+61">+61 AU</option>
+                </select>
+                <input
+                  name="phone"
+                  type="tel"
+                  placeholder="Phone Number"
+                  autoComplete="tel"
+                  required
+                  value={checkoutForm.phone}
+                  onChange={(e) => setCheckoutForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  style={{ flex: 1, borderTopLeftRadius: '0', borderBottomLeftRadius: '0' }}
+                />
+              </div>
             </div>
             <input
               name="addressLine1"
@@ -3709,10 +3655,11 @@ function MainApp() {
               />
               <select
                 name="country"
+                className="checkout-select-dark"
                 required
                 value={(checkoutForm.country || shippingCountry || 'IL').toUpperCase()}
                 onChange={(e) => setCheckoutForm((prev) => ({ ...prev, country: e.target.value.toUpperCase() }))}
-                style={{ width: '100%' }}
+                style={{ width: '100%', background: '#121212', color: '#fff' }}
               >
                 <option value="">— Select country —</option>
                 <option value="IL">Israel</option>
@@ -3750,215 +3697,348 @@ function MainApp() {
               </select>
             </div>
             {shippingValidationMessage && (
-              <p style={{ marginTop: '-6px', marginBottom: '10px', color: '#ff6b6b', fontSize: '0.9rem' }}>
-                {shippingValidationMessage}
+              <p style={{ marginTop: '-6px', marginBottom: '10px', color: '#888', fontSize: '0.75rem', fontWeight: 500, letterSpacing: '0.02em' }}>
+                * {shippingValidationMessage}
               </p>
             )}
             
             <h3 style={{ marginTop: '24px' }}>{t('payment_method')}</h3>
-            <div style={{
-              marginBottom: '12px',
-              padding: '14px 16px',
-              border: '1px solid #fff',
-              borderRadius: '2px',
-              background: '#000',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
+
+            {/* Express Checkout Block */}
+            <div className="premium-express-checkout-box" style={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.0) 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '16px',
+              padding: '24px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+              marginBottom: '24px'
             }}>
-              <span style={{
-                fontSize: '11px',
+              <div style={{
+                fontSize: '10px',
+                fontWeight: 800,
                 letterSpacing: '0.18em',
                 textTransform: 'uppercase',
-                color: '#888',
-                fontWeight: 700,
+                color: '#ffd24d',
+                textAlign: 'center',
+                marginBottom: '20px'
               }}>
-                {locale === 'he' ? 'סה״כ לתשלום' : 'Total to pay'}
-              </span>
-              <span style={{ fontSize: '22px', fontWeight: 900, letterSpacing: '0.02em', color: '#fff' }}>
-                {curSym}{displayVal(cartTotal).toFixed(2)}
-              </span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-              {isMeshulamAvailable && (
-                <label
-                  data-track="payment_select_meshulam_card"
-                  style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '14px', border: `1px solid ${paymentMethod === 'meshulam_card' ? '#fff' : '#333'}`, borderRadius: '2px', background: paymentMethod === 'meshulam_card' ? '#0a0a0a' : 'transparent' }}
-                >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="meshulam_card"
-                    checked={paymentMethod === 'meshulam_card'}
-                    onChange={() => setPaymentMethod('meshulam_card')}
-                  />
-                  <span style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, letterSpacing: '0.02em' }}>{t('payment_meshulam_card')}</div>
-                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{t('payment_meshulam_card_sub')}</div>
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
-                      <span style={{ padding: '2px 6px', background: '#1a1f71', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>VISA</span>
-                      <span style={{ padding: '2px 6px', background: '#eb001b', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>MC</span>
-                      <span style={{ padding: '2px 6px', background: '#0a3d62', color: '#fff', borderRadius: '2px', fontSize: '10px', fontWeight: 700 }}>ISRACARD</span>
-                      <span style={{ padding: '2px 6px', background: '#000', color: '#fff', borderRadius: '2px', fontSize: '10px', border: '1px solid #555', fontWeight: 700 }}>Pay</span>
-                    </div>
-                  </span>
-                </label>
-              )}
-              {isMeshulamAvailable && (
-                <label
-                  data-track="payment_select_meshulam_bit"
-                  style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '14px', border: `1px solid ${paymentMethod === 'meshulam_bit' ? '#fff' : '#333'}`, borderRadius: '2px', background: paymentMethod === 'meshulam_bit' ? '#0a0a0a' : 'transparent' }}
-                >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="meshulam_bit"
-                    checked={paymentMethod === 'meshulam_bit'}
-                    onChange={() => setPaymentMethod('meshulam_bit')}
-                  />
-                  <span style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span aria-hidden="true" style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '32px',
-                        height: '20px',
-                        background: '#0066ff',
-                        color: '#fff',
-                        fontSize: '11px',
-                        fontWeight: 900,
-                        letterSpacing: '0.04em',
-                        borderRadius: '2px',
-                      }}>BIT</span>
-                      <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>{t('payment_meshulam_bit')}</span>
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{t('payment_meshulam_bit_sub')}</div>
-                  </span>
-                </label>
-              )}
-              {isStripeAvailable && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'stripe' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
-                  <input type="radio" name="payment" value="stripe" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
-                  <span style={{ flex: 1 }}>
-                    <div>{t('payment_card_apple_google')}</div>
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                      <span style={{ padding: '2px 6px', background: '#1a1f71', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>VISA</span>
-                      <span style={{ padding: '2px 6px', background: '#eb001b', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>MC</span>
-                      <span style={{ padding: '2px 6px', background: '#000', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>Pay</span>
-                      <span style={{ padding: '2px 6px', background: '#4285f4', color: '#fff', borderRadius: '3px', fontSize: '10px' }}>G Pay</span>
-                    </div>
-                  </span>
-                </label>
-              )}
-              {isPayPalAvailable && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', border: `1px solid ${paymentMethod === 'paypal' ? '#fff' : '#333'}`, borderRadius: '8px' }}>
-                  <input type="radio" name="payment" value="paypal" checked={paymentMethod === 'paypal'} onChange={() => setPaymentMethod('paypal')} />
-                  <span>{t('payment_paypal')}</span>
-                </label>
-              )}
-            </div>
-            {paymentMethod === 'paypal' ? (
-              isPayPalAvailable ? (
-                <>
-                <div className="premium-paypal-container" style={{
-                  padding: '24px',
-                  background: 'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '12px',
-                  boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-                  marginBottom: '20px'
-                }}>
-                  <div style={{
-                    fontSize: '10px',
-                    fontWeight: 800,
-                    letterSpacing: '0.18em',
-                    textTransform: 'uppercase',
-                    color: '#ffd24d',
-                    textAlign: 'center',
-                    marginBottom: '16px'
+                ⚡ {locale === 'he' ? 'קופת תשלום אקספרס מאובטחת' : 'Secure Express Checkout'} ⚡
+              </div>
+
+              {isPayPalAvailable ? (
+                <PayPalScriptProvider options={{
+                    'client-id': paypalClientId,
+                    currency: 'USD',
+                    intent: 'capture',
+                    'disable-funding': 'credit,paylater,venmo'
                   }}>
-                    ⚡ {locale === 'he' ? 'קופת תשלום אקספרס מאובטחת' : 'Secure Express Checkout'} ⚡
-                  </div>
-                  <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency, intent: 'capture', 'disable-funding': 'card,credit,paylater,venmo' }}>
-                    <PayPalButtons
-                      fundingSource="paypal"
-                      style={{ layout: 'horizontal', label: 'checkout', height: 48, shape: 'rect' }}
-                      forceReRender={[currency, cartTotal, paypalClientId]}
-                      createOrder={async () => {
-                        setIsPayPalProcessing(true);
-                        try {
-                          const orderID = await createPayPalOrder();
-                          return orderID;
-                        } catch (err) {
-                          showToast(err.message || GLOBAL_ERROR_TOAST_HE);
-                          throw err;
-                        } finally {
-                          setIsPayPalProcessing(false);
-                        }
-                      }}
-                      onApprove={async (data) => {
-                        setIsPayPalProcessing(true);
-                        try {
-                          await capturePayPalOrder(data.orderID);
-                          // Capture the order snapshot BEFORE clearing the cart so the
-                          // Purchase pixel event on /success can report real value.
-                          try {
-                            sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
-                              orderId: data.orderID,
-                              amount: Number(Number(cartTotal || 0).toFixed(2)),
-                              currency,
-                              method: 'paypal',
-                              createdAt: new Date().toISOString(),
-                              itemCount: cart.length,
-                            }));
-                          } catch { /* sessionStorage unavailable in private mode */ }
-                          localStorage.removeItem('drip_street_cart');
-                          setCart([]);
-                          showToast(locale === 'he' ? 'התשלום בוצע בהצלחה! 🎉' : 'Payment Successful! 🎉');
-                          navigate('/success');
-                        } catch (err) {
-                          showToast(err.message || GLOBAL_ERROR_TOAST_HE);
-                        } finally {
-                          setIsPayPalProcessing(false);
-                        }
-                      }}
-                      onError={() => {
-                        showToast(GLOBAL_ERROR_TOAST_HE);
-                      }}
-                      disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
-                    />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {['applepay', 'paypal', 'googlepay'].map((source) => {
+                        return (
+                          <div key={source.toString()} style={{ width: '100%' }}>
+                            <PayPalButtons
+                              fundingSource={source}
+                              style={{
+                                layout: 'horizontal',
+                                label: source === 'paypal' ? 'paypal' : 'pay',
+                                height: 52,
+                                shape: 'pill'
+                              }}
+                              forceReRender={['USD', cartTotal, paypalClientId]}
+                              createOrder={async () => {
+                                setIsPayPalProcessing(true);
+                                try {
+                                  const orderID = await createPayPalOrder();
+                                  return orderID;
+                                } catch (err) {
+                                  showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+                                  throw err;
+                                } finally {
+                                  setIsPayPalProcessing(false);
+                                }
+                              }}
+                              onApprove={async (data) => {
+                                setIsPayPalProcessing(true);
+                                try {
+                                  await capturePayPalOrder(data.orderID);
+                                  try {
+                                    sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
+                                      orderId: data.orderID,
+                                      amount: Number(Number(cartTotal || 0).toFixed(2)),
+                                      currency: 'USD',
+                                      method: source.toString().toLowerCase(),
+                                      createdAt: new Date().toISOString(),
+                                      itemCount: cart.length,
+                                    }));
+                                  } catch { /* sessionStorage unavailable */ }
+                                  localStorage.removeItem('drip_street_cart');
+                                  setCart([]);
+                                  showToast(locale === 'he' ? 'התשלום בוצע בהצלחה! 🎉' : 'Payment Successful! 🎉');
+                                  navigate('/success');
+                                } catch (err) {
+                                  showToast(err.message || GLOBAL_ERROR_TOAST_HE);
+                                } finally {
+                                  setIsPayPalProcessing(false);
+                                }
+                              }}
+                              onError={() => {
+                                showToast(GLOBAL_ERROR_TOAST_HE);
+                              }}
+                              disabled={isPayPalProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{
+                      marginTop: '16px',
+                      fontSize: '11px',
+                      color: '#888',
+                      textAlign: 'center',
+                      lineHeight: '1.4'
+                    }}>
+                      {locale === 'he'
+                        ? '🔐 עיבוד נתונים מוצפן מקצה לקצה. כרטיסי אשראי ישראלים ובינלאומיים מתקבלים דרך פייפאל.'
+                        : '🔐 Encrypted end-to-end processing. All major local & global credit cards accepted.'}
+                    </div>
                   </PayPalScriptProvider>
-                  <div style={{
-                    marginTop: '16px',
-                    fontSize: '11px',
-                    color: '#888',
-                    textAlign: 'center',
-                    lineHeight: '1.4'
+                ) : (
+                  <p style={{ color: '#ff6b6b', textAlign: 'center', margin: 0 }}>PayPal is not configured. Digital wallets are currently unavailable.</p>
+                )
+              }
+            </div>
+
+            {/* Divider */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              margin: '32px 0 24px 0',
+              color: 'rgba(255, 255, 255, 0.35)',
+              width: '100%'
+            }}>
+              <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.08)' }} />
+              <span style={{
+                padding: '0 16px',
+                fontSize: '10px',
+                fontWeight: '800',
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                fontFamily: '"Outfit", sans-serif',
+                color: '#8a8a8a',
+                whiteSpace: 'nowrap'
+              }}>
+                {locale === 'he' ? 'או תשלום בכרטיס אשראי' : 'OR PAY WITH CREDIT CARD'}
+              </span>
+              <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.08)' }} />
+            </div>
+
+            {/* Premium Credit Card Form */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+              padding: '28px',
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0) 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '16px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.4)',
+              marginBottom: '28px',
+              width: '100%'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: '#999', letterSpacing: '0.12em', textAlign: locale === 'he' ? 'right' : 'left', fontFamily: '"Outfit", sans-serif' }}>
+                  {locale === 'he' ? 'שם בעל הכרטיס' : 'Cardholder Name'}
+                </label>
+                <input
+                  type="text"
+                  value={cardFields.name}
+                  onChange={handleCardNameChange}
+                  onFocus={() => setCardFocused(prev => ({ ...prev, name: true }))}
+                  onBlur={() => setCardFocused(prev => ({ ...prev, name: false }))}
+                  placeholder={locale === 'he' ? 'ישראל ישראלי' : 'Israel Israeli'}
+                  style={{
+                    width: '100%',
+                    padding: '16px 20px',
+                    background: '#070707',
+                    border: cardFocused.name 
+                      ? '1px solid rgba(255, 255, 255, 0.35)' 
+                      : '1px solid rgba(255, 255, 255, 0.08)',
+                    color: '#ffffff',
+                    borderRadius: '8px',
+                    fontFamily: '"Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    fontSize: '15px',
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: cardFocused.name
+                      ? '0 0 16px rgba(255, 255, 255, 0.08), inset 0 2px 4px rgba(0,0,0,0.4)'
+                      : 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                    outline: 'none',
+                    textAlign: locale === 'he' ? 'right' : 'left'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: '#999', letterSpacing: '0.12em', textAlign: locale === 'he' ? 'right' : 'left', fontFamily: '"Outfit", sans-serif' }}>
+                  {locale === 'he' ? 'מספר כרטיס' : 'Card Number'}
+                </label>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <input
+                    type="text"
+                    value={cardFields.number}
+                    onChange={handleCardNumberChange}
+                    onFocus={() => setCardFocused(prev => ({ ...prev, number: true }))}
+                    onBlur={() => setCardFocused(prev => ({ ...prev, number: false }))}
+                    placeholder="0000 0000 0000 0000"
+                    style={{
+                      width: '100%',
+                      padding: '16px 20px',
+                      paddingRight: locale === 'he' ? '20px' : '50px',
+                      paddingLeft: locale === 'he' ? '50px' : '20px',
+                      background: '#070707',
+                      border: cardFocused.number 
+                        ? '1px solid rgba(255, 255, 255, 0.35)' 
+                        : '1px solid rgba(255, 255, 255, 0.08)',
+                      color: '#ffffff',
+                      borderRadius: '8px',
+                      fontFamily: '"Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                      fontSize: '15px',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: cardFocused.number
+                        ? '0 0 16px rgba(255, 255, 255, 0.08), inset 0 2px 4px rgba(0,0,0,0.4)'
+                        : 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                      outline: 'none',
+                      direction: 'ltr',
+                      textAlign: 'left'
+                    }}
+                  />
+                  <span style={{
+                    position: 'absolute',
+                    right: locale === 'he' ? 'auto' : '18px',
+                    left: locale === 'he' ? '18px' : 'auto',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    pointerEvents: 'none',
+                    opacity: 0.6,
+                    fontSize: '18px'
                   }}>
-                    {locale === 'he'
-                      ? '🔐 עיבוד נתונים מוצפן מקצה לקצה. כרטיסי אשראי ישראלים ובינלאומיים מתקבלים דרך פייפאל.'
-                      : '🔐 Encrypted end-to-end processing. All major local & global credit cards accepted.'}
-                  </div>
+                    💳
+                  </span>
                 </div>
-                </>
-              ) : (
-                <p style={{ color: '#ff6b6b', marginBottom: '16px' }}>PayPal is not configured yet. Please try again in a moment.</p>
-              )
-            ) : (
-              <button
-                type="submit"
-                className="checkout-btn"
-                data-track={paymentMethod === 'meshulam_bit' ? 'checkout_submit_bit' : (paymentMethod === 'meshulam_card' ? 'checkout_submit_meshulam_card' : 'checkout_submit')}
-                disabled={isMeshulamProcessing || !isCheckoutFormValid || cart.length === 0 || !isSelectedPaymentAvailable}
-                style={{ opacity: isMeshulamProcessing ? 0.7 : 1 }}
-              >
-                {isMeshulamProcessing
-                  ? t('payment_meshulam_processing')
-                  : `${t('complete_order')} – ${curSym}${displayVal(cartTotal).toFixed(2)}`}
-              </button>
-            )}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: '#999', letterSpacing: '0.12em', textAlign: locale === 'he' ? 'right' : 'left', fontFamily: '"Outfit", sans-serif' }}>
+                    {locale === 'he' ? 'תוקף' : 'Expiry Date'}
+                  </label>
+                  <input
+                    type="text"
+                    value={cardFields.expiry}
+                    onChange={handleCardExpiryChange}
+                    onFocus={() => setCardFocused(prev => ({ ...prev, expiry: true }))}
+                    onBlur={() => setCardFocused(prev => ({ ...prev, expiry: false }))}
+                    placeholder="MM/YY"
+                    style={{
+                      width: '100%',
+                      padding: '16px 20px',
+                      background: '#070707',
+                      border: cardFocused.expiry 
+                        ? '1px solid rgba(255, 255, 255, 0.35)' 
+                        : '1px solid rgba(255, 255, 255, 0.08)',
+                      color: '#ffffff',
+                      borderRadius: '8px',
+                      fontFamily: '"Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                      fontSize: '15px',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: cardFocused.expiry
+                        ? '0 0 16px rgba(255, 255, 255, 0.08), inset 0 2px 4px rgba(0,0,0,0.4)'
+                        : 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                      outline: 'none',
+                      direction: 'ltr',
+                      textAlign: 'left'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: '#999', letterSpacing: '0.12em', textAlign: locale === 'he' ? 'right' : 'left', fontFamily: '"Outfit", sans-serif' }}>
+                    CVV
+                  </label>
+                  <input
+                    type="text"
+                    value={cardFields.cvv}
+                    onChange={handleCardCvvChange}
+                    onFocus={() => setCardFocused(prev => ({ ...prev, cvv: true }))}
+                    onBlur={() => setCardFocused(prev => ({ ...prev, cvv: false }))}
+                    placeholder="000"
+                    style={{
+                      width: '100%',
+                      padding: '16px 20px',
+                      background: '#070707',
+                      border: cardFocused.cvv 
+                        ? '1px solid rgba(255, 255, 255, 0.35)' 
+                        : '1px solid rgba(255, 255, 255, 0.08)',
+                      color: '#ffffff',
+                      borderRadius: '8px',
+                      fontFamily: '"Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                      fontSize: '15px',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: cardFocused.cvv
+                        ? '0 0 16px rgba(255, 255, 255, 0.08), inset 0 2px 4px rgba(0,0,0,0.4)'
+                        : 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                      outline: 'none',
+                      direction: 'ltr',
+                      textAlign: 'left'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Pay Now Button */}
+            <button
+              type="button"
+              onClick={handlePayNowClick}
+              disabled={isPayPalProcessing || isSecondaryPaymentProcessing || !isCheckoutFormValid || cart.length === 0}
+              style={{
+                width: '100%',
+                padding: '18px 24px',
+                background: '#ffffff',
+                color: '#000000',
+                border: 'none',
+                borderRadius: '30px',
+                fontSize: '15px',
+                fontWeight: '800',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                cursor: (isPayPalProcessing || isSecondaryPaymentProcessing || !isCheckoutFormValid || cart.length === 0) ? 'not-allowed' : 'pointer',
+                opacity: (isPayPalProcessing || isSecondaryPaymentProcessing || !isCheckoutFormValid || cart.length === 0) ? 0.6 : 1,
+                transition: 'all 0.25s ease',
+                boxShadow: '0 4px 20px rgba(255, 255, 255, 0.1)',
+                fontFamily: '"Outfit", sans-serif',
+                marginBottom: '20px'
+              }}
+              onMouseEnter={(e) => {
+                if (!(isPayPalProcessing || isSecondaryPaymentProcessing || !isCheckoutFormValid || cart.length === 0)) {
+                  e.currentTarget.style.backgroundColor = '#e5e5e5';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 6px 24px rgba(255, 255, 255, 0.15)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!(isPayPalProcessing || isSecondaryPaymentProcessing || !isCheckoutFormValid || cart.length === 0)) {
+                  e.currentTarget.style.backgroundColor = '#ffffff';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 20px rgba(255, 255, 255, 0.1)';
+                }
+              }}
+            >
+              {isPayPalProcessing || isSecondaryPaymentProcessing
+                ? (locale === 'he' ? 'מעבד תשלום מאובטח...' : 'PROCESSING SECURE PAYMENT...')
+                : `${locale === 'he' ? 'שלם עכשיו' : 'PAY NOW'} – ${curSym}${displayVal(cartTotal).toFixed(2)}`}
+            </button>
           </form>
           
           <div style={{ flex: '1', minWidth: '300px', backgroundColor: '#111', padding: '24px', borderRadius: '12px', height: 'fit-content' }}>
@@ -3969,29 +4049,35 @@ function MainApp() {
               curSym={curSym}
               displayVal={displayVal}
             />
-            <div className="checkout-review-card">
-              <h4>{t('review_title')}</h4>
-              <p>{t('review_subtitle')}</p>
-            </div>
-            {cart.map(item => {
-              const itemPrice = currency === 'USD' ? (item.priceUSD || (item.price / exchangeRate)) : item.price;
-              const parsed = splitVariantTitle(item.title);
-              return (
-                <div key={item.cartId || item.id} className="checkout-review-line">
-                  <div>
-                    <span>{item.quantity}x {getProductTitle(parsed.base, locale)}</span>
-                    {(parsed.color || parsed.size) && (
-                      <small>
-                        {parsed.color ? `${t('color')}: ${localizeColorName(parsed.color, locale)}` : ''}
-                        {parsed.color && parsed.size ? ' • ' : ''}
-                        {parsed.size ? `${t('size')}: ${parsed.size}` : ''}
-                      </small>
-                    )}
-                  </div>
-                  <span>{curSym}{(itemPrice * item.quantity).toFixed(2)}</span>
-                </div>
-              );
-            })}
+            <div className="cart-items">
+                {cart.map(item => {
+                  const itemPrice = currency === 'USD' ? (item.priceUSD || (item.price / exchangeRate)) : item.price;
+                  const parsed = splitVariantTitle(item.title);
+                  const itemThumbnail = item.imageUrl || (Array.isArray(item.images) && item.images[0]) || null;
+                  return (
+                    <div key={item.cartId || item.id} className="checkout-review-line" style={{ display: 'grid', gridTemplateColumns: '60px 1fr auto', gap: '16px', alignItems: 'center', marginBottom: '20px' }}>
+                      {itemThumbnail ? (
+                        <img src={itemThumbnail} alt={getProductTitle(parsed.base, locale)} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px', background: '#1a1a1a' }} onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }} />
+                      ) : (
+                        <img src={PLACEHOLDER_IMG} alt="Product" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px', background: '#1a1a1a' }} />
+                      )}
+                      <div>
+                        <span style={{ display: 'block', fontWeight: 600, fontSize: '14px', color: '#fff', marginBottom: '4px' }}>
+                          {item.quantity}x {getProductTitle(parsed.base, locale)}
+                        </span>
+                        {(parsed.color || parsed.size) && (
+                          <small style={{ display: 'block', color: '#888', fontSize: '12px', letterSpacing: '0.02em' }}>
+                            {parsed.color ? `${t('color')}: ${localizeColorName(parsed.color, locale)}` : ''}
+                            {parsed.color && parsed.size ? ' • ' : ''}
+                            {parsed.size ? `${t('size')}: ${parsed.size}` : ''}
+                          </small>
+                        )}
+                      </div>
+                      <span style={{ fontWeight: 700, fontSize: '14px', color: '#fff' }}>{curSym}{(itemPrice * item.quantity).toFixed(2)}</span>
+                    </div>
+                  );
+                })}
+              </div>
             <hr style={{ borderColor: '#333', margin: '16px 0' }} />
             
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#aaa' }}>
@@ -4021,25 +4107,41 @@ function MainApp() {
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: isFreeShipping ? '#4caf50' : '#aaa' }}>
-              <span>{t('shipping')} {isFreeShipping && '🎉'}</span>
+              <span>{t('shipping')}</span>
               <span>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
             </div>
+
+            {cart.length > 0 && (() => {
+              const estimates = getCartDeliveryEstimates(cart, locale);
+              if (!estimates.length) return null;
+              return (
+                <div style={{ marginBottom: '12px', padding: '10px 12px', background: 'rgba(200,184,154,0.06)', border: '1px solid rgba(200,184,154,0.15)', borderRadius: '4px' }}>
+                  {estimates.map(({ supplierId, categoryLabel, deliveryLine }) => (
+                    <div key={supplierId} style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: estimates.length > 1 ? '8px' : 0 }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C8B89A' }}>{categoryLabel}</span>
+                      <span style={{ fontSize: '11px', color: 'rgba(245,243,238,0.55)', lineHeight: 1.4 }}>{deliveryLine}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '10px', color: '#666' }}>
               <span>{t('vat')}</span>
               <span>{curSym}0.00</span>
             </div>
 
-            <hr style={{ borderColor: '#333', margin: '16px 0' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '20px', marginBottom: '20px' }}>
-              <span>{t('total')}</span>
-              <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
+            <div style={{ padding: '16px', background: '#111', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginTop: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '20px' }}>
+                <span>{t('total')}</span>
+                <span>{curSym}{displayVal(cartTotal).toFixed(2)}</span>
+              </div>
             </div>
 
             {/* Promo code input — same logic as cart drawer (DRP-* lead codes + MENI-* admin coupons) */}
             <div style={{ padding: '14px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
               <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#aaa', marginBottom: '10px' }}>
-                🎟️ {t('promo_code')}?
+                {t('promo_code')}?
               </div>
               {!(activeLeadPromo || activeCoupon) ? (
                 <>
@@ -4096,7 +4198,7 @@ function MainApp() {
     return source.slice(0, 4);
   })();
 
-  const hardwareProducts = products
+  const jewelryProducts = products
     .filter((product) => [17, 18, 19, 20, 21].includes(Number(product.id)))
     .sort((a, b) => Number(a.id) - Number(b.id));
 
@@ -4111,144 +4213,162 @@ function MainApp() {
         </motion.div>
       )}
 
-      <section className="hero">
-        <div className="container hero-content">
-          <motion.span className="hero-eyebrow" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            DRIP STREET SIGNATURE DROP
-          </motion.span>
-          <motion.h1 className="hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            PREMIUM STREETWEAR. ZERO GUESSWORK FIT.
+      {/* ── HERO ─────────────────────────────────────────── */}
+      {/* ── HERO — approved model image ──────────────────── */}
+      <section className="hero hero--fashion">
+
+        {/* Full-bleed model photo */}
+        <img
+          src="/hero-model.png"
+          alt=""
+          aria-hidden="true"
+          className="hero-model-img"
+        />
+
+        {/* Gradient: dark left for text, dark bottom for ticker */}
+        <div className="hero-gradient-overlay" aria-hidden="true" />
+
+        {/* Corner micro-copy */}
+        <span className="hero-corner hero-corner--tl">
+          <span className="drop-live-dot" aria-hidden="true" />SS 2026 · DROP 01
+        </span>
+        <span className="hero-corner hero-corner--bl">
+          {locale === 'he' ? 'פרימיום סטריטוור' : 'PREMIUM STREETWEAR'}
+        </span>
+        <button
+          className="hero-corner hero-corner--br"
+          onClick={() => document.querySelector('.adaptive-product-sections')?.scrollIntoView({ behavior: 'smooth' })}
+        >
+          {locale === 'he' ? 'גלה עכשיו →' : 'EXPLORE →'}
+        </button>
+
+        {/* Main content — centered editorial overlay */}
+        <div className="hero-content-panel">
+
+          <motion.h1
+            className="hero-display-headline"
+            initial={{ opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.80, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {locale === 'he'
+              ? <>לא לאירועים.<br />לכל יום.</>
+              : <>NOT FOR THE OCCASION.<br />FOR EVERY DAY.</>}
           </motion.h1>
-          <motion.p className="hero-vibe-subtitle" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-            Heavyweight essentials engineered for daily city movement, late-night edge, and effortless rotation.
+
+          <motion.p
+            className="hero-display-sub"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.40, duration: 0.65 }}
+          >
+            {locale === 'he'
+              ? 'סטריטוור מינימליסטי שתוכנן לביטחון יומיומי.'
+              : 'Minimalist streetwear designed for everyday confidence.'}
           </motion.p>
-          <motion.ul className="hero-bullets" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
-            <li>Premium heavyweight cotton that keeps its shape.</li>
-            <li>Relaxed street fit with clean shoulder structure.</li>
-            <li>High-definition print that stays sharp wash after wash.</li>
-            <li>Built for day-to-night outfits without overthinking it.</li>
-          </motion.ul>
-          <motion.div className="hero-cta-group" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
-            <button className="hero-cta-primary drip-cta" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              Shop The Drop
+
+          <motion.div
+            className="hero-display-ctas"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.56, duration: 0.5 }}
+          >
+            <button
+              className="hero-cta-primary"
+              onClick={() => document.querySelector('.adaptive-product-sections')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              {locale === 'he' ? 'קנה עכשיו' : 'SHOP NOW'}
             </button>
-            <button className="hero-cta-secondary drip-cta" onClick={() => { setActiveCategory('Shirts'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              Explore Best Sellers
+            <button
+              className="hero-cta-ghost"
+              onClick={() => document.querySelector('.products-grid')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              {locale === 'he' ? 'חדשים' : 'NEW ARRIVALS'}
             </button>
           </motion.div>
 
-          <motion.div 
-            className="featured-jewelry-banner" 
-            initial={{ scale: 0.95, opacity: 0 }} 
-            animate={{ scale: 1, opacity: 1 }} 
-            transition={{ delay: 0.5 }}
-            onClick={() => navigate('/product/16')}
-            style={{
-              cursor: 'pointer',
-              marginTop: '40px',
-              padding: '20px 24px',
-              background: '#050505',
-              border: '1px solid rgba(255,255,255,0.26)',
-              borderRadius: '2px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '16px',
-              maxWidth: '680px',
-              marginInline: 'auto',
-              textAlign: 'left'
-            }}
-          >
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: 800, color: '#f3f4f6', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                {locale === 'he' ? '✨ קולקציה חדשה: תכשיטי פרימיום' : '✨ NEW COLLECTION: PREMIUM JEWELRY'}
-              </span>
-              <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 700, color: '#f3f4f6', letterSpacing: '-0.01em' }}>
-                {locale === 'he' ? 'שרשרת קובנית עם ליטוש 6 פיאות' : 'Six-sided Grinding Cuban Link Chain'}
-              </h4>
-              <p style={{ margin: 0, fontSize: '13px', color: '#d1d5db', maxWidth: '480px' }}>
-                {locale === 'he' 
-                  ? 'נחתכה במיוחד עם שש פיאות שטוחות ללכידת אור מירבית. פלדת אל-חלד מוצקה בציפוי זהב עמוק.'
-                  : 'Meticulously faceted with six flat-cut facets per link. Solid stainless steel plated in deep gold.'}
-              </p>
+        </div>
+
+        {/* Bottom ticker */}
+        <div className="hero-ticker-container">
+          {[0,1].map(n => (
+            <div key={n} className="hero-ticker-text" aria-hidden={n > 0}>
+              {[...Array(6)].map((_, i) => (
+                <span key={i}>JØAKIM&nbsp;&nbsp;·&nbsp;&nbsp;SS 2026&nbsp;&nbsp;·&nbsp;&nbsp;FREEDOM&nbsp;&nbsp;·&nbsp;&nbsp;STYLE&nbsp;&nbsp;·&nbsp;&nbsp;ATTITUDE&nbsp;&nbsp;·&nbsp;&nbsp;</span>
+              ))}
             </div>
-            <button style={{
-              padding: '8px 16px',
-              background: '#f3f4f6',
-              color: '#050505',
-              border: '1px solid #f3f4f6',
-              borderRadius: '2px',
-              fontWeight: 700,
-              fontSize: '12px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}>
-              {locale === 'he' ? 'גלה עכשיו' : 'Discover'}
-            </button>
-          </motion.div>
+          ))}
         </div>
       </section>
 
-      {!isLoading && hardwareProducts.length > 0 && (
-        <section className="hardware-section">
-          <div className="container">
-            <div className="hardware-head">
-              <h2>HARDWARE</h2>
-              <p>Five precision jewelry statements built for brutal everyday rotation.</p>
+      {/* ── PRODUCTS — immediately after hero ─────────────── */}
+      <div className="adaptive-product-sections">
+        {isLoading && (
+          <section className="best-sellers-section container">
+            <div className="best-sellers-head">
+              <div className="skeleton" style={{ height: '22px', width: '160px', borderRadius: '2px' }} />
             </div>
-            <div className="hardware-grid">
-              {hardwareProducts.map((product) => {
-                const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-                return (
-                  <article key={`hardware-${product.id}`} className="hardware-card">
-                    <button type="button" className="hardware-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
-                      <img src={product.imageUrl} alt={getProductTitle(product.title, locale)} loading="lazy" onError={(e) => setImageFallback(e)} />
-                    </button>
-                    <div className="hardware-meta">
-                      <h3>{getProductTitle(product.title, locale)}</h3>
-                      <span>{curSym}{displayPrice.toFixed(2)}</span>
-                    </div>
-                    <button type="button" className="hardware-cta" onClick={() => navigate(`/product/${product.id}`)}>
-                      View Item
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {!isLoading && bestSellerProducts.length > 0 && (
-        <section className="best-sellers-section container">
-          <div className="best-sellers-head">
-            <h2>Best Sellers</h2>
-            <p className="text-gray-300">Most-loved pieces customers keep reordering for fit, quality, and everyday styling.</p>
-          </div>
-          <div className="best-sellers-grid">
-            {bestSellerProducts.map((product) => {
-              const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-              return (
-                <article key={`bestseller-${product.id}`} className="best-seller-card">
-                  <button type="button" className="best-seller-image-btn" onClick={() => navigate(`/product/${product.id}`)}>
-                    <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
-                  </button>
-                  <div className="best-seller-content">
-                    <h3>{getProductTitle(product.title, locale)}</h3>
-                    <span>{curSym}{displayPrice.toFixed(2)}</span>
-                    <div className="best-seller-actions">
-                      <button type="button" className="quick-add-btn" onClick={() => openQuickAdd(product)}>Quick Add</button>
-                      <button type="button" className="best-seller-link-btn" onClick={() => navigate(`/product/${product.id}`)}>View Product</button>
-                    </div>
+            <div className="best-sellers-grid">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={`aps-skel-${i}`} className="product-card skeleton-card">
+                  <div className="skeleton skeleton-image" />
+                  <div style={{ marginTop: '14px' }}>
+                    <div className="skeleton skeleton-text" />
+                    <div className="skeleton skeleton-text" style={{ width: '45%' }} />
                   </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {!isLoading && jewelryProducts.length > 0 && (
+          <section className="hardware-section" style={{ order: userProfile === 'streetwear' ? 2 : 1 }}>
+            <div className="container">
+              <div className="hardware-head">
+                <h2>JEWELRY</h2>
+                <p>{locale === 'he' ? 'תכשיטים מדויקים. מעוצבים לשימוש יומיומי.' : 'Precision jewelry. Built to be worn, not stored.'}</p>
+              </div>
+              <div className="hardware-grid">
+                {jewelryProducts.map((product) => (
+                  <HardwareCard
+                    key={`hardware-${product.id}`}
+                    product={product}
+                    locale={locale}
+                    currency={currency}
+                    exchangeRate={exchangeRate}
+                    curSym={curSym}
+                    navigate={navigate}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!isLoading && bestSellerProducts.length > 0 && (
+          <section className="best-sellers-section container" style={{ order: userProfile === 'streetwear' ? 1 : 2 }}>
+            <div className="best-sellers-head">
+              <h2>{locale === 'he' ? 'הקולקציה' : 'THE COLLECTION'}</h2>
+              <p className="text-gray-300">{locale === 'he' ? 'ביגוד בסיסי פרימיום לכל יום.' : 'Premium essentials engineered for daily wear.'}</p>
+            </div>
+            <div className="best-sellers-grid">
+              {bestSellerProducts.map((product) => (
+                <BestSellerCard
+                  key={`bestseller-${product.id}`}
+                  product={product}
+                  locale={locale}
+                  currency={currency}
+                  exchangeRate={exchangeRate}
+                  curSym={curSym}
+                  navigate={navigate}
+                  openQuickAdd={openQuickAdd}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+
 
       <main className="container">
         <div className="categories-nav">
@@ -4262,8 +4382,8 @@ function MainApp() {
               'Jewelry': 'jewelry'
             };
             return (
-              <button 
-                key={cat} 
+              <button
+                key={cat}
                 className={`cat-btn ${activeCategory === cat ? 'active' : ''}`}
                 onClick={() => setActiveCategory(cat)}
               >
@@ -4272,6 +4392,8 @@ function MainApp() {
             );
           })}
         </div>
+
+        {/* Drop filter disabled — Phase 10 production lock */}
 
         <motion.div layout className="products-grid">
           <AnimatePresence>
@@ -4311,13 +4433,12 @@ function MainApp() {
                       onClick={() => navigate(`/product/${product.id}`)}
                       style={{ cursor: 'pointer' }}
                     >
-                      <img loading={productIndex === 0 ? 'eager' : 'lazy'} src={product.imageUrl} alt={getProductTitle(product.title, locale)} className="product-image front-img" onError={(e) => setImageFallback(e)} />
+                      <img loading={productIndex === 0 ? 'eager' : 'lazy'} src={extractProductImageUrl(product)} alt={getProductTitle(product.title, locale)} className="product-image front-img" onError={(e) => setImageFallback(e)} />
                       {product.backImageUrl && (
                         <img loading="lazy" src={product.backImageUrl} alt={`${getProductTitle(product.title, locale)} — back view`} className="product-image back-img" onError={(e) => setImageFallback(e, product.imageUrl || GLOBAL_IMAGE_FALLBACK)} />
                       )}
-                      {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
                       {/* Phase 11.1: product card watermark uses the new metallic D. */}
-                      <img src="/logo-new.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
+                      {/* <img src={logoPerfected} aria-hidden="true" className="product-card-watermark" alt="" draggable="false" /> */}
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -4334,22 +4455,6 @@ function MainApp() {
                         <button className="add-to-cart" data-track="grid_add_to_cart" aria-label={`${t('add_to_cart')} ${getProductTitle(product.title, locale)}`} onClick={() => openQuickAdd(product)}>
                           {t('add_to_cart')}
                         </button>
-                        <div className="product-card-signals" aria-label="Material and shipping highlights">
-                          <div className="product-card-signal-block">
-                            <strong>Material & Fit</strong>
-                            <ul>
-                              <li>Premium Heavyweight Cotton</li>
-                              <li>Relaxed Street Fit</li>
-                            </ul>
-                          </div>
-                          <div className="product-card-signal-block">
-                            <strong>Shipping & Returns</strong>
-                            <ul>
-                              <li>Tracked Shipping</li>
-                              <li>Easy 14-Day Returns</li>
-                            </ul>
-                          </div>
-                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -4357,6 +4462,31 @@ function MainApp() {
               })
             )}
           </AnimatePresence>
+          {!isLoading && filteredProducts.length === 0 && (
+            <div style={{ gridColumn: '1/-1', padding: '80px 0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: '11px', fontWeight: 600, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(245,243,238,0.28)', margin: 0 }}>
+                {activeCategory !== 'All' || searchQuery
+                  ? (locale === 'he' ? 'לא נמצאו מוצרים בקטגוריה זו' : 'No products in this filter')
+                  : (locale === 'he' ? 'מאחזר את הקטלוג...' : 'Waking the catalog…')}
+              </p>
+              {(activeCategory !== 'All' || searchQuery) && (
+                <button
+                  onClick={() => { setActiveCategory('All'); setSearchQuery(''); }}
+                  style={{ fontFamily: "'Inter', sans-serif", fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', background: 'transparent', border: '1px solid rgba(245,243,238,0.18)', color: 'rgba(245,243,238,0.55)', padding: '10px 24px', cursor: 'pointer', borderRadius: '0' }}
+                >
+                  {locale === 'he' ? 'הצג הכל' : 'SHOW ALL'}
+                </button>
+              )}
+              {activeCategory === 'All' && !searchQuery && (
+                <button
+                  onClick={() => window.location.reload()}
+                  style={{ fontFamily: "'Inter', sans-serif", fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', background: 'transparent', border: '1px solid rgba(245,243,238,0.18)', color: 'rgba(245,243,238,0.55)', padding: '10px 24px', cursor: 'pointer', borderRadius: '0' }}
+                >
+                  {locale === 'he' ? 'נסה שוב' : 'RETRY'}
+                </button>
+              )}
+            </div>
+          )}
         </motion.div>
       </main>
 
@@ -4365,52 +4495,53 @@ function MainApp() {
         <section className="trending-section container">
           <h2 className="trending-title">{t('trending_title')}</h2>
           <div className="trending-scroll">
-            {products.slice(0, 6).map((product) => {
-              const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / exchangeRate)) : product.price;
-              return (
-                <button
-                  key={`trend-${product.id}`}
-                  type="button"
-                  className="trending-card"
-                  onClick={() => navigate(`/product/${product.id}`)}
-                >
-                  <div className="trending-card-img-wrap">
-                    <img loading="lazy" src={product.imageUrl} alt={getProductTitle(product.title, locale)} onError={(e) => setImageFallback(e)} />
-                  </div>
-                  <div className="trending-card-info">
-                    <span className="trending-card-title">{getProductTitle(product.title, locale)}</span>
-                    <span className="trending-card-price">{curSym}{displayPrice.toFixed(2)}</span>
-                  </div>
-                </button>
-              );
-            })}
+            {getSmartProductOrder(products).slice(0, 6).map((product) => (
+              <TrendingCard
+                key={`trend-${product.id}`}
+                product={product}
+                locale={locale}
+                currency={currency}
+                exchangeRate={exchangeRate}
+                curSym={curSym}
+                navigate={navigate}
+              />
+            ))}
           </div>
         </section>
       )}
 
-      {/* ─── Why DRIP STREET ─── */}
-      <section className="why-section container">
-        <h2 className="why-title">{t('why_title')}</h2>
-        <div className="why-grid">
-          <div className="why-card">
-            <div className="why-icon">🌍</div>
-            <strong>{t('why_shipping')}</strong>
-            <p>{t('why_shipping_desc')}</p>
-          </div>
-          <div className="why-card">
-            <div className="why-icon">🔒</div>
-            <strong>{t('why_secure')}</strong>
-            <p>{t('why_secure_desc')}</p>
-          </div>
-          <div className="why-card">
-            <div className="why-icon">👕</div>
-            <strong>{t('why_quality')}</strong>
-            <p>{t('why_quality_desc')}</p>
-          </div>
-          <div className="why-card">
-            <div className="why-icon">↩️</div>
-            <strong>{t('why_returns')}</strong>
-            <p>{t('why_returns_desc')}</p>
+      {/* ── MANIFESTO ─────────────────────────────────────── */}
+      <section className="ds-manifesto">
+        <div className="container ds-manifesto-inner">
+          <p className="ds-manifesto-line">
+            {locale === 'he' ? 'לא לאירועים.' : 'Not for the occasion.'}
+          </p>
+          <p className="ds-manifesto-line">
+            {locale === 'he' ? 'לכל יום.' : 'For every day.'}
+          </p>
+          <span className="ds-manifesto-brand">— JØAKIM™</span>
+        </div>
+      </section>
+
+      {/* ── BRAND STORY — below all products ─────────────── */}
+      <section className="ds-story ds-story--bottom">
+        <div className="container ds-story-inner">
+          <div className="ds-story-label">{locale === 'he' ? 'הסיפור שלנו' : 'THE BRAND'}</div>
+          <h2 className="ds-story-headline">
+            {locale === 'he'
+              ? <>בנוי עבור<br />אנשים שזזים<br />עם מטרה.</>
+              : <>BUILT FOR PEOPLE<br />WHO MOVE<br />WITH PURPOSE.</>}
+          </h2>
+          <div className="ds-story-body">
+            <p>
+              {locale === 'he'
+                ? 'JØAKIM נולדה עבור אנשים שמבטאים ביטחון דרך מה שהם לובשים. לא למגמות. לא לעונות. לשימוש יומיומי.'
+                : 'JØAKIM was built for people who express confidence through what they wear. Not for trends. Not for seasons. For the everyday.'}
+            </p>
+            <button className="ds-btn ds-btn--outline"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+              {locale === 'he' ? 'חזרה למעלה' : 'BACK TO TOP'}
+            </button>
           </div>
         </div>
       </section>
@@ -4433,7 +4564,7 @@ function MainApp() {
         {t('announcement')}
       </div>
 
-      <header className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}`}>
         <div className="header-leading">
           <button className="nav-toggle" type="button" aria-label="Open navigation" onClick={openMobileNav}>
             <span />
@@ -4446,20 +4577,15 @@ function MainApp() {
               right-side nav icons. */}
           <a
             href="/"
-            style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }}
+            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
             onClick={(e) => { e.preventDefault(); navigate('/'); }}
-            aria-label="Drip Street Home"
+            aria-label="JØAKIM Home"
           >
-            {/* Phase 12: rembg stripped the JPG background to true transparency,
-                so the badge styling from 11.5 (rounded box, border, shadow)
-                is no longer needed — the metallic D now floats directly on
-                the brutalist navbar. objectFit: contain keeps the asset's
-                square proportions intact at 56px tall. */}
             <img
-              src="/logo-new.png"
-              alt={t('logo')}
-              className="brand-mark"
-              style={{ height: '56px', width: 'auto', objectFit: 'contain' }}
+              src="/joakim-approved-full-logo.png?v=2"
+              alt="Jøakim"
+              className="nav-brand-logo"
+              style={{ height: '80px', width: 'auto', objectFit: 'contain', display: 'block' }}
             />
           </a>
         </div>
@@ -4473,12 +4599,12 @@ function MainApp() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="lang-toggle-btn hide-on-mobile" onClick={toggleLocale}>
-            {locale === 'he' ? 'EN' : 'עב'}
-          </button>
+        <div className="header-trailing">
           <button className="cart-btn cart-btn-pill" aria-label={t('open_cart_aria')} onClick={() => navigate('/cart')}>
-            <span>🛒 {t('cart')}</span>
+            <span>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: '6px' }}><path d="M2 2H3.5L5 10H12L13.5 5H4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><circle cx="6" cy="12.5" r="1" fill="currentColor"/><circle cx="11" cy="12.5" r="1" fill="currentColor"/></svg>
+              {t('cart')}
+            </span>
             {totalItems > 0 && <span className={`cart-badge ${cartBadgePulse ? 'pulse' : ''}`}>{totalItems}</span>}
           </button>
         </div>
@@ -4487,10 +4613,8 @@ function MainApp() {
       <div className={`side-nav-overlay ${isMobileNavOpen ? 'open' : ''}`} onClick={closeMobileNav}>
         <aside className="side-nav-drawer" onClick={(event) => event.stopPropagation()}>
           <div className="side-nav-header">
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
-              {/* Phase 11.1: secondary mark in mobile/secondary nav area. */}
-              <img src="/logo-new.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
-              <strong>{t('logo')}</strong>
+            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <img src="/joakim-approved-full-logo.png?v=2" alt="Jøakim" style={{ height: '56px', width: 'auto', objectFit: 'contain' }} />
             </span>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
           </div>
@@ -4508,11 +4632,7 @@ function MainApp() {
                 {cat === 'All' ? t('all') : cat === 'New Arrivals' ? t('new_arrivals') : cat === 'Hoodies' ? t('hoodies') : cat === 'Shirts' ? t('tshirts') : cat === 'Tank Tops' ? t('tank_tops') : cat === 'Jewelry' ? t('jewelry') : cat}
               </button>
             ))}
-            <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button type="button" className="side-nav-link" onClick={() => { toggleLocale(); closeMobileNav(); }} style={{ textAlign: locale === 'he' ? 'right' : 'left', display: 'flex', alignItems: 'center', gap: '8px', color: '#888' }}>
-                🌐 {locale === 'he' ? 'English (EN)' : 'עברית (HE)'}
-              </button>
-            </div>
+
           </div>
         </aside>
       </div>
@@ -4534,6 +4654,7 @@ function MainApp() {
           />
         } />
         <Route path="/privacy" element={<PrivacyPolicy />} />
+        {/* <Route path="/perfect-fit-keys" element={<div>Perfect Fit</div>} /> */}
         <Route path="/terms" element={<Terms />} />
         <Route path="/refund" element={<RefundPolicy />} />
         <Route path="/shipping" element={<Shipping />} />
@@ -4599,11 +4720,11 @@ function MainApp() {
                     <p>{t('loading')}</p>
                   ) : (
                     <>
-                      {Array.isArray(quickAddProduct.colors) && quickAddProduct.colors.length > 0 && (
+                      {normalizeArrayField(quickAddProduct.colors).length > 0 && (
                         <div className="quick-config-group">
                           <label>{t('choose_color')}</label>
                           <div className="quick-config-swatches">
-                            {quickAddProduct.colors.map((colorOption) => (
+                            {normalizeArrayField(quickAddProduct.colors).map((colorOption) => (
                               <button
                                 key={colorOption.name}
                                 type="button"
@@ -4636,7 +4757,7 @@ function MainApp() {
                                 className={`quick-size-btn ${quickAddSize === sizeOption ? 'active' : ''}`}
                                 onClick={() => setQuickAddSize(sizeOption)}
                               >
-                                {sizeOption}
+                                {formatSizeDisplay(sizeOption)}
                               </button>
                             ))}
                           </div>
@@ -4886,7 +5007,7 @@ function MainApp() {
               <span style={{ color: isFreeShipping ? '#4caf50' : '#aaa' }}>{isFreeShipping ? t('free') : `${curSym}${displayVal(shippingCost).toFixed(2)}`}</span>
             </div>
 
-            <div className="cart-total">
+            <div className="cart-total" style={{ padding: '16px', background: '#111', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginTop: '24px' }}>
               <span>{t('total')}</span>
               <span>
                 {activeLeadPromo && leadPromoDiscount > 0 && (
@@ -5002,3 +5123,5 @@ export default function App() {
     </ErrorBoundary>
   )
 }
+
+

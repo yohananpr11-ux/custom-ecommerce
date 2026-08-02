@@ -30,17 +30,15 @@ class PricingEngine {
     this.exchangeRateUSDILS = 3.75; // Fallback
     this.autoExtremeThresholdPct = this.normalizeExtremeThreshold(process.env.AUTO_PRICE_UPDATE_THRESHOLD_PCT); // default 8%
 
-    // Exact target retail prices in ILS (business-critical).
-    // 2026-05-24: raised across the board after cost audit showed ₪89.90 was
-    // selling at a loss once shipping ($14) + payment fee (~3.5%) were factored
-    // against $16.35 production cost for XL/dark variants. New floor leaves
-    // ~30% gross margin on a single-shirt order and ~40% on a 2-3 shirt cart.
-    this.targetPricesILS = {
-      'softstyle':   149.90,  // Gildan 64000 basic tee (was 89.90)
-      'jersey':      179.90,  // Bella+Canvas 3001 premium tee (was 119.90)
-      'hoodie':      229.90,  // Gildan 18500 hooded sweatshirt (was 159.90)
-      'tank':        null,    // Tank tops: dynamic pricing based on cost (no fixed target)
-    };
+    // Printify IL shipping cost absorbed per order.
+    // We charge ₪29.90 shipping; Printify charges ~$14 to ship to Israel.
+    // The gap is the net shipping cost we absorb, in ILS.
+    this.printifyShippingCostUSD = 14; // Printify → Israel per order
+
+    // Smart Pricing constants (2026-06-08):
+    // Formula: R = (maxVariantCostILS + shippingGapILS) / (1 - netMargin - paymentFee)
+    // Applied per-product using the MAX variant cost so every size/color is profitable.
+    this.printifyNetMarginTarget = 0.30;
 
     // Shipping cost displayed separately at checkout
     this.shippingCostNIS = 29.90;
@@ -84,57 +82,41 @@ class PricingEngine {
   }
 
   /**
-   * Determine the target price category for a product based on its title
+   * Universal Smart Pricing formula — works for any supplier:
+   *
+   *   shippingGap = max(supplierShipping - ourShippingCharge, 0)
+   *     • Positive gap: we absorb a shipping deficit (e.g. Printify IL = $14 > ₪29.9/$7.97 we charge)
+   *     • Zero gap: supplier ships cheaper than we charge (e.g. CJ jewelry) — no deficit to absorb
+   *
+   *   formulaPrice = (maxVariantCostILS + shippingGapILS) / (1 - netMargin - paymentFee)
+   *
+   *   finalPrice = max(formulaPrice, minRetailPriceILS || 0)
+   *     • minRetailPriceILS: market-positioning floor set per product in seed/admin
+   *       For jewelry/accessories this prevents formula from pricing below market value
+   *       For apparel (minRetailPriceILS = NULL) formula is the price
+   *
+   * @param {number} baseCostUSD      MAX enabled variant cost in USD (not min)
+   * @param {number} supplierShipUSD  What the supplier charges us to ship per order to Israel
+   * @param {string} title            Product title (for logging)
+   * @param {number} minRetailILS     Market floor in ILS (null = no floor, formula wins)
    */
-  getProductCategory(title) {
-    const lower = title.toLowerCase();
-    if (lower.includes('softstyle') || lower.includes('gildan 64000') || lower.includes('64000')) return 'softstyle';
-    if (lower.includes('jersey') || lower.includes('bella') || lower.includes('canvas') || lower.includes('3001')) return 'jersey';
-    if (lower.includes('hoodie') || lower.includes('hooded') || lower.includes('sweatshirt') || lower.includes('18500')) return 'hoodie';
-    if (lower.includes('tank') || lower.includes('tank top')) return 'tank';
-    if (lower.includes('tee') || lower.includes('t-shirt') || lower.includes('shirt')) return 'softstyle'; // fallback tee
-    return 'softstyle'; // ultimate fallback
+  calculateOptimalPriceNIS(baseCostUSD, supplierShipUSD = 0, title = '', minRetailILS = null) {
+    const costILS = baseCostUSD * this.exchangeRateUSDILS;
+    const shippingGapILS = Math.max(supplierShipUSD * this.exchangeRateUSDILS - this.shippingCostNIS, 0);
+    const formulaPrice = (costILS + shippingGapILS) / (1 - this.printifyNetMarginTarget - this.paymentFeeRate);
+    const rawPrice = Math.ceil(formulaPrice / 10) * 10 - 0.10;
+    const finalPrice = minRetailILS != null ? Math.max(rawPrice, minRetailILS) : rawPrice;
+    console.log(`💰 [SMART PRICING] "${(title||'').substring(0,30)}" | MaxCost:$${baseCostUSD.toFixed(2)} ShipGap:₪${shippingGapILS.toFixed(1)} Formula:₪${rawPrice.toFixed(2)} Floor:₪${minRetailILS||0} → ₪${finalPrice.toFixed(2)}`);
+    return finalPrice;
   }
 
-  /**
-   * Get the fixed target price for a product in ILS (enforces exact business-critical prices)
-   */
-  getTargetPrice(title, type) {
-    const category = this.getProductCategory(title);
-    // Tank tops have no fixed price - return null to indicate dynamic pricing
-    if (category === 'tank') return null;
-    return this.targetPricesILS[category] || 89.90;
-  }
-
-  /**
-   * Calculate optimal price - fixed targets for tees/hoodies, dynamic for tanks
-   */
-  calculateOptimalPriceNIS(baseCostUSD, shippingCostUSD = 0, title = '', type = 'printify') {
-    if (title) {
-      const category = this.getProductCategory(title);
-      
-      // Tank tops: dynamic pricing based on manufacturing cost
-      if (category === 'tank') {
-        const costInILS = baseCostUSD * this.exchangeRateUSDILS;
-        const profitMarginMultiplier = 2.5;
-        const targetPrice = costInILS * profitMarginMultiplier;
-        const finalPrice = Math.floor(targetPrice / 10) * 10 + 9.90;
-        console.log(`🔧 [TANK PRICING] Title: "${title}" | BaseCost: $${baseCostUSD} | CostILS: ₪${costInILS.toFixed(2)} | Target: ₪${targetPrice.toFixed(2)} | Final: ₪${finalPrice.toFixed(2)}`);
-        return finalPrice;
-      }
-      
-      // Fixed prices for tees and hoodies
-      const fixedPrice = this.targetPricesILS[category] || 89.90;
-      return fixedPrice;
-    }
-    
-    // Fallback: cost-based calculation for unknown products
-    const totalCostUSD = baseCostUSD + shippingCostUSD;
-    const totalCostNIS = totalCostUSD * this.exchangeRateUSDILS;
-    const marginDivisor = 1 - this.paymentFeeRate - 0.15; // 15% profit after payment fees
-    let optimalPrice = totalCostNIS / marginDivisor;
-    optimalPrice = Math.ceil(optimalPrice / 10) * 10 - 0.10;
-    return optimalPrice;
+  async getMaxVariantCostUSD(productId) {
+    const row = await dbGetAsync(
+      `SELECT MAX(cost) AS maxCost FROM product_variants WHERE productId = ? AND isEnabled = 1`,
+      [productId]
+    );
+    const maxCost = row && row.maxCost != null ? Number(row.maxCost) : 0;
+    return maxCost > 0 ? maxCost : 0;
   }
 
   async fetchExchangeRate() {
@@ -229,21 +211,16 @@ class PricingEngine {
 
     const changePct = Math.abs((this.exchangeRateUSDILS - previousAppliedRate) / previousAppliedRate) * 100;
 
-    const products = await dbAllAsync('SELECT * FROM products', []);
+    // Universal: all products regardless of supplier
+    const products = await dbAllAsync('SELECT id, title, price, supplierShippingCostUSD, minRetailPriceILS FROM products', []);
     const plannedUpdates = [];
 
     for (const product of products) {
-      const category = this.getProductCategory(product.title || '');
-      let targetPrice = null;
-
-      if (category === 'tank') {
-        const tankCostUSD = await this.getTankTopBaseCostUSD(product.id);
-        if (tankCostUSD > 0) {
-          targetPrice = this.calculateOptimalPriceNIS(tankCostUSD, 0, product.title, product.type);
-        }
-      } else {
-        targetPrice = this.getTargetPrice(product.title, product.type);
-      }
+      const maxCostUSD = await this.getMaxVariantCostUSD(product.id);
+      if (maxCostUSD <= 0) continue;
+      const supplierShipUSD = Number(product.supplierShippingCostUSD || 0);
+      const minRetailILS = product.minRetailPriceILS != null ? Number(product.minRetailPriceILS) : null;
+      const targetPrice = this.calculateOptimalPriceNIS(maxCostUSD, supplierShipUSD, product.title, minRetailILS);
 
       if (typeof targetPrice !== 'number' || Number.isNaN(targetPrice)) {
         continue;

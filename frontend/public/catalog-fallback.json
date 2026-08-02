@@ -1,0 +1,172 @@
+[
+  {
+    "id": 1,
+    "title": "Pornstar Martini T-Shirt | Cocktail Recipe Tee, Bar Drink Illustration",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a0bbc590aaaeee12503546b/22073/97933/pornstar-martini-t-shirt-cocktail-recipe-tee-bar-drink-illustration.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a0bbc590aaaeee12503546b/22073/97982/pornstar-martini-t-shirt-cocktail-recipe-tee-bar-drink-illustration.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 2,
+    "title": "Samurai Illustration T-Shirt | Japanese Warrior Red Sun Back Graphic",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a0a42d8992c1003070edc8d/117607/127480/samurai-illustration-t-shirt-japanese-warrior-red-sun-back-graphic.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a0a42d8992c1003070edc8d/117607/127482/samurai-illustration-t-shirt-japanese-warrior-red-sun-back-graphic.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 3,
+    "title": "Palm Tree Surf Sketch Tank Top | Minimal Beach Illustration",
+    "price": 149.9,
+    "priceUSD": 38.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a0a3f1deeb1cc67a7083bd3/76985/105316/palm-tree-surf-sketch-tank-top-minimal-beach-illustration.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a0a3f1deeb1cc67a7083bd3/76985/105317/palm-tree-surf-sketch-tank-top-minimal-beach-illustration.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 4,
+    "title": "Paris Eiffel Tower Tee | La Ville Lumière, Vintage Photo",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a0a125f69ddd35f850ebbc4/12100/92570/paris-eiffel-tower-tee-la-ville-lumiere-vintage-photo.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a0a125f69ddd35f850ebbc4/12100/102006/paris-eiffel-tower-tee-la-ville-lumiere-vintage-photo.jpg?camera_label=back-2",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 5,
+    "title": "Minimal Botanical Sprig T-Shirt | Delicate Line Art Tee",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a0a0b3ea378e1f01d037808/38192/97992/minimal-botanical-sprig-t-shirt-delicate-line-art-tee.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a0a0b3ea378e1f01d037808/38192/97993/minimal-botanical-sprig-t-shirt-delicate-line-art-tee.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 6,
+    "title": "Sunset Road tee | vintage sunset beach scene, palm silhouettes",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a0a03eb5ad54e2a950411d6/12124/92570/sunset-road-tee-vintage-sunset-beach-scene-palm-silhouettes.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a0a03eb5ad54e2a950411d6/12124/92571/sunset-road-tee-vintage-sunset-beach-scene-palm-silhouettes.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 7,
+    "title": "Urban Frequency skyline graphic T-Shirt | city soundwave design",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a09eed8c082c08abb0d39fe/67446/97992/urban-frequency-skyline-graphic-t-shirt-city-soundwave-design.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a09eed8c082c08abb0d39fe/67446/97993/urban-frequency-skyline-graphic-t-shirt-city-soundwave-design.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 8,
+    "title": "Drum Machine Blueprint T-Shirt | Synth Beat Electronic Music Tech Tee",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a09ad8feeb1cc67a707f51e/22089/97933/drum-machine-blueprint-t-shirt-synth-beat-electronic-music-tech-tee.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a09ad8feeb1cc67a707f51e/22089/97982/drum-machine-blueprint-t-shirt-synth-beat-electronic-music-tech-tee.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 9,
+    "title": "Retro Palm Trees Tee | Sunset Arch Graphic Shirt",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a08bc0e926fddf1760672c4/64335/102044/retro-palm-trees-tee-sunset-arch-graphic-shirt.jpg?camera_label=front-2",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a08bc0e926fddf1760672c4/64335/102045/retro-palm-trees-tee-sunset-arch-graphic-shirt.jpg?camera_label=back-2",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 10,
+    "title": "Unisex Heavy Blend™ Hooded Sweatshirt",
+    "price": 229.9,
+    "priceUSD": 43.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a08b463e9a2c5fcc60a6ffb/32912/98424/unisex-heavy-blend-hooded-sweatshirt.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a08b463e9a2c5fcc60a6ffb/32912/98425/unisex-heavy-blend-hooded-sweatshirt.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 11,
+    "title": "Ramen Shop Illustration T-Shirt | Anime Noodle Bowl Graphic",
+    "price": 149.9,
+    "priceUSD": 24.99,
+    "imageUrl": "https://images-api.printify.com/mockup/6a08b3791c0731234c0976f7/38191/97992/ramen-shop-illustration-t-shirt-anime-noodle-bowl-graphic.jpg?camera_label=front",
+    "backImageUrl": "https://images-api.printify.com/mockup/6a08b3791c0731234c0976f7/38191/97993/ramen-shop-illustration-t-shirt-anime-noodle-bowl-graphic.jpg?camera_label=back",
+    "type": "printify",
+    "stock": 999
+  },
+  {
+    "id": 16,
+    "title": "Six-sided Grinding Cuban Link Chain | Premium Jewelry",
+    "price": 149.9,
+    "priceUSD": 39.9,
+    "imageUrl": "https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg",
+    "backImageUrl": null,
+    "type": "dropship",
+    "stock": 999
+  },
+  {
+    "id": 17,
+    "title": "HEAVYWEIGHT CUBAN CHAIN",
+    "price": 149.9,
+    "priceUSD": 49.52,
+    "imageUrl": "https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg",
+    "backImageUrl": null,
+    "type": "dropship",
+    "stock": 999
+  },
+  {
+    "id": 18,
+    "title": "TITANIUM BRAIDED PENDANT",
+    "price": 149.9,
+    "priceUSD": 49.52,
+    "imageUrl": "https://cf.cjdropshipping.com/quick/product/88af505d-2f06-4dc1-a84b-6cc0530a5c89.jpg",
+    "backImageUrl": null,
+    "type": "dropship",
+    "stock": 999
+  },
+  {
+    "id": 19,
+    "title": "COLD WIND CUBAN BRACELET",
+    "price": 149.9,
+    "priceUSD": 49.52,
+    "imageUrl": "https://cf.cjdropshipping.com/2054/4883093832835.jpg",
+    "backImageUrl": null,
+    "type": "dropship",
+    "stock": 999
+  },
+  {
+    "id": 20,
+    "title": "ESSENTIAL STEEL STUDS",
+    "price": 149.9,
+    "priceUSD": 49.52,
+    "imageUrl": "https://cf.cjdropshipping.com/1614328451320.jpg",
+    "backImageUrl": null,
+    "type": "dropship",
+    "stock": 999
+  },
+  {
+    "id": 21,
+    "title": "ONYX ZIRCON STUDS",
+    "price": 149.9,
+    "priceUSD": 49.52,
+    "imageUrl": "https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg",
+    "backImageUrl": null,
+    "type": "dropship",
+    "stock": 999
+  }
+]

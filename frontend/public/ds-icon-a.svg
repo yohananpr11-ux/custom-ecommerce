@@ -1,0 +1,8 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Option A: DS Monogram — geometric, minimal -->
+  <!-- D glyph -->
+  <path d="M6 8H20A18 18 0 0 1 20 56H6Z" fill="currentColor"/>
+  <path d="M14 17H19A9 9 0 0 1 19 47H14Z" fill="#121212"/>
+  <!-- S glyph -->
+  <path d="M36 8H56C56 8 56 8 56 8C56 8 52 14 44 14H40C38 14 36 16 36 18C36 20 38 22 40 22H52C56 22 58 26 58 30C58 34 56 36 52 36H40C38 36 36 38 36 40L36 42C36 44 38 46 40 46H56" stroke="currentColor" stroke-width="6" stroke-linecap="square" fill="none"/>
+</svg>

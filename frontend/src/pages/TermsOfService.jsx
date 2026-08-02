@@ -33,10 +33,13 @@ export default function TermsOfService() {
 
         <section>
           <h2 style={{ color: 'var(--color-white)', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>
-            4. Printify Print-on-Demand Fulfillment
+            4. Fulfillment Partners
           </h2>
+          <p style={{ margin: '0 0 12px 0' }}>
+            <strong>Apparel (Printify):</strong> Drip Street apparel is custom printed on demand via Printify's global fulfillment network. By placing an order, you acknowledge that production begins immediately. Shipping address changes or size modifications cannot be processed once the manufacturing facility accepts the order.
+          </p>
           <p style={{ margin: 0 }}>
-            Drip Street designs are custom printed on demand using Printify's global fulfillment networks. By placing an order, you acknowledge that manufacturing begins immediately. Consequently, shipping address modifications or size alterations cannot be processed once the manufacturing facility accepts the order.
+            <strong>Jewelry &amp; Accessories (CJ Dropshipping):</strong> Hardware accessories — chains, bracelets, earrings, and studs — are sourced from and fulfilled by CJ Dropshipping. These items are pre-manufactured and dispatched from CJ's warehouse. Order cancellations must be submitted within 12 hours of purchase, before the item enters the dispatch queue.
           </p>
         </section>
 
