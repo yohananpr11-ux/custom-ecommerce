@@ -28,8 +28,10 @@ const files = {
   sitemap   : path.join(root, 'public', 'sitemap.xml'),
 };
 
-// Phase 11.1: canonical OG image is now the new metallic D brand logo.
-const OG_IMAGE_URL = 'https://dripstreetshop.com/logo-new.png';
+// Brand rebrand: OG image updated to the JØAKIM campaign card. Domain
+// intentionally unchanged (still dripstreetshop.com until the domain
+// cutover phase) — filename only.
+const OG_IMAGE_URL = 'https://dripstreetshop.com/joakim-og.png';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
