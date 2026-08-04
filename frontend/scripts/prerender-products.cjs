@@ -167,12 +167,12 @@ const esc = (v) => String(v == null ? '' : v)
 function buildMeta(product) {
   const id     = product.id;
   const url    = `${SITE_BASE}/product/${id}`;
-  const name   = String(product.title || '').trim() || `Drip Street item #${id}`;
-  const title  = `${name} | Drip Street`;
+  const name   = String(product.title || '').trim() || `JØAKIM item #${id}`;
+  const title  = `${name} | JØAKIM`;
   // Description: prefer description, then truncated title, never empty.
   const rawDesc = (product.description || '').trim();
   const description = (rawDesc.length > 0 ? rawDesc.slice(0, 200) :
-    `Shop ${name} at Drip Street. Premium minimal streetwear, worldwide shipping.`);
+    `Shop ${name} at JØAKIM. Premium minimal streetwear, worldwide shipping.`);
 
   // Image: prefer first product image, absolute-ize if needed, fallback to OG.
   let image = product.imageUrl || product.backImageUrl || FALLBACK_OG;
@@ -188,7 +188,7 @@ function buildMeta(product) {
     'image': image,
     'description': description,
     'sku': String(id),
-    'brand': { '@type': 'Brand', 'name': 'Drip Street' },
+    'brand': { '@type': 'Brand', 'name': 'JØAKIM' },
     'offers': {
       '@type': 'Offer',
       'url': url,
