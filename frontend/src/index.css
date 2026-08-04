@@ -165,7 +165,7 @@
   /* Phase 11.2: custom cursor now points to the new brand logo, in line with
      the rest of the brand-mark migration. The crosshair fallback stays as a
      safety net for browsers that can't render the URL cursor. */
-  --drip-cursor: url('/joakim-favicon.png') 16 16, crosshair;
+  --drip-cursor: url('/joakim-approved-logo-original.png') 16 16, crosshair;
 }
 
 h1,
