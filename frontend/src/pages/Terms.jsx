@@ -27,12 +27,12 @@ export default function Terms() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <section style={sectionStyle}>
           <h2 style={headingStyle}>תנאי שימוש</h2>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>פרטי העסק: Drip Street | דוא"ל: support@dripstreetshop.com</p>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>פרטי העסק: JØAKIM | דוא"ל: support@dripstreetshop.com</p>
         </section>
 
         <section style={sectionStyle}>
           <h3 style={headingStyle}>1. ביצוע הזמנה</h3>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>ביצוע הזמנה באתר מהווה אישור לכך שקראת והבנת את תנאי השימוש, את מדיניות המשלוחים ואת מדיניות ההחזרות של Drip Street. אנו שומרים לעצמנו את הזכות לעדכן מלאי, מחירים, זמני אספקה ותיאורי מוצרים לפי הצורך.</p>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>ביצוע הזמנה באתר מהווה אישור לכך שקראת והבנת את תנאי השימוש, את מדיניות המשלוחים ואת מדיניות ההחזרות של JØAKIM. אנו שומרים לעצמנו את הזכות לעדכן מלאי, מחירים, זמני אספקה ותיאורי מוצרים לפי הצורך.</p>
         </section>
 
         <section style={sectionStyle}>
@@ -42,7 +42,7 @@ export default function Terms() {
 
         <section style={sectionStyle}>
           <h3 style={headingStyle}>3. אחריות והגבלות</h3>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>האחריות של Drip Street מוגבלת לערך הרכישה ששולם בפועל. איננו אחראים לעיכובים הנובעים מגורמי שילוח חיצוניים, עיכובי מכס, שימוש לא נכון במוצר או נזק שנגרם לאחר המסירה.</p>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>האחריות של JØAKIM מוגבלת לערך הרכישה ששולם בפועל. איננו אחראים לעיכובים הנובעים מגורמי שילוח חיצוניים, עיכובי מכס, שימוש לא נכון במוצר או נזק שנגרם לאחר המסירה.</p>
         </section>
 
         <p dir="rtl" style={noteStyle}>עודכן לאחרונה: 1 ביוני 2026</p>

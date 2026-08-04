@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import LegalPageLayout from '../components/LegalPageLayout';
 
-const vision = 'בדריפסטריט אנחנו מאמינים שסטייל אמיתי לא צריך להתאמץ. החזון שלנו פשוט: לייצר ולאצור פריטי סטריטוור מינימליסטיים, נקיים וממכרים שיושבים בול מהרגע הראשון. בלי לוגואים מוגזמים או טרנדים חולפים – רק גזרות מדויקות, חומרים איכותיים ואסתטיקה שמשתלבת בטבעיות בחיים האורבניים, מבוקר עד לילה. אנחנו כאן בשביל אלה שמבינים שפשטות היא התחכום האולטימטיבי, ושבגדים טובים נועדו לתת לך את הביטחון להיות בדיוק מי שאתה.';
+const vision = 'ב-JØAKIM אנחנו מאמינים שסטייל אמיתי לא צריך להתאמץ. החזון שלנו פשוט: לייצר ולאצור פריטי סטריטוור מינימליסטיים, נקיים וממכרים שיושבים בול מהרגע הראשון. בלי לוגואים מוגזמים או טרנדים חולפים – רק גזרות מדויקות, חומרים איכותיים ואסתטיקה שמשתלבת בטבעיות בחיים האורבניים, מבוקר עד לילה. אנחנו כאן בשביל אלה שמבינים שפשטות היא התחכום האולטימטיבי, ושבגדים טובים נועדו לתת לך את הביטחון להיות בדיוק מי שאתה.';
 
 const pillarCards = [
   {
@@ -45,7 +45,7 @@ export default function About() {
               Minimal streetwear, tuned with intent.
             </motion.h2>
             <p style={{ margin: 0, maxWidth: '720px', fontSize: '18px', lineHeight: 1.85, color: 'rgba(255,255,255,0.84)' }}>
-              Drip Street exists to make premium dressing feel clean, grounded, and easy to wear every day.
+              JØAKIM exists to make premium dressing feel clean, grounded, and easy to wear every day.
             </p>
           </div>
         </section>
