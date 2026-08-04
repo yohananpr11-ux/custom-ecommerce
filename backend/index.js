@@ -872,7 +872,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
   const emailItems = items.map((item) => ({
-    title: item.title || 'Drip Street Item',
+    title: item.title || 'JØAKIM Item',
     color: item.selectedColor || null,
     size: item.selectedSize || null,
     quantity: item.quantity,
@@ -3702,7 +3702,7 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
           const emailItems = items.map((item) => ({
-            title: item.title || 'Drip Street Item',
+            title: item.title || 'JØAKIM Item',
             color: item.selectedColor || null,
             size: item.selectedSize || null,
             quantity: item.quantity,
