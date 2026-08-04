@@ -5,7 +5,7 @@ const API_BASE_URL = process.env.API_BASE_URL || process.env.RENDER_EXTERNAL_URL
 class EmailService {
   constructor() {
     this.resend = null;
-    this.fromEmail = process.env.FROM_EMAIL || 'Drip Street Shop <hello@dripstreetshop.com>';
+    this.fromEmail = process.env.FROM_EMAIL || 'JØAKIM <hello@dripstreetshop.com>';
     this.logoUrl = process.env.BRAND_LOGO_URL || null;
     this.init();
   }
@@ -30,9 +30,9 @@ class EmailService {
 
   renderLogoHeader() {
     if (this.logoUrl) {
-      return `<img src="${this.logoUrl}" alt="DRIP STREET" style="max-height: 48px; max-width: 240px; display: block; margin: 0 auto;" />`;
+      return `<img src="${this.logoUrl}" alt="JØAKIM" style="max-height: 48px; max-width: 240px; display: block; margin: 0 auto;" />`;
     }
-    return `<h1 style="margin: 0; font-size: 28px; font-weight: 900; letter-spacing: 0.15em; text-transform: uppercase; color: #ffffff;">DRIP STREET</h1>`;
+    return `<h1 style="margin: 0; font-size: 28px; font-weight: 900; letter-spacing: 0.15em; text-transform: uppercase; color: #ffffff;">JØAKIM</h1>`;
   }
 
 
@@ -92,11 +92,11 @@ class EmailService {
   }
 
   async sendCouponEmail(email, promoCode) {
-    const subject = '🚀 Welcome to Drip Street - Here is your 10% Discount';
+    const subject = '🚀 Welcome to JØAKIM - Here is your 10% Discount';
     const sig = this.generateUnsubscribeSignature(email);
     const unsubscribeUrl = `${API_BASE_URL}/api/unsubscribe?email=${encodeURIComponent(email)}&sig=${sig}`;
     
-    const text = `Welcome to the Club!\n\nThanks for joining our exclusive streetwear circle. As a member of Drip Street, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.\n\nYour Unique Promo Code: ${promoCode}\n10% OFF YOUR FIRST ORDER\n\nShop The Collection: https://custom-ecommerce-seven.vercel.app\n\nNeed help? Contact us at support@dripstreetshop.com\n\nTo unsubscribe from our newsletter, visit:\n${unsubscribeUrl}\n\n© 2026 DRIP STREET. All rights reserved.`;
+    const text = `Welcome to the Club!\n\nThanks for joining our exclusive streetwear circle. As a member of JØAKIM, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.\n\nYour Unique Promo Code: ${promoCode}\n10% OFF YOUR FIRST ORDER\n\nShop The Collection: https://custom-ecommerce-seven.vercel.app\n\nNeed help? Contact us at support@dripstreetshop.com\n\nTo unsubscribe from our newsletter, visit:\n${unsubscribeUrl}\n\n© 2026 JØAKIM. All rights reserved.`;
 
     const html = `
       <!DOCTYPE html>
@@ -121,7 +121,7 @@ class EmailService {
             <td style="padding: 40px;">
               <h2 style="margin: 0 0 20px 0; font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #ffffff; text-align: center;">Welcome to the Movement</h2>
               <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.7; color: #b3b3b3; text-align: center;">
-                Thanks for joining our exclusive streetwear circle. As a member of Drip Street, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.
+                Thanks for joining our exclusive streetwear circle. As a member of JØAKIM, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.
               </p>
               
               <!-- Coupon Block -->
@@ -149,10 +149,10 @@ class EmailService {
                 Need help? Contact us at <a href="mailto:support@dripstreetshop.com" style="color: #888888; text-decoration: underline;">support@dripstreetshop.com</a>
               </p>
               <p style="margin: 0; font-size: 11px; color: #444444; text-transform: uppercase; letter-spacing: 0.05em;">
-                &copy; 2026 DRIP STREET. All rights reserved.
+                &copy; 2026 JØAKIM. All rights reserved.
               </p>
               <p style="margin: 10px 0 0 0; font-size: 10px; color: #444444;">
-                You are receiving this because you signed up for the Drip Street newsletter. 
+                You are receiving this because you signed up for the JØAKIM newsletter.
                 <a href="${unsubscribeUrl}" target="_blank" style="color: #666666; text-decoration: underline; margin-left: 5px;">Unsubscribe</a>
               </p>
             </td>
@@ -238,7 +238,7 @@ class EmailService {
       `;
     }
 
-    const text = `Order Confirmed - Order #${orderId}\n\nThank you, ${customerName}!\n\nYour payment was received, and your order has been sent to our production queue. We will send you another email with tracking details as soon as the package ships.\n\nORDER DETAILS:\n${itemsText}\nSubtotal: ₪${Number(subtotal).toFixed(2)}\nShipping: ${shipping > 0 ? `₪${Number(shipping).toFixed(2)}` : 'FREE'}\n${discount > 0 ? `Discount: -₪${Number(discount).toFixed(2)}\n` : ''}Total Amount Paid: ₪${Number(total).toFixed(2)}\n${addressText}\nTrack your order or get help by visiting support:\nhttps://custom-ecommerce-seven.vercel.app/shipping\n\n© 2026 DRIP STREET. All rights reserved.`;
+    const text = `Order Confirmed - Order #${orderId}\n\nThank you, ${customerName}!\n\nYour payment was received, and your order has been sent to our production queue. We will send you another email with tracking details as soon as the package ships.\n\nORDER DETAILS:\n${itemsText}\nSubtotal: ₪${Number(subtotal).toFixed(2)}\nShipping: ${shipping > 0 ? `₪${Number(shipping).toFixed(2)}` : 'FREE'}\n${discount > 0 ? `Discount: -₪${Number(discount).toFixed(2)}\n` : ''}Total Amount Paid: ₪${Number(total).toFixed(2)}\n${addressText}\nTrack your order or get help by visiting support:\nhttps://custom-ecommerce-seven.vercel.app/shipping\n\n© 2026 JØAKIM. All rights reserved.`;
 
     const html = `
       <!DOCTYPE html>
@@ -323,7 +323,7 @@ class EmailService {
           <tr>
             <td style="padding: 30px 40px; background-color: #0a0a0a; border-top: 1px solid #222222; text-align: center;">
               <p style="margin: 0; font-size: 11px; color: #444444; text-transform: uppercase; letter-spacing: 0.05em;">
-                &copy; 2026 DRIP STREET. All rights reserved.
+                &copy; 2026 JØAKIM. All rights reserved.
               </p>
             </td>
           </tr>

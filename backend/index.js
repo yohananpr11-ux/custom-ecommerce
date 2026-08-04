@@ -2376,7 +2376,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>DRIP STREET | SUBSCRIPTION</title>
+      <title>JØAKIM | SUBSCRIPTION</title>
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -2595,7 +2595,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
       <div class="bg-glow-1"></div>
       <div class="bg-glow-2"></div>
       <div class="container">
-        <div class="logo">DRIP STREET</div>
+        <div class="logo">JØAKIM</div>
         <div class="icon-wrapper">
           <div id="status-icon" class="icon ${statusClass}">
             ${statusClass === 'success' ? '✓' : statusClass === 'warning' ? '?' : '⚠'}
@@ -2611,7 +2611,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
           ` : '')}
           <a href="https://custom-ecommerce-seven.vercel.app" class="btn btn-secondary">Return to Store</a>
         </div>
-        <div class="footer-brand">&copy; 2026 DRIP STREET SHP</div>
+        <div class="footer-brand">&copy; 2026 JØAKIM</div>
       </div>
 
       <script>
