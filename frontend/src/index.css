@@ -4386,7 +4386,7 @@ button,
 
 /* Drip cursor only on primary CTA buttons (Shop now, Add to cart). */
 .drip-cta {
-  cursor: var(--drip-cursor);
+  cursor: pointer;
 }
 
 /* Product card brand watermark — barely visible until hover. */

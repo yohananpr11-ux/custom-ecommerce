@@ -3708,10 +3708,10 @@ function MainApp() {
       <>
         <Helmet>
           <title>Secure Checkout | JØAKIM</title>
-          <meta name="description" content="Complete your order securely at Drip Street checkout." />
+          <meta name="description" content="Complete your order securely at JØAKIM checkout." />
           <link rel="canonical" href="https://dripstreetshop.com/checkout" />
           <meta property="og:title" content="Secure Checkout | JØAKIM" />
-          <meta property="og:description" content="Complete your order securely at Drip Street checkout." />
+          <meta property="og:description" content="Complete your order securely at JØAKIM checkout." />
           <meta property="og:url" content="https://dripstreetshop.com/checkout" />
           <meta property="og:image" content={GLOBAL_OG_IMAGE_URL} />
           <meta name="twitter:card" content="summary_large_image" />
