@@ -117,7 +117,7 @@ class ErrorBoundary extends React.Component {
 
 const translations = {
   he: {
-    logo: "DRIP STREET",
+    logo: "JØAKIM",
     announcement: "משלוח חינם בהזמנה מ-249 ₪ | 3 חולצות ב-229 ₪",
     search_placeholder: "חפש פריטים...",
     cart: "סל קניות",
@@ -243,7 +243,7 @@ const translations = {
     rating_label: "מבוסס על בסיס ביקורות",
     reviews_title: "מה אומרים הלקוחות",
     trending_title: "טרנדינג עכשיו",
-    why_title: "למה DRIP STREET?",
+    why_title: "למה JØAKIM?",
     why_shipping: "משלוח לכל העולם",
     why_shipping_desc: "משלוח בינלאומי מהיר ואמין לכל יעד.",
     why_secure: "תשלום מאובטח 100%",
@@ -258,7 +258,7 @@ const translations = {
     payment_icons_label: "אנחנו מקבלים"
   },
   en: {
-    logo: "DRIP STREET",
+    logo: "JØAKIM",
     announcement: "Complimentary shipping from 249 ILS cart subtotal | 3-item bundle from $61",
     search_placeholder: "Search items...",
     cart: "Cart",
@@ -384,7 +384,7 @@ const translations = {
     rating_label: "based on reviews",
     reviews_title: "What Customers Are Saying",
     trending_title: "Trending Now",
-    why_title: "Why DRIP STREET?",
+    why_title: "Why JØAKIM?",
     why_shipping: "Worldwide Shipping",
     why_shipping_desc: "Fast, tracked international delivery to any destination.",
     why_secure: "100% Secure Checkout",
@@ -714,7 +714,7 @@ const calculateBundlePricing = (cart) => {
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
 // Phase 11.1: fallback OG share image is the new metallic D logo.
-const GLOBAL_OG_IMAGE_URL = 'https://dripstreetshop.com/logo-new.png';
+const GLOBAL_OG_IMAGE_URL = 'https://dripstreetshop.com/joakim-og.png';
 const GLOBAL_ERROR_TOAST_HE = 'A temporary error occurred, please try again';
 const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
@@ -888,7 +888,7 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
     return (
       <div className={`${className} image-fallback-card`} role="img" aria-label={alt}>
         <div className="skeleton image-fallback-skeleton" />
-        <span className="image-fallback-label">DRIP STREET</span>
+        <span className="image-fallback-label">JØAKIM</span>
       </div>
     );
   }
@@ -1633,16 +1633,16 @@ function ProductDetailPage({ productId, accessToken, addToCart, goToCheckout, sh
   return (
     <>
       <Helmet>
-        <title>{`${getProductTitle(product.title, locale)} | Drip Street`}</title>
+        <title>{`${getProductTitle(product.title, locale)} | JØAKIM`}</title>
         <meta name="description" content={getLocalizedProductDescription(product, locale)} />
         <link rel="canonical" href={`https://dripstreetshop.com/product/${product.id}`} />
-        <meta property="og:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <meta property="og:title" content={`${getProductTitle(product.title, locale)} | JØAKIM`} />
         <meta property="og:description" content={getLocalizedProductDescription(product, locale)} />
         <meta property="og:url" content={`https://dripstreetshop.com/product/${product.id}`} />
         <meta property="og:type" content="product" />
         <meta property="og:image" content={absoluteImageUrl} />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <meta name="twitter:title" content={`${getProductTitle(product.title, locale)} | JØAKIM`} />
         <meta name="twitter:description" content={getLocalizedProductDescription(product, locale)} />
         <meta name="twitter:image" content={absoluteImageUrl} />
         <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>
@@ -3456,10 +3456,10 @@ function MainApp() {
     return (
       <>
         <Helmet>
-          <title>Order Confirmed | Drip Street</title>
+          <title>Order Confirmed | JØAKIM</title>
           <meta name="description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
           <link rel="canonical" href="https://dripstreetshop.com/success" />
-          <meta property="og:title" content="Order Confirmed | Drip Street" />
+          <meta property="og:title" content="Order Confirmed | JØAKIM" />
           <meta property="og:description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
           <meta property="og:url" content="https://dripstreetshop.com/success" />
           <meta property="og:image" content={GLOBAL_OG_IMAGE_URL} />
@@ -3707,10 +3707,10 @@ function MainApp() {
     return (
       <>
         <Helmet>
-          <title>Secure Checkout | Drip Street</title>
+          <title>Secure Checkout | JØAKIM</title>
           <meta name="description" content="Complete your order securely at Drip Street checkout." />
           <link rel="canonical" href="https://dripstreetshop.com/checkout" />
-          <meta property="og:title" content="Secure Checkout | Drip Street" />
+          <meta property="og:title" content="Secure Checkout | JØAKIM" />
           <meta property="og:description" content="Complete your order securely at Drip Street checkout." />
           <meta property="og:url" content="https://dripstreetshop.com/checkout" />
           <meta property="og:image" content={GLOBAL_OG_IMAGE_URL} />
@@ -4162,7 +4162,7 @@ function MainApp() {
       <section className="hero">
         <div className="container hero-content">
           <motion.span className="hero-eyebrow" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            DRIP STREET SIGNATURE DROP
+            JØAKIM SIGNATURE DROP
           </motion.span>
           <motion.h1 className="hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
             PREMIUM STREETWEAR. ZERO GUESSWORK FIT.
@@ -4365,7 +4365,7 @@ function MainApp() {
                       )}
                       {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
                       {/* Phase 11.1: product card watermark uses the new metallic D. */}
-                      <img src="/logo-new.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
+                      <img src="/joakim-wordmark-light.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -4496,7 +4496,7 @@ function MainApp() {
             href="/"
             style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }}
             onClick={(e) => { e.preventDefault(); navigate('/'); }}
-            aria-label="Drip Street Home"
+            aria-label="JØAKIM Home"
           >
             {/* Phase 12: rembg stripped the JPG background to true transparency,
                 so the badge styling from 11.5 (rounded box, border, shadow)
@@ -4504,7 +4504,7 @@ function MainApp() {
                 the brutalist navbar. objectFit: contain keeps the asset's
                 square proportions intact at 56px tall. */}
             <img
-              src="/logo-new.png"
+              src="/joakim-wordmark-light.png"
               alt={t('logo')}
               className="brand-mark"
               style={{ height: '56px', width: 'auto', objectFit: 'contain' }}
@@ -4537,7 +4537,7 @@ function MainApp() {
           <div className="side-nav-header">
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
               {/* Phase 11.1: secondary mark in mobile/secondary nav area. */}
-              <img src="/logo-new.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
+              <img src="/joakim-wordmark-light.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
               <strong>{t('logo')}</strong>
             </span>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>
