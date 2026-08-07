@@ -9,7 +9,7 @@ export default function TermsOfService() {
             1. Agreement to Terms
           </h2>
           <p style={{ margin: 0 }}>
-            By accessing or using the Drip Street website, storefront, and transaction systems, you agree to be bound by these Terms of Service and all policies referenced herein. If you do not agree with any part of these terms, you are prohibited from using the platform.
+            By accessing or using the JOAKIM website, storefront, and transaction systems, you agree to be bound by these Terms of Service and all policies referenced herein. If you do not agree with any part of these terms, you are prohibited from using the platform.
           </p>
         </section>
 
@@ -18,7 +18,7 @@ export default function TermsOfService() {
             2. Intellectual Property Rights
           </h2>
           <p style={{ margin: 0 }}>
-            All intellectual property, website design code, SVGs, high-resolution logos, brand artwork, visual layout structure, product graphics, and typography systems are the exclusive property of Drip Street. You are prohibited from copying, distributing, republishing, or mimicking any visual brand assets without our written consent.
+            All intellectual property, website design code, SVGs, high-resolution logos, brand artwork, visual layout structure, product graphics, and typography systems are the exclusive property of JOAKIM. You are prohibited from copying, distributing, republishing, or mimicking any visual brand assets without our written consent.
           </p>
         </section>
 
@@ -36,7 +36,7 @@ export default function TermsOfService() {
             4. Printify Print-on-Demand Fulfillment
           </h2>
           <p style={{ margin: 0 }}>
-            Drip Street designs are custom printed on demand using Printify's global fulfillment networks. By placing an order, you acknowledge that manufacturing begins immediately. Consequently, shipping address modifications or size alterations cannot be processed once the manufacturing facility accepts the order.
+            JOAKIM designs are custom printed on demand using Printify's global fulfillment networks. By placing an order, you acknowledge that manufacturing begins immediately. Consequently, shipping address modifications or size alterations cannot be processed once the manufacturing facility accepts the order.
           </p>
         </section>
 
@@ -54,7 +54,7 @@ export default function TermsOfService() {
             6. Limitation of Liability
           </h2>
           <p style={{ margin: 0 }}>
-            Drip Street, its owners, and partners will not be liable for any direct, indirect, incidental, or consequential damages resulting from the use of our products, manufacturing delays by logistics carriers, or temporary website outages.
+            JOAKIM, its owners, and partners will not be liable for any direct, indirect, incidental, or consequential damages resulting from the use of our products, manufacturing delays by logistics carriers, or temporary website outages.
           </p>
         </section>
 

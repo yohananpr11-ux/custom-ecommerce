@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = 'https://dripstreetshop.com';
+const BASE_URL = 'https://shopjoakim.com';
 const PUBLIC_DIR = path.join(__dirname, '../public');
 const DIST_DIR = path.join(__dirname, '../dist');
 const DB_PATH = path.resolve(__dirname, '../../backend/ecommerce.db');

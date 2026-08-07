@@ -9,7 +9,7 @@ export default function ShippingPolicy() {
             1. Print-On-Demand Operations
           </h2>
           <p style={{ margin: 0 }}>
-            Every product in Drip Street is made-to-order. Instead of storing massive inventories of cheap pre-manufactured garments, we design each piece and manufacture it only when you order. This minimizes waste and carbon footprint while guaranteeing high prints and fresh garments.
+            Every product in JOAKIM is made-to-order. Instead of storing massive inventories of cheap pre-manufactured garments, we design each piece and manufacture it only when you order. This minimizes waste and carbon footprint while guaranteeing high prints and fresh garments.
           </p>
         </section>
 
@@ -78,7 +78,7 @@ export default function ShippingPolicy() {
             5. Customs, Taxes & Imports
           </h2>
           <p style={{ margin: 0 }}>
-            Depending on your local region, packages may be subject to customs duties, import handling costs, or local VAT/Taxes. Drip Street has no control over these external regulatory fees; they are the sole responsibility of the customer.
+            Depending on your local region, packages may be subject to customs duties, import handling costs, or local VAT/Taxes. JOAKIM has no control over these external regulatory fees; they are the sole responsibility of the customer.
           </p>
         </section>
       </div>

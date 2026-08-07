@@ -117,11 +117,11 @@ class ErrorBoundary extends React.Component {
 
 const translations = {
   he: {
-    logo: "DRIP STREET",
+    logo: "JOAKIM",
     announcement: "משלוח חינם בהזמנה מ-249 ₪ | 3 חולצות ב-229 ₪",
     search_placeholder: "חפש פריטים...",
     cart: "סל קניות",
-    hero_title: "DRIP STREET",
+    hero_title: "JOAKIM",
     hero_subtitle: "סטריטוור מינימליסטי ליום יום.",
     shop_now: "קנה עכשיו",
     trust_secure: "תשלום מאובטח",
@@ -225,7 +225,7 @@ const translations = {
     toggle_chat_aria: "פתיחת צ׳אט תמיכה",
     loading: "טוען...",
     product_not_found: "המוצר לא נמצא",
-    shop_rights: "© 2026 Drip Street. כל הזכויות שמורות.",
+    shop_rights: "© 2026 JOAKIM. כל הזכויות שמורות.",
     popup_title: "הצטרפו למועדון שלנו וקבלו 10% הנחה לקנייה הראשונה.",
     popup_subtitle: "השאירו אימייל וקבלו קוד אישי חד פעמי.",
     popup_placeholder: "האימייל שלך...",
@@ -243,7 +243,7 @@ const translations = {
     rating_label: "מבוסס על בסיס ביקורות",
     reviews_title: "מה אומרים הלקוחות",
     trending_title: "טרנדינג עכשיו",
-    why_title: "למה DRIP STREET?",
+    why_title: "למה JOAKIM?",
     why_shipping: "משלוח לכל העולם",
     why_shipping_desc: "משלוח בינלאומי מהיר ואמין לכל יעד.",
     why_secure: "תשלום מאובטח 100%",
@@ -252,17 +252,17 @@ const translations = {
     why_quality_desc: "בד נוח עם הדפסה חדה שלא דוהה.",
     why_returns: "אחריות איכות פרימיום",
     why_returns_desc: "הדפסה מושלמת. פריט פגום יוחלף מיד.",
-    seo_title: "DRIP STREET | סטריטוור מינימליסטי",
+    seo_title: "JOAKIM | סטריטוור מינימליסטי",
     seo_description: "סטריטוור פרימיום מינימליסטי לחיי היומיום. חולצות אוברסייז, גופיות קיץ ובייסיקס איכותיים. משלוח לכל העולם.",
     taxes_shipping_note: "מסים ומשלוח יחושבו בקופה",
     payment_icons_label: "אנחנו מקבלים"
   },
   en: {
-    logo: "DRIP STREET",
+    logo: "JOAKIM",
     announcement: "Complimentary shipping from 249 ILS cart subtotal | 3-item bundle from $61",
     search_placeholder: "Search items...",
     cart: "Cart",
-    hero_title: "DRIP STREET",
+    hero_title: "JOAKIM",
     hero_subtitle: "Minimal streetwear built for confidence.",
     shop_now: "Shop Now",
     trust_secure: "Secure Payment",
@@ -366,7 +366,7 @@ const translations = {
     toggle_chat_aria: "Toggle chat support",
     loading: "Loading...",
     product_not_found: "Product not found",
-    shop_rights: "© 2026 Drip Street. All rights reserved.",
+    shop_rights: "© 2026 JOAKIM. All rights reserved.",
     popup_title: "Join our club and get 10% off your first purchase.",
     popup_subtitle: "Enter your email to unlock your unique one-time code.",
     popup_placeholder: "Your email address...",
@@ -384,7 +384,7 @@ const translations = {
     rating_label: "based on reviews",
     reviews_title: "What Customers Are Saying",
     trending_title: "Trending Now",
-    why_title: "Why DRIP STREET?",
+    why_title: "Why JOAKIM?",
     why_shipping: "Worldwide Shipping",
     why_shipping_desc: "Fast, tracked international delivery to any destination.",
     why_secure: "100% Secure Checkout",
@@ -393,7 +393,7 @@ const translations = {
     why_quality_desc: "Soft fabric with sharp, fade-resistant prints.",
     why_returns: "Premium Quality Guarantee",
     why_returns_desc: "Flawless prints. Defective items replaced immediately.",
-    seo_title: "DRIP STREET | Minimalist Streetwear",
+    seo_title: "JOAKIM | Minimalist Streetwear",
     seo_description: "Premium minimal streetwear built for confidence. Shop oversized tees, summer tanks, and high-quality basics. Worldwide shipping.",
     taxes_shipping_note: "Taxes and shipping calculated at checkout",
     payment_icons_label: "We accept"
@@ -714,7 +714,7 @@ const calculateBundlePricing = (cart) => {
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
 // Phase 11.1: fallback OG share image is the new metallic D logo.
-const GLOBAL_OG_IMAGE_URL = 'https://dripstreetshop.com/logo-new.png';
+const GLOBAL_OG_IMAGE_URL = 'https://shopjoakim.com/joakim-og.png';
 const GLOBAL_ERROR_TOAST_HE = 'A temporary error occurred, please try again';
 const LOW_STOCK_THRESHOLD = 10;
 const MAX_ALLOWED_SIZE_RANK = 6;
@@ -888,7 +888,7 @@ function GuardedProductImage({ src, alt, className, fallbackSrc = GLOBAL_IMAGE_F
     return (
       <div className={`${className} image-fallback-card`} role="img" aria-label={alt}>
         <div className="skeleton image-fallback-skeleton" />
-        <span className="image-fallback-label">DRIP STREET</span>
+        <span className="image-fallback-label">JOAKIM</span>
       </div>
     );
   }
@@ -1612,18 +1612,18 @@ function ProductDetailPage({ productId, accessToken, addToCart, goToCheckout, sh
   const displayPrice = currency === 'USD' ? (product.priceUSD || (product.price / 3.75)) : product.price;
 
   const absoluteImageUrl = activeImages[0]
-    ? (activeImages[0].startsWith('http') ? activeImages[0] : `https://dripstreetshop.com${activeImages[0]}`)
+    ? (activeImages[0].startsWith('http') ? activeImages[0] : `https://shopjoakim.com${activeImages[0]}`)
     : GLOBAL_OG_IMAGE_URL;
 
   const jsonLd = {
     "@context": "https://schema.org/",
     "@type": "Product",
     "name": getProductTitle(product.title, locale),
-    "image": activeImages.map(img => img.startsWith('http') ? img : `https://dripstreetshop.com${img}`),
+    "image": activeImages.map(img => img.startsWith('http') ? img : `https://shopjoakim.com${img}`),
     "description": getLocalizedProductDescription(product, locale),
     "offers": {
       "@type": "Offer",
-      "url": `https://dripstreetshop.com/product/${product.id}`,
+      "url": `https://shopjoakim.com/product/${product.id}`,
       "priceCurrency": currency,
       "price": Number(displayPrice.toFixed(2)),
       "availability": isOutOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock"
@@ -1633,16 +1633,16 @@ function ProductDetailPage({ productId, accessToken, addToCart, goToCheckout, sh
   return (
     <>
       <Helmet>
-        <title>{`${getProductTitle(product.title, locale)} | Drip Street`}</title>
+        <title>{`${getProductTitle(product.title, locale)} | JOAKIM`}</title>
         <meta name="description" content={getLocalizedProductDescription(product, locale)} />
-        <link rel="canonical" href={`https://dripstreetshop.com/product/${product.id}`} />
-        <meta property="og:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <link rel="canonical" href={`https://shopjoakim.com/product/${product.id}`} />
+        <meta property="og:title" content={`${getProductTitle(product.title, locale)} | JOAKIM`} />
         <meta property="og:description" content={getLocalizedProductDescription(product, locale)} />
-        <meta property="og:url" content={`https://dripstreetshop.com/product/${product.id}`} />
+        <meta property="og:url" content={`https://shopjoakim.com/product/${product.id}`} />
         <meta property="og:type" content="product" />
         <meta property="og:image" content={absoluteImageUrl} />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={`${getProductTitle(product.title, locale)} | Drip Street`} />
+        <meta name="twitter:title" content={`${getProductTitle(product.title, locale)} | JOAKIM`} />
         <meta name="twitter:description" content={getLocalizedProductDescription(product, locale)} />
         <meta name="twitter:image" content={absoluteImageUrl} />
         <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>
@@ -3456,12 +3456,12 @@ function MainApp() {
     return (
       <>
         <Helmet>
-          <title>Order Confirmed | Drip Street</title>
+          <title>Order Confirmed | JOAKIM</title>
           <meta name="description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
-          <link rel="canonical" href="https://dripstreetshop.com/success" />
-          <meta property="og:title" content="Order Confirmed | Drip Street" />
+          <link rel="canonical" href="https://shopjoakim.com/success" />
+          <meta property="og:title" content="Order Confirmed | JOAKIM" />
           <meta property="og:description" content="Thank you for your order! Your payment was successful and we are processing your shipment." />
-          <meta property="og:url" content="https://dripstreetshop.com/success" />
+          <meta property="og:url" content="https://shopjoakim.com/success" />
           <meta property="og:image" content={GLOBAL_OG_IMAGE_URL} />
           <meta name="twitter:card" content="summary_large_image" />
           <meta name="twitter:image" content={GLOBAL_OG_IMAGE_URL} />
@@ -3707,12 +3707,12 @@ function MainApp() {
     return (
       <>
         <Helmet>
-          <title>Secure Checkout | Drip Street</title>
-          <meta name="description" content="Complete your order securely at Drip Street checkout." />
-          <link rel="canonical" href="https://dripstreetshop.com/checkout" />
-          <meta property="og:title" content="Secure Checkout | Drip Street" />
-          <meta property="og:description" content="Complete your order securely at Drip Street checkout." />
-          <meta property="og:url" content="https://dripstreetshop.com/checkout" />
+          <title>Secure Checkout | JOAKIM</title>
+          <meta name="description" content="Complete your order securely at JOAKIM checkout." />
+          <link rel="canonical" href="https://shopjoakim.com/checkout" />
+          <meta property="og:title" content="Secure Checkout | JOAKIM" />
+          <meta property="og:description" content="Complete your order securely at JOAKIM checkout." />
+          <meta property="og:url" content="https://shopjoakim.com/checkout" />
           <meta property="og:image" content={GLOBAL_OG_IMAGE_URL} />
           <meta name="twitter:card" content="summary_large_image" />
           <meta name="twitter:image" content={GLOBAL_OG_IMAGE_URL} />
@@ -4162,7 +4162,7 @@ function MainApp() {
       <section className="hero">
         <div className="container hero-content">
           <motion.span className="hero-eyebrow" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            DRIP STREET SIGNATURE DROP
+            JOAKIM SIGNATURE DROP
           </motion.span>
           <motion.h1 className="hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
             PREMIUM STREETWEAR. ZERO GUESSWORK FIT.
@@ -4436,7 +4436,7 @@ function MainApp() {
         </section>
       )}
 
-      {/* ─── Why DRIP STREET ─── */}
+      {/* ─── Why JOAKIM ─── */}
       <section className="why-section container">
         <h2 className="why-title">{t('why_title')}</h2>
         <div className="why-grid">
@@ -4496,7 +4496,7 @@ function MainApp() {
             href="/"
             style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px' }}
             onClick={(e) => { e.preventDefault(); navigate('/'); }}
-            aria-label="Drip Street Home"
+            aria-label="JOAKIM Home"
           >
             {/* Phase 12: rembg stripped the JPG background to true transparency,
                 so the badge styling from 11.5 (rounded box, border, shadow)
