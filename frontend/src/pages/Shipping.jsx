@@ -27,7 +27,7 @@ export default function Shipping() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <section style={sectionStyle}>
           <h2 style={headingStyle}>מדיניות משלוחים</h2>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>ב-JOAKIM אנו שואפים לספק חוויית משלוח חלקה, שקופה ואמינה. הזמנות עוברות עיבוד, אריזה ושילוח בהתאם לזמינות המלאי וליעד המסירה.</p>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>ב-JONO אנו שואפים לספק חוויית משלוח חלקה, שקופה ואמינה. הזמנות עוברות עיבוד, אריזה ושילוח בהתאם לזמינות המלאי וליעד המסירה.</p>
         </section>
 
         <section style={sectionStyle}>

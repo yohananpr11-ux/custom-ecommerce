@@ -27,7 +27,7 @@ const path = require('path');
 
 const DIST_DIR     = path.join(__dirname, '..', 'dist');
 const TEMPLATE     = path.join(DIST_DIR, 'index.html');
-const SITE_BASE    = process.env.PRERENDER_SITE_BASE || 'https://shopjoakim.com';
+const SITE_BASE    = process.env.PRERENDER_SITE_BASE || 'https://shopjono.com';
 const FALLBACK_OG  = 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80';
 const DEFAULT_FETCH_TIMEOUT_MS = 15000;
 
@@ -167,12 +167,12 @@ const esc = (v) => String(v == null ? '' : v)
 function buildMeta(product) {
   const id     = product.id;
   const url    = `${SITE_BASE}/product/${id}`;
-  const name   = String(product.title || '').trim() || `JOAKIM item #${id}`;
-  const title  = `${name} | JOAKIM`;
+  const name   = String(product.title || '').trim() || `JONO item #${id}`;
+  const title  = `${name} | JONO`;
   // Description: prefer description, then truncated title, never empty.
   const rawDesc = (product.description || '').trim();
   const description = (rawDesc.length > 0 ? rawDesc.slice(0, 200) :
-    `Shop ${name} at JOAKIM. Premium minimal streetwear, worldwide shipping.`);
+    `Shop ${name} at JONO. Premium minimal streetwear, worldwide shipping.`);
 
   // Image: prefer first product image, absolute-ize if needed, fallback to OG.
   let image = product.imageUrl || product.backImageUrl || FALLBACK_OG;
@@ -188,7 +188,7 @@ function buildMeta(product) {
     'image': image,
     'description': description,
     'sku': String(id),
-    'brand': { '@type': 'Brand', 'name': 'JOAKIM' },
+    'brand': { '@type': 'Brand', 'name': 'JONO' },
     'offers': {
       '@type': 'Offer',
       'url': url,
