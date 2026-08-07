@@ -225,7 +225,7 @@ const createDraftProduct = async ({
   const client = printifyClient();
   const payload = {
     title,
-    description: `${title} — Drip Street drop. Premium minimal streetwear.`,
+    description: `${title} — JOAKIM drop. Premium minimal streetwear.`,
     blueprint_id: blueprintId,
     print_provider_id: providerId,
     variants,
@@ -315,7 +315,7 @@ const publishDraft = async (printifyProductId) => {
   await client.post(`/shops/${shopId}/products/${printifyProductId}/publishing_succeeded.json`, {
     external: {
       id: String(printifyProductId),
-      handle: `https://dripstreetshop.com/product/${printifyProductId}`,
+      handle: `https://shopjoakim.com/product/${printifyProductId}`,
     },
   }).catch(() => null);
 };
@@ -339,12 +339,14 @@ const deleteDraft = async (printifyProductId) => {
  *   title: string
  * }>}
  */
-const createDraftFromImage = async ({ imageBase64, filename, title, placement = 'front' }) => {
+const createDraftFromImage = async ({ imageBase64, filename, title, placement = 'front', blueprintId, providerId }) => {
   if (!imageBase64) throw new Error('imageBase64 is required.');
-  const { blueprint, provider } = cfg();
+  const defaultCfg = cfg();
+  const blueprint = blueprintId ? parseInt(blueprintId, 10) : defaultCfg.blueprint;
+  const provider  = providerId ? parseInt(providerId, 10) : defaultCfg.provider;
 
   const safeName = (filename || `design-${Date.now()}.png`).replace(/[^a-zA-Z0-9._-]/g, '_');
-  const safeTitle = (title || `Drip Street drop — ${new Date().toISOString().slice(0, 10)}`).slice(0, 140);
+  const safeTitle = (title || `JOAKIM drop — ${new Date().toISOString().slice(0, 10)}`).slice(0, 140);
   const safePlacement = (placement === 'back') ? 'back' : 'front';
 
   // Fetch variants, customer image, AND the cached neck label in parallel

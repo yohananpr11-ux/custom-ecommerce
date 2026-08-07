@@ -36,15 +36,17 @@ class PricingEngine {
     // against $16.35 production cost for XL/dark variants. New floor leaves
     // ~30% gross margin on a single-shirt order and ~40% on a 2-3 shirt cart.
     this.targetPricesILS = {
-      'softstyle':   149.90,  // Gildan 64000 basic tee (was 89.90)
-      'jersey':      179.90,  // Bella+Canvas 3001 premium tee (was 119.90)
-      'hoodie':      229.90,  // Gildan 18500 hooded sweatshirt (was 159.90)
-      'tank':        null,    // Tank tops: dynamic pricing based on cost (no fixed target)
+      'heavyweight': 219.90,  // Comfort Colors 1717 6.1oz garment-dyed (Option 1)
+      'cvc':         189.90,  // Bella+Canvas 3001CVC 52/48 blend (Option 2)
+      'softstyle':   149.90,  // Gildan 64000 basic tee
+      'jersey':      179.90,  // Bella+Canvas 3001 standard jersey
+      'hoodie':      229.90,  // Gildan 18500 hooded sweatshirt
+      'tank':        null,    // Tank tops: dynamic pricing based on cost
     };
 
     // Shipping cost displayed separately at checkout
     this.shippingCostNIS = 29.90;
-    this.freeShippingThresholdNIS = 249; // cart subtotal >= 249 ILS = free shipping
+    this.freeShippingThresholdNIS = 299; // cart subtotal >= 299 ILS = free shipping (updated for heavier 6.1oz items)
   }
 
   normalizeExtremeThreshold(rawValue) {
@@ -88,12 +90,14 @@ class PricingEngine {
    */
   getProductCategory(title) {
     const lower = title.toLowerCase();
+    if (lower.includes('1717') || lower.includes('comfort colors') || lower.includes('heavyweight')) return 'heavyweight';
+    if (lower.includes('cvc') || lower.includes('3013')) return 'cvc';
     if (lower.includes('softstyle') || lower.includes('gildan 64000') || lower.includes('64000')) return 'softstyle';
     if (lower.includes('jersey') || lower.includes('bella') || lower.includes('canvas') || lower.includes('3001')) return 'jersey';
     if (lower.includes('hoodie') || lower.includes('hooded') || lower.includes('sweatshirt') || lower.includes('18500')) return 'hoodie';
     if (lower.includes('tank') || lower.includes('tank top')) return 'tank';
-    if (lower.includes('tee') || lower.includes('t-shirt') || lower.includes('shirt')) return 'softstyle'; // fallback tee
-    return 'softstyle'; // ultimate fallback
+    if (lower.includes('tee') || lower.includes('t-shirt') || lower.includes('shirt')) return 'jersey'; // default fallback tee
+    return 'jersey'; // ultimate fallback
   }
 
   /**
