@@ -21,6 +21,7 @@ const cartsRouter = require('./routes/carts');
 const marketingWebhooksRouter = require('./routes/marketing-webhooks');
 const adminReportsRouter = require('./routes/admin-reports');
 const { seedHardwareCatalog } = require('./seed_cj_product.cjs');
+const { detectBot, botDetectorMiddleware } = require('./middleware/botDetector');
 // Phase 3: Multi-Vendor fulfillment router
 const fulfillment = require('./services/fulfillment');
 
@@ -1115,7 +1116,13 @@ app.get('/api/admin/test-telegram', async (req, res) => {
   return res.json({ success: true, telegram: result });
 });
 
-app.post('/api/analytics/visit', express.json(), async (req, res) => {
+app.post('/api/admin/trigger-daily-report', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
+  const result = await telegram.sendDailyReport();
+  return res.json(result);
+});
+
+app.post('/api/analytics/visit', detectBot, express.json(), async (req, res) => {
   // Env-var presence snapshot — logged on every failure path so Render logs
   // make root cause obvious without ever leaking secret values.
   const envSnapshot = () => ({
@@ -1131,6 +1138,8 @@ app.post('/api/analytics/visit', express.json(), async (req, res) => {
     const ip = getClientIp(req);
     const ua = (req.headers['user-agent'] || 'unknown').slice(0, 120);
     const country = req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || 'Unknown';
+    const isBot = req.isBot || false;
+    const botReason = req.botReason || null;
     const cacheKey = `${sessionId || 'anon'}|${ip}|${path || '/'}`;
     const now = Date.now();
 
@@ -1142,52 +1151,19 @@ app.post('/api/analytics/visit', express.json(), async (req, res) => {
     if (!lastNotifiedAt || now - lastNotifiedAt > VISIT_CACHE_TTL_MS) {
       visitNotificationCache.set(cacheKey, now);
 
-      const msg = `👀 <b>New Store Visit</b>\n\n`
-        + `<b>Path:</b> ${path || '/'}\n`
-        + `<b>Locale/Currency:</b> ${locale || '-'} / ${currency || '-'}\n`
-        + `<b>Country:</b> ${country}\n`
-        + `<b>Source:</b> ${source || 'web'}\n`
-        + `<b>IP:</b> ${ip}\n`
-        + `<b>UA:</b> ${ua}`;
+      telegram.queueVisit({
+        path: path || '/',
+        isBot,
+        botReason,
+        country,
+        source: source || 'web',
+        ip,
+        ua,
+        locale: locale || '-',
+        currency: currency || '-'
+      });
 
-      let telegramResult;
-      try {
-        telegramResult = await telegram.sendMessage(msg);
-      } catch (tgErr) {
-        // sendMessage already catches axios errors and returns a structured
-        // result, so reaching here means something unexpected (e.g. token
-        // resolution threw). Log full context for Render logs.
-        console.error('[analytics/visit] telegram.sendMessage threw:', {
-          message: tgErr && tgErr.message,
-          stack: tgErr && tgErr.stack && tgErr.stack.split('\n').slice(0, 8).join('\n'),
-          env: envSnapshot(),
-        });
-        return res.status(500).json({
-          success: false,
-          deduped: false,
-          error: 'Telegram delivery threw',
-          detail: tgErr && tgErr.message,
-          env: envSnapshot(),
-        });
-      }
-
-      if (!telegramResult || !telegramResult.ok) {
-        console.error('[analytics/visit] telegram delivery failed:', {
-          telegram: telegramResult,
-          env: envSnapshot(),
-          path: path || '/',
-          ip,
-        });
-        return res.status(500).json({
-          success: false,
-          deduped: false,
-          error: 'Visit event received but Telegram delivery failed',
-          telegram: telegramResult || { ok: false, reason: 'unknown_error' },
-          env: envSnapshot(),
-        });
-      }
-
-      return res.json({ success: true, deduped: false, telegram: telegramResult });
+      return res.json({ success: true, deduped: false, queued: true, isBot, botReason });
     }
 
     return res.json({ success: true, deduped: true, telegram: { ok: true, skipped: true, reason: 'deduped' } });
