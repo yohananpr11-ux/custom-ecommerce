@@ -45,7 +45,7 @@ export default function About() {
               Minimal streetwear, tuned with intent.
             </motion.h2>
             <p style={{ margin: 0, maxWidth: '720px', fontSize: '18px', lineHeight: 1.85, color: 'rgba(255,255,255,0.84)' }}>
-              Drip Street exists to make premium dressing feel clean, grounded, and easy to wear every day.
+              JOAKIM exists to make premium dressing feel clean, grounded, and easy to wear every day.
             </p>
           </div>
         </section>

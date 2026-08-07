@@ -11,7 +11,7 @@ export default function AboutUs() {
             Built For Confidence
           </h2>
           <p style={{ margin: 0, fontSize: '18px', lineHeight: '1.7', color: 'var(--color-white)', opacity: 0.95 }}>
-            Drip Street is a minimalist streetwear label born out of the desire to combine high-end aesthetic tailoring with maximum daily comfort. We believe that confidence starts with how you feel in what you wear.
+            JOAKIM is a minimalist streetwear label born out of the desire to combine high-end aesthetic tailoring with maximum daily comfort. We believe that confidence starts with how you feel in what you wear.
           </p>
           <p style={{ margin: 0 }}>
             Every silhouette is carefully drafted, every hem measured, and every print executed with absolute precision. Our aesthetic represents the intersection of urban underground cultures and clean, high-fashion architectural design.

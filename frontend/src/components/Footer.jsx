@@ -86,7 +86,7 @@ export default function Footer({ locale = 'en' }) {
   const copy = useMemo(() => {
     if (locale === 'he') {
       return {
-        newsletterTitle: 'מועדון DRIP STREET',
+        newsletterTitle: 'מועדון JØAKIM',
         newsletterSubtitle: 'הצטרפו לעדכונים, דרופים מוקדמים וקוד הטבה להזמנה הראשונה.',
         newsletterPlaceholder: 'כתובת האימייל שלך',
         newsletterCta: 'הצטרף',
@@ -120,8 +120,8 @@ export default function Footer({ locale = 'en' }) {
               the navbar's clean rendering — no badge, no shadow, just the
               metallic D floating on the dark footer canvas at 72px tall. */}
           <img
-            src="/logo-new.png"
-            alt="Drip Street Logo"
+            src="/joakim-logo-transparent.png"
+            alt="JOAKIM Logo"
             style={{ height: '72px', width: 'auto', objectFit: 'contain', alignSelf: 'flex-start' }}
           />
           <p style={{ fontSize: '14px', lineHeight: '1.6', opacity: 0.6, margin: 0 }}>
@@ -216,7 +216,7 @@ export default function Footer({ locale = 'en' }) {
 
       <div className="container" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
         <p style={{ fontSize: '13px', opacity: 0.5, margin: 0 }}>
-          &copy; 2026 Drip Street. All rights reserved.
+          &copy; 2026 JOAKIM. All rights reserved.
         </p>
         <div className="footer-socials" style={{ display: 'flex', gap: '16px' }}>
           <a href="#" style={{ color: 'inherit', textDecoration: 'none', fontSize: '13px', opacity: 0.5 }}>Instagram</a>

@@ -27,7 +27,7 @@ export default function Terms() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <section style={sectionStyle}>
           <h2 style={headingStyle}>תנאי שימוש</h2>
-          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>פרטי העסק: Drip Street | דוא"ל: support@dripstreetshop.com</p>
+          <p dir="rtl" style={{ margin: 0, lineHeight: 1.9 }}>פרטי העסק: JOAKIM | דוא"ל: support@dripstreetshop.com</p>
         </section>
 
         <section style={sectionStyle}>
