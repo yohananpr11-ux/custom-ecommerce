@@ -36,11 +36,11 @@ class PricingEngine {
     // against $16.35 production cost for XL/dark variants. New floor leaves
     // ~30% gross margin on a single-shirt order and ~40% on a 2-3 shirt cart.
     this.targetPricesILS = {
-      'heavyweight': 219.90,  // Comfort Colors 1717 6.1oz garment-dyed (Option 1)
-      'cvc':         189.90,  // Bella+Canvas 3001CVC 52/48 blend (Option 2)
-      'softstyle':   149.90,  // Gildan 64000 basic tee
-      'jersey':      179.90,  // Bella+Canvas 3001 standard jersey
-      'hoodie':      229.90,  // Gildan 18500 hooded sweatshirt
+      'heavyweight': 199.90,  // Comfort Colors 1717 6.1oz garment-dyed (Option 1)
+      'cvc':         169.90,  // Bella+Canvas 3001CVC 52/48 blend (Option 2)
+      'softstyle':   169.90,  // Gildan 64000 basic tee
+      'jersey':      169.90,  // Bella+Canvas 3001 standard jersey
+      'hoodie':      249.90,  // Gildan 18500 hooded sweatshirt
       'tank':        null,    // Tank tops: dynamic pricing based on cost
     };
 

@@ -41,7 +41,7 @@ const ABANDONED_CART_TIMEOUT_MS = Number(import.meta.env.VITE_ABANDONED_CART_DEL
 const ABANDONED_CART_FINGERPRINT_KEY = 'drip_street_abandoned_cart_fingerprint_v1';
 const CHECKOUT_COMPLETED_KEY = 'drip_street_checkout_completed_v1';
 const SHIPPING_COST = 29.90;
-const FREE_SHIPPING_THRESHOLD = 249;
+const FREE_SHIPPING_THRESHOLD = 299;
 // Temporary, strictly scoped shipping exemption for exactly ONE hidden
 // manual-fulfillment test product (id=25) -- mirrors backend/index.js's
 // isSoloShippingExemptTestProductCart exactly (see its comment there for
@@ -118,7 +118,7 @@ class ErrorBoundary extends React.Component {
 const translations = {
   he: {
     logo: "JOAKIM",
-    announcement: "משלוח חינם בהזמנה מ-249 ₪ | 3 חולצות ב-229 ₪",
+    announcement: "משלוח חינם בהזמנה מ-299 ₪ | קולקציית פרימיום JOAKIM",
     search_placeholder: "חפש פריטים...",
     cart: "סל קניות",
     hero_title: "JOAKIM",
@@ -259,7 +259,7 @@ const translations = {
   },
   en: {
     logo: "JOAKIM",
-    announcement: "Complimentary shipping from 249 ILS cart subtotal | 3-item bundle from $61",
+    announcement: "Complimentary shipping from 299 ILS cart subtotal | JOAKIM Premium Collection",
     search_placeholder: "Search items...",
     cart: "Cart",
     hero_title: "JOAKIM",

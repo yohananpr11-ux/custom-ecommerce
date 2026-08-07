@@ -336,7 +336,7 @@ class TelegramService {
           const grossRevenueILS = ordersInfo.totalRevenue;
           const grossRevenueUSD = (grossRevenueILS / 3.75).toFixed(2);
           
-          const estCostsILS = (grossRevenueILS * 0.35).toFixed(2);
+          const estCostsILS = (grossRevenueILS * 0.38).toFixed(2); // ~38% COGS with Comfort Colors 1717 / CVC blanks + fulfillment
           const estProfitILS = (grossRevenueILS - estCostsILS).toFixed(2);
 
           db.all(
