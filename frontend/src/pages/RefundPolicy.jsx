@@ -42,7 +42,7 @@ export default function RefundPolicy() {
             2. איך מגישים פנייה
           </h2>
           <ol dir="rtl" style={{ paddingLeft: '20px', margin: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <li>שלחו מייל ל-<a href="mailto:support@dripstreetshop.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreetshop.com</a>.</li>
+            <li>שלחו מייל ל-<a href="mailto:support@shopjono.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@shopjono.com</a>.</li>
             <li>ציינו שם מלא, כתובת האימייל שבה בוצעה ההזמנה ומספר הזמנה.</li>
             <li>צרפו תמונות חדות של התקלה ושל תווית המשלוח.</li>
           </ol>
@@ -65,7 +65,7 @@ export default function RefundPolicy() {
             4. ביטול הזמנה
           </h2>
           <p dir="rtl" style={{ margin: 0, lineHeight: '1.9' }}>
-            לביטול הזמנה יש לפנות אלינו בתוך שעתיים מרגע ההזמנה ל-<a href="mailto:support@dripstreetshop.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreetshop.com</a>. לאחר מכן, ההזמנה עשויה להיכנס לייצור ולא ניתן יהיה לבטלה.
+            לביטול הזמנה יש לפנות אלינו בתוך שעתיים מרגע ההזמנה ל-<a href="mailto:support@shopjono.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@shopjono.com</a>. לאחר מכן, ההזמנה עשויה להיכנס לייצור ולא ניתן יהיה לבטלה.
           </p>
         </section>
 

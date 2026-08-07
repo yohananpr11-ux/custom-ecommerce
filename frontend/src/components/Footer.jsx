@@ -120,7 +120,7 @@ export default function Footer({ locale = 'en' }) {
               the navbar's clean rendering — no badge, no shadow, just the
               metallic D floating on the dark footer canvas at 72px tall. */}
           <img
-            src="/logo-new.png"
+            src="/jono-approved-full-logo.png"
             alt="JONO Logo"
             style={{ height: '72px', width: 'auto', objectFit: 'contain', alignSelf: 'flex-start' }}
           />

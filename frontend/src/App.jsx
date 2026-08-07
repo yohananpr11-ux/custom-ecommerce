@@ -65,21 +65,21 @@ const JEWELRY_UPSELL_MOCK = [
     title: 'Urban Chain Necklace',
     subtitle: 'Stainless steel streetwear layering essential',
     price: 89,
-    imageUrl: '/logo-new.png',
+    imageUrl: '/jono-approved-full-logo.png',
   },
   {
     id: 'jewel-statement-ring',
     title: 'Statement Signet Ring',
     subtitle: 'Mirror-polish finish with daily-wear comfort',
     price: 74,
-    imageUrl: '/logo-new.png',
+    imageUrl: '/jono-approved-full-logo.png',
   },
   {
     id: 'jewel-twin-bracelet',
     title: 'Twin Link Bracelet',
     subtitle: 'Adjustable fit for stacked street looks',
     price: 68,
-    imageUrl: '/logo-new.png',
+    imageUrl: '/jono-approved-full-logo.png',
   },
 ];
 
@@ -713,7 +713,7 @@ const calculateBundlePricing = (cart) => {
 };
 
 const GLOBAL_IMAGE_FALLBACK = '/shirt-black-design.png';
-// Phase 11.1: fallback OG share image is the new metallic D logo.
+// Phase 11.1: fallback OG share image is the JONO logo.
 const GLOBAL_OG_IMAGE_URL = 'https://shopjono.com/jono-og.png';
 const GLOBAL_ERROR_TOAST_HE = 'A temporary error occurred, please try again';
 const LOW_STOCK_THRESHOLD = 10;
@@ -4365,7 +4365,7 @@ function MainApp() {
                       )}
                       {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
                       {/* Phase 11.1: product card watermark uses the new metallic D. */}
-                      <img src="/logo-new.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
+                      <img src="/jono-approved-full-logo.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -4498,13 +4498,8 @@ function MainApp() {
             onClick={(e) => { e.preventDefault(); navigate('/'); }}
             aria-label="JONO Home"
           >
-            {/* Phase 12: rembg stripped the JPG background to true transparency,
-                so the badge styling from 11.5 (rounded box, border, shadow)
-                is no longer needed — the metallic D now floats directly on
-                the brutalist navbar. objectFit: contain keeps the asset's
-                square proportions intact at 56px tall. */}
             <img
-              src="/logo-new.png"
+              src="/jono-approved-full-logo.png"
               alt={t('logo')}
               className="brand-mark"
               style={{ height: '56px', width: 'auto', objectFit: 'contain' }}
@@ -4537,7 +4532,7 @@ function MainApp() {
           <div className="side-nav-header">
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
               {/* Phase 11.1: secondary mark in mobile/secondary nav area. */}
-              <img src="/logo-new.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
+              <img src="/jono-approved-full-logo.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
               <strong>{t('logo')}</strong>
             </span>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>

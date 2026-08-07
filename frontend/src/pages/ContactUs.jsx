@@ -43,7 +43,7 @@ export default function ContactUs() {
       }
     } catch {
       setStatus('error');
-      setFeedbackMsg('We couldn\'t send your message. Please try again or contact support@dripstreetshop.com directly.');
+      setFeedbackMsg('We couldn\'t send your message. Please try again or contact support@shopjono.com directly.');
     }
   };
 
@@ -63,7 +63,7 @@ export default function ContactUs() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
             <div>
               <h4 style={{ color: 'var(--color-white)', margin: '0 0 4px 0', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email Support</h4>
-              <p style={{ margin: 0 }}><a href="mailto:support@dripstreetshop.com" style={{ color: 'inherit', textDecoration: 'underline' }}>support@dripstreetshop.com</a></p>
+              <p style={{ margin: 0 }}><a href="mailto:support@shopjono.com" style={{ color: 'inherit', textDecoration: 'underline' }}>support@shopjono.com</a></p>
             </div>
             <div>
               <h4 style={{ color: 'var(--color-white)', margin: '0 0 4px 0', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fulfillment Center</h4>
