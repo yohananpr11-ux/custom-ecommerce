@@ -1,5 +1,6 @@
 const { Resend } = require('resend');
 const crypto = require('crypto');
+const telegram = require('./telegram');
 const API_BASE_URL = process.env.API_BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:4000';
 
 class EmailService {
@@ -82,11 +83,13 @@ class EmailService {
       const response = await this.resend.emails.send(payload);
       const sendId = response && response.data && response.data.id;
       console.log(`✅ Email sent successfully via Resend: ${subject}${sendId ? ` (id=${sendId})` : ''}`);
+      telegram.notifyEmailSent(subject, recipientStr, true, sendId ? `send_id=${sendId}` : '').catch(() => null);
       return { ok: true, data: response.data };
     } catch (error) {
       const status = error && (error.statusCode || (error.response && error.response.status));
       const errName = (error && (error.name || error.code)) || 'UNKNOWN_ERROR';
       console.error(`❌ Failed to send email via Resend: ${errName}${status ? ` (HTTP_${status})` : ''}`);
+      telegram.notifyEmailSent(subject, recipientStr, false, `${errName}${status ? ` (HTTP_${status})` : ''}`).catch(() => null);
       return { ok: false, error };
     }
   }

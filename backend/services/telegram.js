@@ -2,6 +2,9 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
+const cron = require('node-cron');
+const db = require('../db');
+
 const DEFAULT_MENI_CHAT_ID = '644275080';
 
 const escapeHtml = (value) => String(value || '')
@@ -10,6 +13,23 @@ const escapeHtml = (value) => String(value || '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
+
+/**
+ * PII Email Redaction Helper
+ * e.g. "john.doe@gmail.com" -> "j***e@gmail.com"
+ */
+const redactEmail = (email) => {
+  if (!email || typeof email !== 'string') return '***@***';
+  const clean = email.trim().toLowerCase();
+  const parts = clean.split('@');
+  if (parts.length !== 2) return '***@***';
+  const user = parts[0];
+  const domain = parts[1];
+  if (user.length <= 2) {
+    return `${user[0] || '*'}***@${domain}`;
+  }
+  return `${user[0]}***${user[user.length - 1]}@${domain}`;
+};
 
 const pickFirstId = (value) => {
   if (!value || typeof value !== 'string') return null;
@@ -66,6 +86,15 @@ class TelegramService {
     this.token = process.env.TELEGRAM_BOT_TOKEN;
     this.chatId = resolveChatId();
     this.baseUrl = `https://api.telegram.org/bot${this.token}`;
+
+    // Batching queue for visit events
+    this.visitQueue = [];
+    this.batchTimer = null;
+    this.BATCH_INTERVAL_MS = 10000; // 10 seconds
+    this.MAX_BATCH_SIZE = 5;
+
+    // Initialize Daily Cron Report at 23:00 Asia/Jerusalem
+    this.initDailyCron();
   }
 
   async ensureChatId() {
@@ -148,12 +177,90 @@ class TelegramService {
     const formattedTotal = Number.isFinite(numericTotal) ? numericTotal.toFixed(2) : String(totalAmount);
     const message = `🛍️ <b>New Order Received</b>\n\n` +
       `<b>Order Number:</b> #${orderId}\n` +
-      `<b>Customer:</b> ${customerName}\n` +
-      `<b>Total Amount:</b> ${formattedTotal}\n\n` +
-      `<b>Items:</b>\n${itemsList}\n\n` +
+      `<b>Customer:</b> ${escapeHtml(customerName)}\n` +
+      `<b>Total Amount:</b> ₪${formattedTotal}\n\n` +
+      `<b>Items:</b>\n${escapeHtml(itemsList)}\n\n` +
       `The order was successfully recorded in the system.`;
       
     await this.sendMessage(message);
+  }
+
+  /**
+   * Queue store visit for batched real-time reporting.
+   */
+  queueVisit(visitData) {
+    this.visitQueue.push({
+      ...visitData,
+      timestamp: new Date().toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' })
+    });
+
+    if (this.visitQueue.length >= this.MAX_BATCH_SIZE) {
+      this.flushVisitBatch();
+    } else if (!this.batchTimer) {
+      this.batchTimer = setTimeout(() => this.flushVisitBatch(), this.BATCH_INTERVAL_MS);
+    }
+  }
+
+  async flushVisitBatch() {
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+      this.batchTimer = null;
+    }
+
+    if (this.visitQueue.length === 0) return;
+
+    const visits = [...this.visitQueue];
+    this.visitQueue = [];
+
+    let lines = [`👁️ <b>JOAKIM Store Visits</b> (${visits.length} new)`];
+    
+    for (const v of visits) {
+      const icon = v.isBot ? '🤖' : '👤';
+      const label = v.isBot ? `Bot (${v.botReason || 'crawler'})` : 'Real';
+      const pathStr = escapeHtml(v.path || '/');
+      const countryStr = escapeHtml(v.country || 'Unknown');
+      lines.push(`${icon} <b>${label}</b> | <code>${pathStr}</code> | ${countryStr}`);
+    }
+
+    await this.sendMessage(lines.join('\n'));
+  }
+
+  /**
+   * Real-time notification for email events
+   */
+  async notifyEmailSent(type, recipientEmail, success, details = '') {
+    const redacted = redactEmail(recipientEmail);
+    const statusIcon = success ? '✅' : '❌';
+    const msg = `📧 <b>Email Event: ${escapeHtml(type)}</b>\n` +
+      `<b>Status:</b> ${statusIcon} ${success ? 'Sent' : 'Failed'}\n` +
+      `<b>To:</b> ${escapeHtml(redacted)}\n` +
+      (details ? `<b>Detail:</b> ${escapeHtml(details)}` : '');
+    await this.sendMessage(msg);
+  }
+
+  /**
+   * Real-time notification for Order/PayPal events
+   */
+  async notifyOrderEvent(event, orderId, totalAmount, customerEmail, details = '') {
+    const redacted = redactEmail(customerEmail);
+    const msg = `💳 <b>Order Event: ${escapeHtml(event)}</b>\n` +
+      `<b>Order ID:</b> #${orderId}\n` +
+      `<b>Total:</b> ₪${Number(totalAmount || 0).toFixed(2)}\n` +
+      `<b>Customer:</b> ${escapeHtml(redacted)}\n` +
+      (details ? `<b>Detail:</b> ${escapeHtml(details)}` : '');
+    await this.sendMessage(msg);
+  }
+
+  /**
+   * Real-time notification for Printify events
+   */
+  async notifyPrintifyEvent(event, productId, title, status, details = '') {
+    const msg = `🎨 <b>Printify Pipeline: ${escapeHtml(event)}</b>\n` +
+      `<b>Product ID:</b> #${productId || 'N/A'}\n` +
+      `<b>Title:</b> ${escapeHtml(title || 'Untitled')}\n` +
+      `<b>Status:</b> ${escapeHtml(status)}\n` +
+      (details ? `<b>Detail:</b> ${escapeHtml(details)}` : '');
+    await this.sendMessage(msg);
   }
 
   async notifyError(context, errorMessage) {
@@ -168,7 +275,7 @@ class TelegramService {
     if (!this.token || !this.chatId) return;
 
     const safeName = String(name || 'Unknown').trim();
-    const safeEmail = String(email || 'Unknown').trim();
+    const safeEmail = redactEmail(email);
     const safeMessage = String(message || '').trim();
     const text = [
       '📩 <b>Support Request</b>',
@@ -177,15 +284,132 @@ class TelegramService {
       `<b>Message:</b> ${escapeHtml(safeMessage)}`,
     ].join('\n');
 
-    try {
-      await axios.post(`${this.baseUrl}/sendMessage`, {
-        chat_id: this.chatId,
-        text: text,
-        parse_mode: 'HTML'
-      });
-    } catch (error) {
-      console.error('Failed to send Telegram support message:', error.message);
+    await this.sendMessage(text);
+  }
+
+  /**
+   * Initialize Daily Summary Cron at 23:00 Asia/Jerusalem
+   */
+  initDailyCron() {
+    if (process.env.NODE_ENV === 'test' || process.env.DISABLE_BACKGROUND_JOBS === 'true') {
+      return;
     }
+
+    try {
+      cron.schedule('0 23 * * *', async () => {
+        console.log('⏰ Running JOAKIM Daily Report Cron (23:00 Asia/Jerusalem)...');
+        await this.sendDailyReport();
+      }, {
+        timezone: 'Asia/Jerusalem'
+      });
+      console.log('✅ Mani V2 Daily Intelligence Cron scheduled for 23:00 Asia/Jerusalem.');
+    } catch (err) {
+      console.error('Failed to schedule Daily Report Cron:', err.message);
+    }
+  }
+
+  /**
+   * Generates and sends the daily summary report
+   */
+  async sendDailyReport() {
+    try {
+      const report = await this.generateDailyReportData();
+      await this.sendMessage(report);
+      return { ok: true, report };
+    } catch (err) {
+      console.error('Failed to send Daily Report:', err.message);
+      return { ok: false, error: err.message };
+    }
+  }
+
+  generateDailyReportData() {
+    return new Promise((resolve) => {
+      const displayDate = new Date().toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
+
+      db.all(
+        `SELECT COUNT(*) as orderCount, COALESCE(SUM(totalAmount), 0) as totalRevenue, COALESCE(SUM(shippingCost), 0) as totalShipping
+         FROM orders WHERE DATE(createdAt) = DATE('now') AND status != 'cancelled'`,
+        [],
+        (err, orderRows) => {
+          const ordersInfo = (orderRows && orderRows[0]) || { orderCount: 0, totalRevenue: 0, totalShipping: 0 };
+          const orderCount = ordersInfo.orderCount;
+          const grossRevenueILS = ordersInfo.totalRevenue;
+          const grossRevenueUSD = (grossRevenueILS / 3.75).toFixed(2);
+          
+          const estCostsILS = (grossRevenueILS * 0.35).toFixed(2);
+          const estProfitILS = (grossRevenueILS - estCostsILS).toFixed(2);
+
+          db.all(
+            `SELECT p.title, SUM(oi.quantity) as qty
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.orderId
+             JOIN products p ON p.id = oi.productId
+             WHERE DATE(o.createdAt) = DATE('now') AND o.status != 'cancelled'
+             GROUP BY p.id ORDER BY qty DESC LIMIT 3`,
+            [],
+            (err2, topRows) => {
+              const topProducts = (topRows && topRows.length > 0)
+                ? topRows.map(r => `${r.title} (${r.qty})`).join(', ')
+                : 'None yet today';
+
+              db.all(
+                `SELECT COUNT(*) as count FROM leads WHERE DATE(created_at) = DATE('now')`,
+                [],
+                (err3, leadRows) => {
+                  const leadsToday = (leadRows && leadRows[0]) ? leadRows[0].count : 0;
+
+                  db.all(
+                    `SELECT COUNT(*) as count FROM abandoned_carts WHERE DATE(updated_at) = DATE('now')`,
+                    [],
+                    (err4, cartRows) => {
+                      const cartsToday = (cartRows && cartRows[0]) ? cartRows[0].count : 0;
+
+                      const recommendations = [];
+                      if (orderCount === 0) {
+                        recommendations.push('⚡ Zero orders recorded today — test checkout pipeline and run promotional campaign.');
+                      } else {
+                        recommendations.push(`🔥 Strong performance today with ${orderCount} order(s)! Consider featuring top seller "${topProducts}".`);
+                      }
+
+                      if (cartsToday > 0) {
+                        recommendations.push(`🛒 ${cartsToday} abandoned cart(s) detected — verify automated recovery email scheduler.`);
+                      } else {
+                        recommendations.push('💡 Add product bundle offers on cart modal to lift average order value.');
+                      }
+
+                      if (leadsToday > 0) {
+                        recommendations.push(`✉️ ${leadsToday} new subscriber lead(s) acquired — welcome coupon automated.`);
+                      } else {
+                        recommendations.push('🎯 Test popup lead exit-intent trigger to capture browsing interest.');
+                      }
+
+                      const reportText = [
+                        `📊 <b>JOAKIM Daily Store Intelligence</b> — ${displayDate}`,
+                        `━━━━━━━━━━━━━━━━━━━━━`,
+                        `💰 <b>Sales & Financials:</b>`,
+                        `• Total Orders: <b>${orderCount}</b>`,
+                        `• Gross Revenue: <b>₪${grossRevenueILS.toFixed(2)}</b> ($${grossRevenueUSD})`,
+                        `• Est. Net Profit: <b>₪${estProfitILS}</b> (COGS ~₪${estCostsILS})`,
+                        `• Top Products: ${escapeHtml(topProducts)}`,
+                        ``,
+                        `👥 <b>Funnel & Leads:</b>`,
+                        `• New Leads Acquired: <b>${leadsToday}</b>`,
+                        `• Abandoned Carts: <b>${cartsToday}</b>`,
+                        ``,
+                        `🤖 <b>AI Operational Recommendations:</b>`,
+                        ...recommendations.map((rec, i) => `${i + 1}. ${rec}`)
+                      ].join('\n');
+
+                      resolve(reportText);
+                    }
+                  );
+                }
+              );
+            }
+          );
+        }
+      );
+    });
   }
 }
 
