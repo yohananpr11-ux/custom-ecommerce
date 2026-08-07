@@ -1770,7 +1770,7 @@ app.get('/api/admin/sync-status', (req, res) => {
     
     res.json({
       lastSyncTime: global.lastSyncTime || 'Never',
-      nextSyncTime: 'Every hour (UTC)',
+      nextSyncTime: 'Daily 09:00 IST',
       statistics: stats,
       webhook: '/api/webhooks/printify (Printify can send events here)'
     });
@@ -3968,15 +3968,15 @@ app.listen(PORT, () => {
     }
   }, 3000);
   
-  // ---- SCHEDULED SYNC: Every hour ----
+  // ---- SCHEDULED SYNC: Daily at 09:00 IST (was hourly — caused Telegram spam + RAM 97%) ----
   const cron = require('node-cron');
   try {
-    const syncJob = cron.schedule('0 * * * *', async () => {
-      console.log('⏰ [Scheduled Sync] Running hourly Printify sync...');
+    const syncJob = cron.schedule('0 9 * * *', async () => {
+      console.log('⏰ [Scheduled Sync] Running daily Printify sync (09:00 IST)...');
       await performSync('scheduled');
-    }, { scheduled: true });
+    }, { scheduled: true, timezone: 'Asia/Jerusalem' });
 
-    console.log('✅ Scheduled sync configured: Every hour (UTC)');
+    console.log('✅ Scheduled sync configured: Daily 09:00 IST (reduced from hourly to fix RAM + Telegram spam)');
 
     // ---- SCHEDULED EMAIL RETRY: Every 15 minutes ----
     const emailRetryJob = cron.schedule('*/15 * * * *', async () => {

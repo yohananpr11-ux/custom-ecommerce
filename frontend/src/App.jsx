@@ -25,6 +25,7 @@ import './index.css'
 import Footer from './components/Footer'
 import CookieConsent from './components/CookieConsent'
 import BackButton from './components/BackButton'
+import JonoLogo from './components/JonoLogo'
 
 // Compliance & Legal Pages
 import PrivacyPolicy from './pages/PrivacyPolicy'
@@ -4365,7 +4366,7 @@ function MainApp() {
                       )}
                       {isTeeProduct(product) && <PromoDealBadge locale={locale} curSym={curSym} displayVal={displayVal} />}
                       {/* Phase 11.1: product card watermark uses the new metallic D. */}
-                      <img src="/jono-approved-full-logo.png" aria-hidden="true" className="product-card-watermark" alt="" draggable="false" />
+                      <JonoLogo size="watermark" className="product-card-watermark" />
                     </div>
                     <div className="product-card-content">
                       <div className="product-info">
@@ -4498,12 +4499,7 @@ function MainApp() {
             onClick={(e) => { e.preventDefault(); navigate('/'); }}
             aria-label="JONO Home"
           >
-            <img
-              src="/jono-approved-full-logo.png"
-              alt={t('logo')}
-              className="brand-mark"
-              style={{ height: '56px', width: 'auto', objectFit: 'contain' }}
-            />
+            <JonoLogo size="large" />
           </a>
         </div>
         <div className="search-bar">
@@ -4532,7 +4528,7 @@ function MainApp() {
           <div className="side-nav-header">
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
               {/* Phase 11.1: secondary mark in mobile/secondary nav area. */}
-              <img src="/jono-approved-full-logo.png" alt="" aria-hidden="true" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
+              <JonoLogo size="small" style={{ color: '#f3f4f6' }} />
               <strong>{t('logo')}</strong>
             </span>
             <button type="button" className="side-nav-close" onClick={closeMobileNav} aria-label="Close navigation">×</button>

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import JonoLogo from './JonoLogo';
 
 const POLICY_CONTENT = {
   shipping: {
@@ -119,11 +120,7 @@ export default function Footer({ locale = 'en' }) {
           {/* Phase 12: with the rembg-stripped transparent logo, footer mirrors
               the navbar's clean rendering — no badge, no shadow, just the
               metallic D floating on the dark footer canvas at 72px tall. */}
-          <img
-            src="/jono-approved-full-logo.png"
-            alt="JONO Logo"
-            style={{ height: '72px', width: 'auto', objectFit: 'contain', alignSelf: 'flex-start' }}
-          />
+          <JonoLogo size="medium" style={{ alignSelf: 'flex-start', marginBottom: '4px' }} />
           <p style={{ fontSize: '14px', lineHeight: '1.6', opacity: 0.6, margin: 0 }}>
             Minimalist streetwear designed for ultimate confidence, superior fit, and premium everyday aesthetics. Built with high-grade materials.
           </p>

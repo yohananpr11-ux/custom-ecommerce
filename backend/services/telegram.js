@@ -296,13 +296,13 @@ class TelegramService {
     }
 
     try {
-      cron.schedule('0 23 * * *', async () => {
-        console.log('⏰ Running JONO Daily Report Cron (23:00 Asia/Jerusalem)...');
+      cron.schedule('0 20 * * *', async () => {
+        console.log('⏰ Running JONO Daily Report Cron (20:00 Asia/Jerusalem)...');
         await this.sendDailyReport();
       }, {
         timezone: 'Asia/Jerusalem'
       });
-      console.log('✅ Mani V2 Daily Intelligence Cron scheduled for 23:00 Asia/Jerusalem.');
+      console.log('✅ Mani V2 Daily Intelligence Cron scheduled for 20:00 Asia/Jerusalem.');
     } catch (err) {
       console.error('Failed to schedule Daily Report Cron:', err.message);
     }
@@ -326,6 +326,15 @@ class TelegramService {
     return new Promise((resolve) => {
       const displayDate = new Date().toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
 
+      // COGS constants aligned with pricing.js (approved 2026-05)
+      const COGS_HEAVY_USD   = 22.30;  // $11.80 blank + $10.50 ship
+      const COGS_CVC_USD     = 17.90;  // $9.40  blank + $8.50  ship
+      const RETAIL_HEAVY_ILS = 199.90;
+      const RETAIL_CVC_ILS   = 169.90;
+      const RETAIL_HOODIE_ILS = 249.90;
+      const PAYPAL_FEE_RATE  = 0.03;
+      const FX               = 3.75;   // USD→ILS fallback rate
+
       db.all(
         `SELECT COUNT(*) as orderCount, COALESCE(SUM(totalAmount), 0) as totalRevenue, COALESCE(SUM(shippingCost), 0) as totalShipping
          FROM orders WHERE DATE(createdAt) = DATE('now') AND status != 'cancelled'`,
@@ -334,10 +343,17 @@ class TelegramService {
           const ordersInfo = (orderRows && orderRows[0]) || { orderCount: 0, totalRevenue: 0, totalShipping: 0 };
           const orderCount = ordersInfo.orderCount;
           const grossRevenueILS = ordersInfo.totalRevenue;
-          const grossRevenueUSD = (grossRevenueILS / 3.75).toFixed(2);
-          
-          const estCostsILS = (grossRevenueILS * 0.38).toFixed(2); // ~38% COGS with Comfort Colors 1717 / CVC blanks + fulfillment
-          const estProfitILS = (grossRevenueILS - estCostsILS).toFixed(2);
+          const grossRevenueUSD = (grossRevenueILS / FX).toFixed(2);
+
+          // Real COGS: assume heavyweight mix (~70% heavy, 30% CVC)
+          const avgCogsUSD = COGS_HEAVY_USD * 0.7 + COGS_CVC_USD * 0.3; // ~20.68
+          const avgCogsILS = avgCogsUSD * FX;
+          const paypalFeesILS = grossRevenueILS * PAYPAL_FEE_RATE;
+          const estCostsILS = (orderCount * avgCogsILS + paypalFeesILS).toFixed(2);
+          const estProfitILS = (grossRevenueILS - parseFloat(estCostsILS)).toFixed(2);
+          const grossMarginPct = grossRevenueILS > 0
+            ? ((parseFloat(estProfitILS) / grossRevenueILS) * 100).toFixed(1)
+            : '0.0';
 
           db.all(
             `SELECT p.title, SUM(oi.quantity) as qty
@@ -364,43 +380,61 @@ class TelegramService {
                     (err4, cartRows) => {
                       const cartsToday = (cartRows && cartRows[0]) ? cartRows[0].count : 0;
 
-                      const recommendations = [];
-                      if (orderCount === 0) {
-                        recommendations.push('⚡ Zero orders recorded today — test checkout pipeline and run promotional campaign.');
-                      } else {
-                        recommendations.push(`🔥 Strong performance today with ${orderCount} order(s)! Consider featuring top seller "${topProducts}".`);
-                      }
+                      // Traffic breakdown from visits table (bot_type column set by botDetector)
+                      db.all(
+                        `SELECT
+                           COUNT(*) as total,
+                           SUM(CASE WHEN bot_type IS NULL OR bot_type = 'human' THEN 1 ELSE 0 END) as humans,
+                           SUM(CASE WHEN bot_type = 'known_bot' THEN 1 ELSE 0 END) as knownBots,
+                           SUM(CASE WHEN bot_type = 'suspicious' THEN 1 ELSE 0 END) as suspicious
+                         FROM visits WHERE DATE(timestamp) = DATE('now')`,
+                        [],
+                        (err5, visitRows) => {
+                          const vr = (visitRows && visitRows[0]) || { total: 0, humans: 0, knownBots: 0, suspicious: 0 };
 
-                      if (cartsToday > 0) {
-                        recommendations.push(`🛒 ${cartsToday} abandoned cart(s) detected — verify automated recovery email scheduler.`);
-                      } else {
-                        recommendations.push('💡 Add product bundle offers on cart modal to lift average order value.');
-                      }
+                          const recommendations = [];
+                          if (orderCount === 0) {
+                            recommendations.push('⚡ Zero orders today — run a flash sale or push Instagram story.');
+                          } else {
+                            recommendations.push(`🔥 ${orderCount} order(s)! Top seller: "${topProducts}".`);
+                          }
+                          if (cartsToday > 0) {
+                            recommendations.push(`🛒 ${cartsToday} abandoned cart(s) — check PayPal mobile flow.`);
+                          }
+                          if (leadsToday > 0) {
+                            recommendations.push(`✉️ ${leadsToday} new lead(s) — 10% OFF welcome coupon sent.`);
+                          }
+                          if (vr.suspicious > 5) {
+                            recommendations.push(`⚠️ ${vr.suspicious} suspicious visitors today — review traffic source.`);
+                          }
 
-                      if (leadsToday > 0) {
-                        recommendations.push(`✉️ ${leadsToday} new subscriber lead(s) acquired — welcome coupon automated.`);
-                      } else {
-                        recommendations.push('🎯 Test popup lead exit-intent trigger to capture browsing interest.');
-                      }
+                          const reportText = [
+                            `📊 <b>JONO Daily Store Intelligence</b> — ${displayDate}`,
+                            `━━━━━━━━━━━━━━━━━━━━━`,
+                            `👥 <b>Traffic (Human / Bot):</b>`,
+                            `• 👤 Humans: <b>${vr.humans}</b>  🤖 Known Bots: ${vr.knownBots}  ⚠️ Suspicious: ${vr.suspicious}`,
+                            ``,
+                            `💰 <b>Sales & Financials:</b>`,
+                            `• Total Orders: <b>${orderCount}</b>`,
+                            `• Gross Revenue: <b>₪${grossRevenueILS.toFixed(2)}</b> ($${grossRevenueUSD})`,
+                            `• PayPal Fees (3%): ₪${paypalFeesILS.toFixed(2)}`,
+                            `• Est. COGS: ₪${estCostsILS} (heavy $${COGS_HEAVY_USD} / CVC $${COGS_CVC_USD} × ₪${FX})`,
+                            `• Est. Net Profit: <b>₪${estProfitILS}</b> (${grossMarginPct}% margin)`,
+                            `• Top Products: ${escapeHtml(topProducts)}`,
+                            ``,
+                            `💡 <b>Example calc (1× heavy @ ₪199.90):</b>`,
+                            `  $53.30 retail − $22.30 COGS − $1.86 fee = <b>$29.14 profit (~₪109)</b>`,
+                            ``,
+                            `👥 <b>Funnel & Leads:</b>`,
+                            `• New Leads: <b>${leadsToday}</b>  |  Abandoned Carts: <b>${cartsToday}</b>`,
+                            ``,
+                            `🤖 <b>AI Insights:</b>`,
+                            ...recommendations.map((rec, i) => `${i + 1}. ${rec}`)
+                          ].join('\n');
 
-                      const reportText = [
-                        `📊 <b>JONO Daily Store Intelligence</b> — ${displayDate}`,
-                        `━━━━━━━━━━━━━━━━━━━━━`,
-                        `💰 <b>Sales & Financials:</b>`,
-                        `• Total Orders: <b>${orderCount}</b>`,
-                        `• Gross Revenue: <b>₪${grossRevenueILS.toFixed(2)}</b> ($${grossRevenueUSD})`,
-                        `• Est. Net Profit: <b>₪${estProfitILS}</b> (COGS ~₪${estCostsILS})`,
-                        `• Top Products: ${escapeHtml(topProducts)}`,
-                        ``,
-                        `👥 <b>Funnel & Leads:</b>`,
-                        `• New Leads Acquired: <b>${leadsToday}</b>`,
-                        `• Abandoned Carts: <b>${cartsToday}</b>`,
-                        ``,
-                        `🤖 <b>AI Operational Recommendations:</b>`,
-                        ...recommendations.map((rec, i) => `${i + 1}. ${rec}`)
-                      ].join('\n');
-
-                      resolve(reportText);
+                          resolve(reportText);
+                        }
+                      );
                     }
                   );
                 }
