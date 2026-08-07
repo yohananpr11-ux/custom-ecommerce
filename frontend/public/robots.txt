@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://shopjoakim.com/sitemap.xml
+Sitemap: https://shopjono.com/sitemap.xml

@@ -29,7 +29,7 @@ const files = {
 };
 
 // Phase 11.1: canonical OG image is now the new metallic D brand logo.
-const OG_IMAGE_URL = 'https://shopjoakim.com/joakim-og.png';
+const OG_IMAGE_URL = 'https://shopjono.com/jono-og.png';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,12 +51,12 @@ function validateIndexHtml(content) {
     'MISSING google-site-verification meta tag'
   );
   check(
-    content.includes('rel="canonical" href="https://shopjoakim.com/"'),
+    content.includes('rel="canonical" href="https://shopjono.com/"'),
     'canonical homepage URL present',
     'MISSING canonical homepage URL'
   );
   check(
-    content.includes('property="og:url" content="https://shopjoakim.com/"'),
+    content.includes('property="og:url" content="https://shopjono.com/"'),
     'og:url is absolute',
     'og:url is missing or not absolute'
   );
@@ -108,7 +108,7 @@ function validateAppJsx(content) {
 function validateRobots(content) {
   section('robots.txt');
   check(
-    content.includes('Sitemap: https://shopjoakim.com/sitemap.xml'),
+    content.includes('Sitemap: https://shopjono.com/sitemap.xml'),
     'Absolute sitemap directive present',
     'MISSING absolute Sitemap directive'
   );
@@ -126,7 +126,7 @@ function validateSitemap(content) {
   const locs = (content.match(/<loc>(.*?)<\/loc>/g) || [])
     .map((e) => e.replace('<loc>', '').replace('</loc>', '').trim());
   check(locs.length > 0, `${locs.length} <loc> entries found`, 'sitemap.xml has no <loc> entries');
-  const bad = locs.filter((u) => !u.startsWith('https://shopjoakim.com'));
+  const bad = locs.filter((u) => !u.startsWith('https://shopjono.com'));
   check(bad.length === 0, 'All <loc> URLs are absolute', `Non-absolute URLs: ${bad.join(', ')}`);
 }
 

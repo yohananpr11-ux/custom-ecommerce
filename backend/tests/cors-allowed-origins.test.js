@@ -46,6 +46,8 @@ test.after(async () => {
 });
 
 const ACCEPTED_ORIGINS = [
+  'https://shopjono.com',
+  'https://www.shopjono.com',
   'https://shopjoakim.com',
   'https://www.shopjoakim.com',
   'https://dripstreetshop.com',

@@ -144,7 +144,7 @@ const uploadImageFromUrl = async (filename, sourceUrl) => {
 const PRINTIFY_NECK_LABEL_IMAGE_ID = env('PRINTIFY_NECK_LABEL_IMAGE_ID', '6a72e86f376cb40ed1f472c2');
 const NECK_LABEL_SOURCE_URL = env(
   'NECK_LABEL_SOURCE_URL',
-  'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/joakim-logo-transparent.png'
+  'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/jono-logo-transparent.png'
 );
 let neckLabelImageIdCache = null;
 
@@ -159,7 +159,7 @@ const ensureNeckLabelImageId = async () => {
       throw new Error(`NECK_LABEL_SOURCE_URL returned non-image content-type (${contentType}). Image required.`);
     }
 
-    const uploaded = await uploadImageFromUrl('joakim-neck-label.png', NECK_LABEL_SOURCE_URL);
+    const uploaded = await uploadImageFromUrl('jono-neck-label.png', NECK_LABEL_SOURCE_URL);
     neckLabelImageIdCache = uploaded.id;
     return neckLabelImageIdCache;
   } catch (err) {
@@ -205,7 +205,7 @@ const createDraftProduct = async ({
 
   const placeholders = [customerPlaceholder];
 
-  // Optional neck label — JOAKIM logo on the inside of the collar.
+  // Optional neck label — JONO logo on the inside of the collar.
   // Printify position name for Bella+Canvas 3001 (Blueprint 6) is 'inner_neck'.
   if (neckLabelImageId) {
     placeholders.push({
@@ -225,7 +225,7 @@ const createDraftProduct = async ({
   const client = printifyClient();
   const payload = {
     title,
-    description: `${title} — JOAKIM drop. Premium minimal streetwear.`,
+    description: `${title} — JONO drop. Premium minimal streetwear.`,
     blueprint_id: blueprintId,
     print_provider_id: providerId,
     variants,
@@ -315,7 +315,7 @@ const publishDraft = async (printifyProductId) => {
   await client.post(`/shops/${shopId}/products/${printifyProductId}/publishing_succeeded.json`, {
     external: {
       id: String(printifyProductId),
-      handle: `https://shopjoakim.com/product/${printifyProductId}`,
+      handle: `https://shopjono.com/product/${printifyProductId}`,
     },
   }).catch(() => null);
 };
@@ -346,7 +346,7 @@ const createDraftFromImage = async ({ imageBase64, filename, title, placement = 
   const provider  = providerId ? parseInt(providerId, 10) : defaultCfg.provider;
 
   const safeName = (filename || `design-${Date.now()}.png`).replace(/[^a-zA-Z0-9._-]/g, '_');
-  const safeTitle = (title || `JOAKIM drop — ${new Date().toISOString().slice(0, 10)}`).slice(0, 140);
+  const safeTitle = (title || `JONO drop — ${new Date().toISOString().slice(0, 10)}`).slice(0, 140);
   const safePlacement = (placement === 'back') ? 'back' : 'front';
 
   // Fetch variants, customer image, AND the cached neck label in parallel

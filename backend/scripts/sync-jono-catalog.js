@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * sync-joakim-catalog.js
+ * sync-jono-catalog.js
  * ──────────────────────
- * Full Automated Store Ready Script for JØAKIM:
+ * Full Automated Store Ready Script for JONO:
  * 1. Validates PRINTIFY_API_TOKEN with fail-fast.
  * 2. Migrates 11 existing apparel designs to Comfort Colors 1717 (Blueprint 706, 6.1oz) @ ₪199.90 ILS.
  * 3. Creates 5 new CVC zero-iron products (Blueprint 3013, 52/48 blend) @ ₪169.90 ILS.
@@ -40,21 +40,21 @@ const MIGRATED_11_DESIGNS = [
   { id: 7, title: 'Urban Frequency Skyline Graphic T-Shirt | City Soundwave', oldPrintifyId: '6a09eed8c082c08abb0d39fe' },
   { id: 8, title: 'Drum Machine Blueprint T-Shirt | Electronic Music Tech Tee', oldPrintifyId: '6a09ad8feeb1cc67a707f51e' },
   { id: 9, title: 'Retro Palm Trees Tee | Sunset Arch Graphic Shirt', oldPrintifyId: '6a08bc0e926fddf1760672c4' },
-  { id: 10, title: 'Unisex Heavy Blend™ Hooded Sweatshirt | JOAKIM Premium', oldPrintifyId: '6a08b463e9a2c5fcc60a6ffb', isHoodie: true },
+  { id: 10, title: 'Unisex Heavy Blend™ Hooded Sweatshirt | JONO Premium', oldPrintifyId: '6a08b463e9a2c5fcc60a6ffb', isHoodie: true },
   { id: 11, title: 'Ramen Shop Illustration T-Shirt | Anime Noodle Bowl Graphic', oldPrintifyId: '6a08b3791c0731234c0976f7' },
 ];
 
 // 5 New CVC Zero-Iron Products (Option 2 - Bella+Canvas 3001CVC 52/48 Blend)
 const NEW_5_CVC_PRODUCTS = [
-  { title: 'JOAKIM - Essential CVC Tee Black', color: 'Black Heather', priceILS: 169.90 },
-  { title: 'JOAKIM - Essential CVC Tee White', color: 'Athletic Heather', priceILS: 169.90 },
-  { title: 'JOAKIM - Minimal Wordmark Heavy Charcoal', color: 'Dark Grey Heather', priceILS: 169.90 },
-  { title: 'JOAKIM - Monogram CVC Navy', color: 'Navy Heather', priceILS: 169.90 },
-  { title: 'JOAKIM - Oversized CVC Logo Heather Grey', color: 'Heather Grey', priceILS: 169.90 },
+  { title: 'JONO - Essential CVC Tee Black', color: 'Black Heather', priceILS: 169.90 },
+  { title: 'JONO - Essential CVC Tee White', color: 'Athletic Heather', priceILS: 169.90 },
+  { title: 'JONO - Minimal Wordmark Heavy Charcoal', color: 'Dark Grey Heather', priceILS: 169.90 },
+  { title: 'JONO - Monogram CVC Navy', color: 'Navy Heather', priceILS: 169.90 },
+  { title: 'JONO - Oversized CVC Logo Heather Grey', color: 'Heather Grey', priceILS: 169.90 },
 ];
 
 async function runSyncAndPublish() {
-  console.log('🚀 Starting JØAKIM Full Store Ready Catalog Sync...');
+  console.log('🚀 Starting JONO Full Store Ready Catalog Sync...');
   const token = checkToken();
 
   if (token) {
@@ -76,7 +76,7 @@ async function runSyncAndPublish() {
         if (titleLower.includes('gildan 2000') || titleLower.includes('shaka') || titleLower.includes('5200')) {
           console.log(`🧹 Archiving old blank product: "${p.title}" (ID: ${p.id})`);
           await client.post(`/shops/${SHOP_ID}/products/${p.id}/publishing_failed.json`, {
-            reason: 'Archived for JØAKIM Comfort Colors 1717 / CVC upgrade'
+            reason: 'Archived for JONO Comfort Colors 1717 / CVC upgrade'
           }).catch(() => null);
         }
       }
@@ -128,10 +128,10 @@ async function runSyncAndPublish() {
         [
           item.id,
           item.title,
-          `${item.title} — JØAKIM Premium Drop. Heavyweight garment-dyed ring-spun cotton.`,
+          `${item.title} — JONO Premium Drop. Heavyweight garment-dyed ring-spun cotton.`,
           price,
-          'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/joakim-logo-transparent.png',
-          'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/joakim-logo-transparent.png',
+          'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/jono-logo-transparent.png',
+          'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/jono-logo-transparent.png',
           item.oldPrintifyId,
           fabric,
           care,
@@ -166,10 +166,10 @@ async function runSyncAndPublish() {
         [
           cvcId,
           cvcItem.title,
-          `${cvcItem.title} — JØAKIM CVC Minimalist Streetwear. Premium Airlume cotton-poly zero-iron blend.`,
+          `${cvcItem.title} — JONO CVC Minimalist Streetwear. Premium Airlume cotton-poly zero-iron blend.`,
           cvcItem.priceILS,
-          'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/joakim-approved-full-logo.png',
-          'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/joakim-wordmark-dark.png',
+          'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/jono-approved-full-logo.png',
+          'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/jono-wordmark-dark.png',
           `cvc_3013_${cvcId}`,
           fabric,
           care,
@@ -189,7 +189,7 @@ async function runSyncAndPublish() {
     console.warn('⚠️ Hardware catalog check:', hwErr.message);
   }
 
-  console.log('\n🎉 JØAKIM Store Catalog Sync Complete!');
+  console.log('\n🎉 JONO Store Catalog Sync Complete!');
 }
 
 if (require.main === module) {

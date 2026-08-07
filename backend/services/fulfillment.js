@@ -76,8 +76,8 @@ async function writeItemStatus(itemIds, status, ref) {
 // summary (pending/processing/submitted/failed); this table is what a
 // retry actually reconciles against.
 
-const deterministicExternalId = (orderId) => `joakim-order-${orderId}-printify-v1`;
-const deterministicLineExternalId = (orderItemId) => `joakim-item-${orderItemId}`;
+const deterministicExternalId = (orderId) => `jono-order-${orderId}-printify-v1`;
+const deterministicLineExternalId = (orderItemId) => `jono-item-${orderItemId}`;
 
 async function ensureSupplierFulfillmentRecord(orderId, supplierId, externalId) {
   await dbRunAsync(

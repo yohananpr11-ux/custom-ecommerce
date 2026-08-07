@@ -9,7 +9,7 @@ export default function TermsOfService() {
             1. Agreement to Terms
           </h2>
           <p style={{ margin: 0 }}>
-            By accessing or using the JOAKIM website, storefront, and transaction systems, you agree to be bound by these Terms of Service and all policies referenced herein. If you do not agree with any part of these terms, you are prohibited from using the platform.
+            By accessing or using the JONO website, storefront, and transaction systems, you agree to be bound by these Terms of Service and all policies referenced herein. If you do not agree with any part of these terms, you are prohibited from using the platform.
           </p>
         </section>
 
@@ -18,7 +18,7 @@ export default function TermsOfService() {
             2. Intellectual Property Rights
           </h2>
           <p style={{ margin: 0 }}>
-            All intellectual property, website design code, SVGs, high-resolution logos, brand artwork, visual layout structure, product graphics, and typography systems are the exclusive property of JOAKIM. You are prohibited from copying, distributing, republishing, or mimicking any visual brand assets without our written consent.
+            All intellectual property, website design code, SVGs, high-resolution logos, brand artwork, visual layout structure, product graphics, and typography systems are the exclusive property of JONO. You are prohibited from copying, distributing, republishing, or mimicking any visual brand assets without our written consent.
           </p>
         </section>
 
@@ -36,7 +36,7 @@ export default function TermsOfService() {
             4. Printify Print-on-Demand Fulfillment
           </h2>
           <p style={{ margin: 0 }}>
-            JOAKIM designs are custom printed on demand using Printify's global fulfillment networks. By placing an order, you acknowledge that manufacturing begins immediately. Consequently, shipping address modifications or size alterations cannot be processed once the manufacturing facility accepts the order.
+            JONO designs are custom printed on demand using Printify's global fulfillment networks. By placing an order, you acknowledge that manufacturing begins immediately. Consequently, shipping address modifications or size alterations cannot be processed once the manufacturing facility accepts the order.
           </p>
         </section>
 
@@ -54,7 +54,7 @@ export default function TermsOfService() {
             6. Limitation of Liability
           </h2>
           <p style={{ margin: 0 }}>
-            JOAKIM, its owners, and partners will not be liable for any direct, indirect, incidental, or consequential damages resulting from the use of our products, manufacturing delays by logistics carriers, or temporary website outages.
+            JONO, its owners, and partners will not be liable for any direct, indirect, incidental, or consequential damages resulting from the use of our products, manufacturing delays by logistics carriers, or temporary website outages.
           </p>
         </section>
 
@@ -69,7 +69,7 @@ export default function TermsOfService() {
 
         <section style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', marginTop: '16px' }}>
           <p style={{ margin: 0, fontSize: '14px', opacity: 0.8 }}>
-            If you have questions regarding these Terms, contact our support team at <a href="mailto:support@dripstreetshop.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@dripstreetshop.com</a>.
+            If you have questions regarding these Terms, contact our support team at <a href="mailto:support@shopjono.com" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>support@shopjono.com</a>.
           </p>
         </section>
       </div>

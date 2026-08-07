@@ -5,7 +5,7 @@ import BackButton from './BackButton';
 export default function LegalPageLayout({ title, children, breadcrumb = 'Legal' }) {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
-    document.title = `${title} - JOAKIM`;
+    document.title = `${title} - JONO`;
   }, [title]);
 
   return (

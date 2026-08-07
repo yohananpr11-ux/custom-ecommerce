@@ -212,7 +212,7 @@ class TelegramService {
     const visits = [...this.visitQueue];
     this.visitQueue = [];
 
-    let lines = [`👁️ <b>JOAKIM Store Visits</b> (${visits.length} new)`];
+    let lines = [`👁️ <b>JONO Store Visits</b> (${visits.length} new)`];
     
     for (const v of visits) {
       const icon = v.isBot ? '🤖' : '👤';
@@ -297,7 +297,7 @@ class TelegramService {
 
     try {
       cron.schedule('0 23 * * *', async () => {
-        console.log('⏰ Running JOAKIM Daily Report Cron (23:00 Asia/Jerusalem)...');
+        console.log('⏰ Running JONO Daily Report Cron (23:00 Asia/Jerusalem)...');
         await this.sendDailyReport();
       }, {
         timezone: 'Asia/Jerusalem'
@@ -384,7 +384,7 @@ class TelegramService {
                       }
 
                       const reportText = [
-                        `📊 <b>JOAKIM Daily Store Intelligence</b> — ${displayDate}`,
+                        `📊 <b>JONO Daily Store Intelligence</b> — ${displayDate}`,
                         `━━━━━━━━━━━━━━━━━━━━━`,
                         `💰 <b>Sales & Financials:</b>`,
                         `• Total Orders: <b>${orderCount}</b>`,

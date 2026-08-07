@@ -53,7 +53,7 @@ export default function MobileNav({
                 {'<'}
               </button>
             )}
-            <button type="button" className="mobile-nav-logo" onClick={onLogoClick}             aria-label="JOAKIM Home">
+            <button type="button" className="mobile-nav-logo" onClick={onLogoClick}             aria-label="JONO Home">
               {logo}
             </button>
           </div>
