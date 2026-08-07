@@ -139,15 +139,27 @@ const uploadImageFromUrl = async (filename, sourceUrl) => {
   return res.data;
 };
 
-// Module-level cache for the Drip Street neck label image_id. Re-uploaded
-// only on cold start (the cost is negligible — small file, single API call).
-const NECK_LABEL_SOURCE_URL = 'https://dripstreetshop.com/brand/drip-mark.png';
+// JOAKIM neck label asset: 750x750 300 DPI DTF transparent background monogram.
+// Asset ID in Printify library: 6a72e86f376cb40ed1f472c2.
+const PRINTIFY_NECK_LABEL_IMAGE_ID = env('PRINTIFY_NECK_LABEL_IMAGE_ID', '6a72e86f376cb40ed1f472c2');
+const NECK_LABEL_SOURCE_URL = env(
+  'NECK_LABEL_SOURCE_URL',
+  'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/joakim-logo-transparent.png'
+);
 let neckLabelImageIdCache = null;
 
 const ensureNeckLabelImageId = async () => {
+  if (PRINTIFY_NECK_LABEL_IMAGE_ID) return PRINTIFY_NECK_LABEL_IMAGE_ID;
   if (neckLabelImageIdCache) return neckLabelImageIdCache;
   try {
-    const uploaded = await uploadImageFromUrl('drip-street-neck-label.png', NECK_LABEL_SOURCE_URL);
+    // Validate that NECK_LABEL_SOURCE_URL returns an image before attempting upload
+    const headRes = await axios.head(NECK_LABEL_SOURCE_URL, { timeout: 10000 });
+    const contentType = headRes.headers['content-type'] || '';
+    if (contentType.includes('text/html')) {
+      throw new Error(`NECK_LABEL_SOURCE_URL returned non-image content-type (${contentType}). Image required.`);
+    }
+
+    const uploaded = await uploadImageFromUrl('joakim-neck-label.png', NECK_LABEL_SOURCE_URL);
     neckLabelImageIdCache = uploaded.id;
     return neckLabelImageIdCache;
   } catch (err) {
@@ -193,12 +205,11 @@ const createDraftProduct = async ({
 
   const placeholders = [customerPlaceholder];
 
-  // Optional neck label — Drip Street logo on the inside of the collar.
-  // Printify's exact key for this varies by print provider; we send the most
-  // common one and let it fail-silent if the provider doesn't expose it.
+  // Optional neck label — JOAKIM logo on the inside of the collar.
+  // Printify position name for Bella+Canvas 3001 (Blueprint 6) is 'inner_neck'.
   if (neckLabelImageId) {
     placeholders.push({
-      position: 'neck_label',
+      position: 'inner_neck',
       images: [
         {
           id: neckLabelImageId,
@@ -241,7 +252,7 @@ const createDraftProduct = async ({
       (() => { try { return JSON.stringify(data); } catch { return ''; } })(),
     ].filter(Boolean).join(' | ');
 
-    const isNeckLabelIssue = /neck[_\s-]?label/i.test(haystack);
+    const isNeckLabelIssue = /neck[_\s-]?label|inner[_\s-]?neck/i.test(haystack);
     const isPlaceholderIssue = /placeholder|position|invalid/i.test(haystack);
     const isRetryableStatus = status === 400 || status === 422;
 
