@@ -1,32 +1,38 @@
 /**
- * JonoLogo — text-based JONO brand mark using Bebas Neue (loaded in index.html).
- * No image file dependency; renders consistently in all environments.
+ * JonoLogo — JONO brand mark.
+ * Uses the real JONO logo image (/jono-logo-transparent.png, extracted from JOAKIM branch).
+ * Falls back to Bebas Neue text if image fails to load.
  */
-const SIZES = {
-  large:   { fontSize: '32px', letterSpacing: '0.12em' },
-  medium:  { fontSize: '24px', letterSpacing: '0.12em' },
-  small:   { fontSize: '18px', letterSpacing: '0.10em' },
-  watermark: { fontSize: '13px', letterSpacing: '0.10em', opacity: 0.08 },
+const SIZE_MAP = {
+  large:     { height: '52px' },
+  medium:    { height: '36px' },
+  small:     { height: '24px' },
+  watermark: { height: '18px', opacity: 0.08 },
 };
 
 export default function JonoLogo({ size = 'large', style = {}, className = '' }) {
-  const base = SIZES[size] || SIZES.large;
+  const dims = SIZE_MAP[size] || SIZE_MAP.large;
   return (
-    <span
+    <img
+      src="/jono-logo-transparent.png"
+      alt="JONO"
       className={className}
+      draggable="false"
       style={{
-        fontFamily: '"Bebas Neue", sans-serif',
-        fontWeight: '400',
-        color: '#f3f4f6',
-        lineHeight: '1',
-        userSelect: 'none',
+        height: dims.height,
+        width: 'auto',
+        objectFit: 'contain',
         display: 'inline-block',
-        ...base,
+        opacity: dims.opacity ?? 1,
         ...style,
       }}
-      aria-label="JONO"
-    >
-      JONO
-    </span>
+      onError={(e) => {
+        // Fallback: replace broken image with text logo
+        const span = document.createElement('span');
+        span.style.cssText = `font-family:"Bebas Neue",sans-serif;font-size:32px;letter-spacing:0.12em;color:#f3f4f6;line-height:1;display:inline-block`;
+        span.textContent = 'JONO';
+        e.target.replaceWith(span);
+      }}
+    />
   );
 }

@@ -579,7 +579,7 @@ html[dir="ltr"] .checkout-page input {
 .hero {
   text-align: center;
   padding: 120px 0 88px;
-  background: #050505 url('/hero.png') center center / cover no-repeat;
+  background: #050505;
   position: relative;
   overflow: hidden;
   /* P9-3: belt-and-suspenders centering. text-align centers inline text, the
@@ -588,15 +588,6 @@ html[dir="ltr"] .checkout-page input {
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-
-/* Dark overlay to keep text legible over hero background image */
-.hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(5, 5, 5, 0.65);
-  z-index: 0;
 }
 
 .hero-content {
