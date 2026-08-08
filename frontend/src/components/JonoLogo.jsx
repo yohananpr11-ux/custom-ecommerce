@@ -5,10 +5,10 @@
  * in all environments.
  */
 const SIZES = {
-  large:     { fontSize: '38px', gap: '10px', birdSize: 18 },
-  medium:    { fontSize: '28px', gap: '8px', birdSize: 14 },
-  small:     { fontSize: '20px', gap: '6px', birdSize: 11 },
-  watermark: { fontSize: '15px', gap: '5px', birdSize: 9, opacity: 0.08 },
+  large:     { fontSize: '52px', gap: '10px', birdSize: 18 },
+  medium:    { fontSize: '38px', gap: '8px', birdSize: 14 },
+  small:     { fontSize: '28px', gap: '6px', birdSize: 11 },
+  watermark: { fontSize: '20px', gap: '5px', birdSize: 9, opacity: 0.08 },
 };
 
 export function BirdMark({ size, color }) {
@@ -44,8 +44,8 @@ export default function JonoLogo({ size = 'large', style = {}, className = '' })
       <BirdMark size={base.birdSize} color={color} />
       <span
         style={{
-          fontFamily: '"Dancing Script", cursive',
-          fontWeight: 700,
+          fontFamily: '"Alex Brush", cursive',
+          fontWeight: 400,
           fontSize: base.fontSize,
           color,
         }}
