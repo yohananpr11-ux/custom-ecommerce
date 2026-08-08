@@ -356,6 +356,48 @@ a,
   border-bottom-color: rgba(255, 255, 255, 0.12);
 }
 
+/* Clean transparent nav overlaid on the homepage hero — matches the
+   approved JOAKIM reference. Search/cart aren't gone, they're one
+   scroll away: the regular glassmorphic .header takes over the moment
+   isHeaderScrolled flips true. */
+.header-hero-transparent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: none;
+  z-index: 10;
+}
+
+.hero-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.hero-nav-links a {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #f5f0e8;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hero-nav-links a:hover {
+  opacity: 0.7;
+}
+
+@media (max-width: 900px) {
+  .hero-nav-links {
+    display: none;
+  }
+}
+
 .header-leading {
   display: flex;
   align-items: center;
@@ -594,7 +636,7 @@ html[dir="ltr"] .checkout-page input {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 64px 5vw;
+  padding: 110px 5vw 64px;
   position: relative;
   z-index: 1;
   text-align: left;

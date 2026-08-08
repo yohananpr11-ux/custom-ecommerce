@@ -44,7 +44,7 @@ export default function JonoLogo({ size = 'large', style = {}, className = '' })
       <BirdMark size={base.birdSize} color={color} />
       <span
         style={{
-          fontFamily: '"Alex Brush", cursive',
+          fontFamily: '"Pinyon Script", cursive',
           fontWeight: 400,
           fontSize: base.fontSize,
           color,

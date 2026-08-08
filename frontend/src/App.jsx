@@ -4484,11 +4484,16 @@ function MainApp() {
           </filter>
         </defs>
       </svg>
+        {!(currentPath === '/' && !isHeaderScrolled) && (
         <div className="announcement-bar">
         {t('announcement')}
       </div>
+        )}
 
-      <header className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header
+        className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}${currentPath === '/' && !isHeaderScrolled ? ' header-hero-transparent' : ''}`}
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+      >
         <div className="header-leading">
           <button className="nav-toggle" type="button" aria-label="Open navigation" onClick={openMobileNav}>
             <span />
@@ -4508,17 +4513,26 @@ function MainApp() {
             <JonoLogo size="large" />
           </a>
         </div>
+        {currentPath === '/' && !isHeaderScrolled ? (
+          <nav className="hero-nav-links">
+            <a onClick={() => { setActiveCategory('All'); document.querySelector('.categories-nav')?.scrollIntoView({ behavior: 'smooth' }); }}>SHOP</a>
+            <a onClick={() => { setActiveCategory('All'); document.querySelector('.categories-nav')?.scrollIntoView({ behavior: 'smooth' }); }}>NEW ARRIVALS</a>
+            <a onClick={() => document.querySelector('.categories-nav')?.scrollIntoView({ behavior: 'smooth' })}>COLLECTIONS</a>
+            <a onClick={() => navigate('/about')}>ABOUT</a>
+          </nav>
+        ) : (
         <div className="search-bar">
-          <input 
+          <input
             type="text"
             dir="ltr"
-            placeholder={t('search_placeholder')} 
+            placeholder={t('search_placeholder')}
             value={searchQuery}
             aria-label={t('search_aria')}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', visibility: currentPath === '/' && !isHeaderScrolled ? 'hidden' : 'visible' }}>
           <button className="lang-toggle-btn hide-on-mobile" onClick={toggleLocale}>
             {locale === 'he' ? 'EN' : 'עב'}
           </button>
