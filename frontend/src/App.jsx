@@ -4185,58 +4185,6 @@ function MainApp() {
             </button>
           </motion.div>
 
-          <motion.div
-            className="featured-jewelry-banner" 
-            initial={{ scale: 0.95, opacity: 0 }} 
-            animate={{ scale: 1, opacity: 1 }} 
-            transition={{ delay: 0.5 }}
-            onClick={() => navigate('/product/16')}
-            style={{
-              cursor: 'pointer',
-              marginTop: '40px',
-              padding: '20px 24px',
-              background: '#050505',
-              border: '1px solid rgba(255,255,255,0.26)',
-              borderRadius: '2px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '16px',
-              maxWidth: '680px',
-              marginInline: 'auto',
-              textAlign: 'left'
-            }}
-          >
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: 800, color: '#f3f4f6', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                {locale === 'he' ? '✨ קולקציה חדשה: תכשיטי פרימיום' : '✨ NEW COLLECTION: PREMIUM JEWELRY'}
-              </span>
-              <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 700, color: '#f3f4f6', letterSpacing: '-0.01em' }}>
-                {locale === 'he' ? 'שרשרת קובנית עם ליטוש 6 פיאות' : 'Six-sided Grinding Cuban Link Chain'}
-              </h4>
-              <p style={{ margin: 0, fontSize: '13px', color: '#d1d5db', maxWidth: '480px' }}>
-                {locale === 'he' 
-                  ? 'נחתכה במיוחד עם שש פיאות שטוחות ללכידת אור מירבית. פלדת אל-חלד מוצקה בציפוי זהב עמוק.'
-                  : 'Meticulously faceted with six flat-cut facets per link. Solid stainless steel plated in deep gold.'}
-              </p>
-            </div>
-            <button style={{
-              padding: '8px 16px',
-              background: '#f3f4f6',
-              color: '#050505',
-              border: '1px solid #f3f4f6',
-              borderRadius: '2px',
-              fontWeight: 700,
-              fontSize: '12px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}>
-              {locale === 'he' ? 'גלה עכשיו' : 'Discover'}
-            </button>
-          </motion.div>
-
           <div className="hero-tagline">NOT FOR THE OCCASION.<br />FOR EVERY DAY.</div>
         </div>
 
@@ -4245,6 +4193,59 @@ function MainApp() {
         </div>
         </div>
       </section>
+
+      <div className="container">
+        <motion.div
+          className="featured-jewelry-banner"
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          onClick={() => navigate('/product/16')}
+          style={{
+            cursor: 'pointer',
+            margin: '32px auto',
+            padding: '20px 24px',
+            background: '#050505',
+            border: '1px solid rgba(255,255,255,0.26)',
+            borderRadius: '2px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            maxWidth: '680px',
+            textAlign: 'left'
+          }}
+        >
+          <div>
+            <span style={{ fontSize: '10px', fontWeight: 800, color: '#f3f4f6', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+              {locale === 'he' ? '✨ קולקציה חדשה: תכשיטי פרימיום' : '✨ NEW COLLECTION: PREMIUM JEWELRY'}
+            </span>
+            <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 700, color: '#f3f4f6', letterSpacing: '-0.01em' }}>
+              {locale === 'he' ? 'שרשרת קובנית עם ליטוש 6 פיאות' : 'Six-sided Grinding Cuban Link Chain'}
+            </h4>
+            <p style={{ margin: 0, fontSize: '13px', color: '#d1d5db', maxWidth: '480px' }}>
+              {locale === 'he'
+                ? 'נחתכה במיוחד עם שש פיאות שטוחות ללכידת אור מירבית. פלדת אל-חלד מוצקה בציפוי זהב עמוק.'
+                : 'Meticulously faceted with six flat-cut facets per link. Solid stainless steel plated in deep gold.'}
+            </p>
+          </div>
+          <button style={{
+            padding: '8px 16px',
+            background: '#f3f4f6',
+            color: '#050505',
+            border: '1px solid #f3f4f6',
+            borderRadius: '2px',
+            fontWeight: 700,
+            fontSize: '12px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}>
+            {locale === 'he' ? 'גלה עכשיו' : 'Discover'}
+          </button>
+        </motion.div>
+      </div>
 
       {!isLoading && hardwareProducts.length > 0 && (
         <section className="hardware-section">
