@@ -613,19 +613,12 @@ html[dir="ltr"] .checkout-page input {
 }
 
 .hero-photo::after {
-  /* soft light-streak overlay, echoing the concrete + shadow backdrop */
+  /* the photo already carries its own window-light shadow texture —
+     just a soft left-edge fade so the split seam isn't a hard line */
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    repeating-linear-gradient(
-      115deg,
-      rgba(0, 0, 0, 0.28) 0px,
-      rgba(0, 0, 0, 0.28) 3px,
-      transparent 3px,
-      transparent 34px
-    ),
-    linear-gradient(90deg, rgba(5, 5, 5, 0.55) 0%, rgba(5, 5, 5, 0) 14%);
+  background: linear-gradient(90deg, rgba(5, 5, 5, 0.5) 0%, rgba(5, 5, 5, 0) 14%);
 }
 
 .hero-content > * {
