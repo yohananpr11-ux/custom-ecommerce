@@ -25,7 +25,7 @@ import './index.css'
 import Footer from './components/Footer'
 import CookieConsent from './components/CookieConsent'
 import BackButton from './components/BackButton'
-import JonoLogo from './components/JonoLogo'
+import JonoLogo, { BirdMark } from './components/JonoLogo'
 
 // Compliance & Legal Pages
 import PrivacyPolicy from './pages/PrivacyPolicy'
@@ -4161,32 +4161,31 @@ function MainApp() {
       )}
 
       <section className="hero">
-        <div className="container hero-content">
+        <div className="hero-split">
+        <div className="hero-left">
           <motion.span className="hero-eyebrow" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            JONO SIGNATURE DROP
+            SPRING · SUMMER 2026
           </motion.span>
           <motion.h1 className="hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            PREMIUM STREETWEAR. ZERO GUESSWORK FIT.
+            FREEDOM.<br />STYLE.<br />ATTITUDE.
           </motion.h1>
+          <motion.div className="hero-divider" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}>
+            <BirdMark size={20} color="#f5f0e8" />
+            <span className="hero-divider-line" />
+          </motion.div>
           <motion.p className="hero-vibe-subtitle" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-            Heavyweight essentials engineered for daily city movement, late-night edge, and effortless rotation.
+            Minimalist streetwear designed<br />for ultimate confidence.
           </motion.p>
-          <motion.ul className="hero-bullets" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
-            <li>Premium heavyweight cotton that keeps its shape.</li>
-            <li>Relaxed street fit with clean shoulder structure.</li>
-            <li>High-definition print that stays sharp wash after wash.</li>
-            <li>Built for day-to-night outfits without overthinking it.</li>
-          </motion.ul>
           <motion.div className="hero-cta-group" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
             <button className="hero-cta-primary drip-cta" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              Shop The Drop
+              Shop Now
             </button>
-            <button className="hero-cta-secondary drip-cta" onClick={() => { setActiveCategory('Shirts'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              Explore Best Sellers
+            <button className="hero-cta-secondary drip-cta" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
+              New Arrivals
             </button>
           </motion.div>
 
-          <motion.div 
+          <motion.div
             className="featured-jewelry-banner" 
             initial={{ scale: 0.95, opacity: 0 }} 
             animate={{ scale: 1, opacity: 1 }} 
@@ -4237,6 +4236,13 @@ function MainApp() {
               {locale === 'he' ? 'גלה עכשיו' : 'Discover'}
             </button>
           </motion.div>
+
+          <div className="hero-tagline">NOT FOR THE OCCASION.<br />FOR EVERY DAY.</div>
+        </div>
+
+        <div className="hero-right">
+          <div className="hero-photo" />
+        </div>
         </div>
       </section>
 
