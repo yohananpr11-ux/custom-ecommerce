@@ -1,32 +1,57 @@
 /**
- * JonoLogo — text-based JONO brand mark using Bebas Neue (loaded in index.html).
- * No image file dependency; renders consistently in all environments.
+ * JonoLogo — cursive signature wordmark + bird mark, adapted from the
+ * approved JOAKIM brand assets (integration/joakim-phase-1) with the
+ * name changed to Jono. No image file dependency; renders consistently
+ * in all environments.
  */
 const SIZES = {
-  large:   { fontSize: '32px', letterSpacing: '0.12em' },
-  medium:  { fontSize: '24px', letterSpacing: '0.12em' },
-  small:   { fontSize: '18px', letterSpacing: '0.10em' },
-  watermark: { fontSize: '13px', letterSpacing: '0.10em', opacity: 0.08 },
+  large:     { fontSize: '52px', gap: '10px', birdSize: 18 },
+  medium:    { fontSize: '38px', gap: '8px', birdSize: 14 },
+  small:     { fontSize: '28px', gap: '6px', birdSize: 11 },
+  watermark: { fontSize: '20px', gap: '5px', birdSize: 9, opacity: 0.08 },
 };
+
+export function BirdMark({ size, color }) {
+  // viewBox is ~1.6:1 (wide, flat wingspan) — keep that ratio so the
+  // shape doesn't squash into an illegible squiggle at small sizes.
+  return (
+    <svg width={size * 1.6} height={size} viewBox="0 0 64 40" fill="none" aria-hidden="true">
+      <path
+        d="M2 16C12 6 20 6 26 15C32 6 40 6 50 16C41 13 34 14 27 22C20 14 13 13 2 16Z"
+        fill={color}
+      />
+    </svg>
+  );
+}
 
 export default function JonoLogo({ size = 'large', style = {}, className = '' }) {
   const base = SIZES[size] || SIZES.large;
+  const color = style.color || '#f5f0e8';
   return (
     <span
       className={className}
       style={{
-        fontFamily: '"Bebas Neue", sans-serif',
-        fontWeight: '400',
-        color: '#f3f4f6',
-        lineHeight: '1',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: base.gap,
         userSelect: 'none',
-        display: 'inline-block',
-        ...base,
+        lineHeight: '1',
+        opacity: base.opacity,
         ...style,
       }}
-      aria-label="JONO"
+      aria-label="Jono"
     >
-      JONO
+      <BirdMark size={base.birdSize} color={color} />
+      <span
+        style={{
+          fontFamily: '"Pinyon Script", cursive',
+          fontWeight: 400,
+          fontSize: base.fontSize,
+          color,
+        }}
+      >
+        Jono
+      </span>
     </span>
   );
 }

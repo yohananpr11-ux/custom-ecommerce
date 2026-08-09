@@ -25,7 +25,7 @@ import './index.css'
 import Footer from './components/Footer'
 import CookieConsent from './components/CookieConsent'
 import BackButton from './components/BackButton'
-import JonoLogo from './components/JonoLogo'
+import JonoLogo, { BirdMark } from './components/JonoLogo'
 
 // Compliance & Legal Pages
 import PrivacyPolicy from './pages/PrivacyPolicy'
@@ -4161,84 +4161,91 @@ function MainApp() {
       )}
 
       <section className="hero">
-        <div className="container hero-content">
+        <div className="hero-split">
+        <div className="hero-left">
           <motion.span className="hero-eyebrow" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            JONO SIGNATURE DROP
+            SPRING · SUMMER 2026
           </motion.span>
           <motion.h1 className="hero-value-prop" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            PREMIUM STREETWEAR. ZERO GUESSWORK FIT.
+            FREEDOM.<br />STYLE.<br />ATTITUDE.
           </motion.h1>
+          <motion.div className="hero-divider" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}>
+            <BirdMark size={20} color="#f5f0e8" />
+            <span className="hero-divider-line" />
+          </motion.div>
           <motion.p className="hero-vibe-subtitle" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-            Heavyweight essentials engineered for daily city movement, late-night edge, and effortless rotation.
+            Minimalist streetwear designed<br />for ultimate confidence.
           </motion.p>
-          <motion.ul className="hero-bullets" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
-            <li>Premium heavyweight cotton that keeps its shape.</li>
-            <li>Relaxed street fit with clean shoulder structure.</li>
-            <li>High-definition print that stays sharp wash after wash.</li>
-            <li>Built for day-to-night outfits without overthinking it.</li>
-          </motion.ul>
           <motion.div className="hero-cta-group" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
             <button className="hero-cta-primary drip-cta" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              Shop The Drop
+              Shop Now
             </button>
-            <button className="hero-cta-secondary drip-cta" onClick={() => { setActiveCategory('Shirts'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
-              Explore Best Sellers
+            <button className="hero-cta-secondary drip-cta" onClick={() => { setActiveCategory('All'); const elem = document.querySelector('.categories-nav'); if(elem) elem.scrollIntoView({ behavior: 'smooth' }); }}>
+              New Arrivals
             </button>
           </motion.div>
 
-          <motion.div 
-            className="featured-jewelry-banner" 
-            initial={{ scale: 0.95, opacity: 0 }} 
-            animate={{ scale: 1, opacity: 1 }} 
-            transition={{ delay: 0.5 }}
-            onClick={() => navigate('/product/16')}
-            style={{
-              cursor: 'pointer',
-              marginTop: '40px',
-              padding: '20px 24px',
-              background: '#050505',
-              border: '1px solid rgba(255,255,255,0.26)',
-              borderRadius: '2px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '16px',
-              maxWidth: '680px',
-              marginInline: 'auto',
-              textAlign: 'left'
-            }}
-          >
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: 800, color: '#f3f4f6', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                {locale === 'he' ? '✨ קולקציה חדשה: תכשיטי פרימיום' : '✨ NEW COLLECTION: PREMIUM JEWELRY'}
-              </span>
-              <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 700, color: '#f3f4f6', letterSpacing: '-0.01em' }}>
-                {locale === 'he' ? 'שרשרת קובנית עם ליטוש 6 פיאות' : 'Six-sided Grinding Cuban Link Chain'}
-              </h4>
-              <p style={{ margin: 0, fontSize: '13px', color: '#d1d5db', maxWidth: '480px' }}>
-                {locale === 'he' 
-                  ? 'נחתכה במיוחד עם שש פיאות שטוחות ללכידת אור מירבית. פלדת אל-חלד מוצקה בציפוי זהב עמוק.'
-                  : 'Meticulously faceted with six flat-cut facets per link. Solid stainless steel plated in deep gold.'}
-              </p>
-            </div>
-            <button style={{
-              padding: '8px 16px',
-              background: '#f3f4f6',
-              color: '#050505',
-              border: '1px solid #f3f4f6',
-              borderRadius: '2px',
-              fontWeight: 700,
-              fontSize: '12px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}>
-              {locale === 'he' ? 'גלה עכשיו' : 'Discover'}
-            </button>
-          </motion.div>
+          <div className="hero-tagline">NOT FOR THE OCCASION.<br />FOR EVERY DAY.</div>
+        </div>
+
+        <div className="hero-right">
+          <div className="hero-photo" />
+        </div>
         </div>
       </section>
+
+      <div className="container">
+        <motion.div
+          className="featured-jewelry-banner"
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          onClick={() => navigate('/product/16')}
+          style={{
+            cursor: 'pointer',
+            margin: '32px auto',
+            padding: '20px 24px',
+            background: '#050505',
+            border: '1px solid rgba(255,255,255,0.26)',
+            borderRadius: '2px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            maxWidth: '680px',
+            textAlign: 'left'
+          }}
+        >
+          <div>
+            <span style={{ fontSize: '10px', fontWeight: 800, color: '#f3f4f6', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+              {locale === 'he' ? '✨ קולקציה חדשה: תכשיטי פרימיום' : '✨ NEW COLLECTION: PREMIUM JEWELRY'}
+            </span>
+            <h4 style={{ margin: '4px 0', fontSize: '16px', fontWeight: 700, color: '#f3f4f6', letterSpacing: '-0.01em' }}>
+              {locale === 'he' ? 'שרשרת קובנית עם ליטוש 6 פיאות' : 'Six-sided Grinding Cuban Link Chain'}
+            </h4>
+            <p style={{ margin: 0, fontSize: '13px', color: '#d1d5db', maxWidth: '480px' }}>
+              {locale === 'he'
+                ? 'נחתכה במיוחד עם שש פיאות שטוחות ללכידת אור מירבית. פלדת אל-חלד מוצקה בציפוי זהב עמוק.'
+                : 'Meticulously faceted with six flat-cut facets per link. Solid stainless steel plated in deep gold.'}
+            </p>
+          </div>
+          <button style={{
+            padding: '8px 16px',
+            background: '#f3f4f6',
+            color: '#050505',
+            border: '1px solid #f3f4f6',
+            borderRadius: '2px',
+            fontWeight: 700,
+            fontSize: '12px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}>
+            {locale === 'he' ? 'גלה עכשיו' : 'Discover'}
+          </button>
+        </motion.div>
+      </div>
 
       {!isLoading && hardwareProducts.length > 0 && (
         <section className="hardware-section">
@@ -4478,11 +4485,16 @@ function MainApp() {
           </filter>
         </defs>
       </svg>
+        {!(currentPath === '/' && !isHeaderScrolled) && (
         <div className="announcement-bar">
         {t('announcement')}
       </div>
+        )}
 
-      <header className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header
+        className={`header container storefront-header${isHeaderScrolled ? ' scrolled' : ''}${currentPath === '/' && !isHeaderScrolled ? ' header-hero-transparent' : ''}`}
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+      >
         <div className="header-leading">
           <button className="nav-toggle" type="button" aria-label="Open navigation" onClick={openMobileNav}>
             <span />
@@ -4502,17 +4514,26 @@ function MainApp() {
             <JonoLogo size="large" />
           </a>
         </div>
+        {currentPath === '/' && !isHeaderScrolled ? (
+          <nav className="hero-nav-links">
+            <a onClick={() => { setActiveCategory('All'); document.querySelector('.categories-nav')?.scrollIntoView({ behavior: 'smooth' }); }}>SHOP</a>
+            <a onClick={() => { setActiveCategory('All'); document.querySelector('.categories-nav')?.scrollIntoView({ behavior: 'smooth' }); }}>NEW ARRIVALS</a>
+            <a onClick={() => document.querySelector('.categories-nav')?.scrollIntoView({ behavior: 'smooth' })}>COLLECTIONS</a>
+            <a onClick={() => navigate('/about')}>ABOUT</a>
+          </nav>
+        ) : (
         <div className="search-bar">
-          <input 
+          <input
             type="text"
             dir="ltr"
-            placeholder={t('search_placeholder')} 
+            placeholder={t('search_placeholder')}
             value={searchQuery}
             aria-label={t('search_aria')}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', visibility: currentPath === '/' && !isHeaderScrolled ? 'hidden' : 'visible' }}>
           <button className="lang-toggle-btn hide-on-mobile" onClick={toggleLocale}>
             {locale === 'he' ? 'EN' : 'עב'}
           </button>
