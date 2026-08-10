@@ -202,6 +202,7 @@ export function trackViewItem(product, currency) {
  * @param {string} currency
  */
 export function trackAddToCart(product, currency) {
+  notifyManny('add_to_cart', { args: Array.from(arguments) });
   try {
     const quantity = Math.max(1, Number(product.quantity) || 1);
     const unitPrice = Number(product.price) || 0;
@@ -247,6 +248,7 @@ export function trackAddToCart(product, currency) {
  * @param {{ value: number, currency: string, itemCount?: number }} info
  */
 export function trackInitiateCheckout(info) {
+  notifyManny('begin_checkout', { args: Array.from(arguments) });
   try {
     const value = Number(info && info.value) || 0;
     const currency = (info && info.currency) || 'ILS';
@@ -302,4 +304,21 @@ export function trackPurchase(info) {
   } catch (err) {
     console.warn('[analytics] purchase failed:', err);
   }
+}
+
+// --- Manny Funnel Tracking ---
+function notifyManny(eventType, payload) {
+  let visitor_id = 'unknown';
+  try { visitor_id = localStorage.getItem('drip_street_session_id') || 'unknown'; } catch(e) {}
+  
+  fetch('/api/analytics/event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      event_type: eventType, 
+      visitor_id: visitor_id, 
+      device_type: window.innerWidth < 768 ? 'Mobile' : 'Desktop', 
+      payload 
+    })
+  }).catch(() => {}); // Silent catch so it never breaks the user experience
 }
