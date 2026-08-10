@@ -1122,6 +1122,26 @@ app.post('/api/admin/trigger-daily-report', async (req, res) => {
   return res.json(result);
 });
 
+// --- Funnel Analytics Endpoint ---
+app.post('/api/analytics/event', express.json(), async (req, res) => {
+  try {
+    const { event_type, visitor_id, device_type, payload } = req.body || {};
+    if (!event_type) return res.status(400).json({ error: 'event_type is required' });
+
+    const payload_json = payload ? JSON.stringify(payload) : null;
+    
+    db.prepare(`
+      INSERT INTO analytics_events (event_type, visitor_id, device_type, payload_json)
+      VALUES (?, ?, ?, ?)
+    `).run(event_type, visitor_id, device_type, payload_json);
+
+    res.json({ success: true, event_type });
+  } catch (err) {
+    console.error('Analytics event error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.post('/api/analytics/visit', botDetectorMiddleware, express.json(), async (req, res) => {
   // Env-var presence snapshot — logged on every failure path so Render logs
   // make root cause obvious without ever leaking secret values.
