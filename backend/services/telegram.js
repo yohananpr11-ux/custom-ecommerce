@@ -439,30 +439,36 @@ class TelegramService {
                             recommendations.push(`⚠️ ${vr.suspicious} suspicious visitors today — review traffic source.`);
                           }
 
+                          
+                          const aovILS = orderCount > 0 ? (grossRevenueILS / orderCount).toFixed(2) : '0.00';
+                          const convRate = vr.humans > 0 ? ((orderCount / vr.humans) * 100).toFixed(2) : '0.00';
+                          
+                          let smartSummary = "🚀 Traffic is flowing, but let's push for more conversions.";
+                          if (orderCount > 0 && convRate > 2) smartSummary = "🔥 Great conversion rate today! The brand is resonating.";
+                          else if (vr.humans > 30 && orderCount === 0) smartSummary = "👀 High traffic but zero sales. Check if prices or shipping costs are creating friction.";
+                          else if (vr.humans < 10) smartSummary = "💤 Quiet day on the site. Perfect time to drop some fresh UGC on TikTok or Instagram.";
+
                           const reportText = [
                             `📊 <b>JONO Daily Store Intelligence</b> [src:render-main] — ${displayDate}`,
-                            `━━━━━━━━━━━━━━━━━━━━━`,
-                            `👥 <b>Traffic (Human / Bot):</b>`,
-                            `• 👤 Humans: <b>${vr.humans}</b>  🤖 Known Bots: ${vr.knownBots}  ⚠️ Suspicious: ${vr.suspicious}`,
+                            `─────────────────────────`,
+                            `📈 <b>Performance & Conversions:</b>`,
+                            `• Humans: <b>${vr.humans}</b>  |  Bots: ${vr.knownBots}`,
+                            `• Conversion Rate: <b>${convRate}%</b>`,
+                            `• AOV (Avg Order): <b>₪${aovILS}</b>`,
                             ``,
                             `💰 <b>Sales & Financials:</b>`,
                             `• Total Orders: <b>${orderCount}</b>`,
-                            `• Gross Revenue: <b>₪${grossRevenueILS.toFixed(2)}</b> ($${grossRevenueUSD})`,
-                            `• PayPal Fees (3%): ₪${paypalFeesILS.toFixed(2)}`,
-                            `• Est. COGS: ₪${estCostsILS} (heavy $${COGS_HEAVY_USD} / CVC $${COGS_CVC_USD} × ₪${FX})`,
+                            `• Gross Revenue: <b>₪${grossRevenueILS.toFixed(2)}</b> (${grossRevenueUSD})`,
                             `• Est. Net Profit: <b>₪${estProfitILS}</b> (${grossMarginPct}% margin)`,
                             `• Top Products: ${escapeHtml(topProducts)}`,
-                            ``,
-                            `💡 <b>Example calc (1× heavy @ ₪199.90):</b>`,
-                            `  $53.30 retail − $22.30 COGS − $1.86 fee = <b>$29.14 profit (~₪109)</b>`,
                             ``,
                             `👥 <b>Funnel & Leads:</b>`,
                             `• New Leads: <b>${leadsToday}</b>  |  Abandoned Carts: <b>${cartsToday}</b>`,
                             ``,
-                            `🤖 <b>AI Insights:</b>`,
+                            `🤖 <b>Manny's Insights:</b>`,
+                            `💡 <i>${smartSummary}</i>`,
                             ...recommendations.map((rec, i) => `${i + 1}. ${rec}`)
                           ].join('\n');
-
                           resolve(reportText);
                         }
                       );
