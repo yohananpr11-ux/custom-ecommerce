@@ -48,7 +48,7 @@ const readEnvFile = (filePath) => {
 };
 
 const resolveChatId = () => {
-  if (process.env.TELEGRAM_OWNER_CHAT_ID) return process.env.TELEGRAM_OWNER_CHAT_ID;
+  if ((process.env.JONO_TELEGRAM_CHAT_ID || process.env.TELEGRAM_OWNER_CHAT_ID)) return (process.env.JONO_TELEGRAM_CHAT_ID || process.env.TELEGRAM_OWNER_CHAT_ID);
 
   const fromAllowed = pickFirstId(process.env.TELEGRAM_ALLOWED_USER_IDS || '');
   if (fromAllowed) return fromAllowed;
@@ -83,7 +83,7 @@ const resolveChatId = () => {
 
 class TelegramService {
   constructor() {
-    this.token = process.env.TELEGRAM_BOT_TOKEN;
+    this.token = (process.env.JONO_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN);
     this.chatId = resolveChatId();
     this.baseUrl = `https://api.telegram.org/bot${this.token}`;
 
