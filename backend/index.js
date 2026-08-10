@@ -1122,11 +1122,16 @@ app.post('/api/admin/trigger-daily-report', async (req, res) => {
   return res.json(result);
 });
 
-// --- Funnel Analytics Endpoint ---
+// --- Upgraded Real-Time Funnel Analytics Endpoint ---
 app.post('/api/analytics/event', express.json(), async (req, res) => {
   try {
     const { event_type, visitor_id, device_type, payload } = req.body || {};
     if (!event_type) return res.status(400).json({ error: 'event_type is required' });
+
+    // Check if request comes from a known bot via headers or UA
+    const ua = (req.headers['user-agent'] || '').toLowerCase();
+    const isBot = ua.includes('bot') || ua.includes('crawler') || ua.includes('spider') || ua.includes('preview');
+    const visitorType = isBot ? '🤖 Bot / Crawler' : '👤 לקוח אמיתי (Human)';
 
     const payload_json = payload ? JSON.stringify(payload) : null;
     
@@ -1135,7 +1140,23 @@ app.post('/api/analytics/event', express.json(), async (req, res) => {
       VALUES (?, ?, ?, ?)
     `).run(event_type, visitor_id, device_type, payload_json);
 
-    res.json({ success: true, event_type });
+    // If it's a real human doing a high-intent action, notify via Telegram instantly!
+    if (!isBot && (event_type === 'begin_checkout' || event_type === 'purchase')) {
+      try {
+        const telegramService = req.app.locals.telegramService; // or direct call if available
+        // We can trigger a direct telegram notification here
+        const msg = `🚨 <b>פעילות בעלת ערך גבוה באתר!</b>\n\n<b>סוג משתמש:</b> ${visitorType}\n<b>פעולה:</b> ${event_type}\n<b>מכשיר:</b> ${device_type || 'Unknown'}\n<b>מזהה:</b> ${visitor_id}`;
+        
+        // Send via telegram service if instantiated
+        if (global.telegramBotInstance && global.telegramAdminChatId) {
+          await global.telegramBotInstance.sendMessage(global.telegramAdminChatId, msg, { parse_mode: 'HTML' });
+        }
+      } catch (tgErr) {
+        console.error('Real-time telegram alert error:', tgErr.message);
+      }
+    }
+
+    res.json({ success: true, event_type, visitorType });
   } catch (err) {
     console.error('Analytics event error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
