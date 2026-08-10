@@ -187,3 +187,49 @@
 .phase2-cro-fallback {
   --phase2-accent: #ff6b35;
 }
+
+/* --- JONO STORE: QUIET LUXURY EDITORIAL OVERRIDE --- */
+.hero, [class*="hero"], .hero-section {
+    position: relative !important;
+    width: 100vw !important;
+    min-height: 100vh !important;
+    background-size: cover !important;
+    background-position: center !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    padding: 4rem 8% !important;
+    overflow: hidden !important;
+}
+.hero::before, [class*="hero"]::before {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(90deg, rgba(10,10,10,0.85) 0%, rgba(10,10,10,0.4) 60%, rgba(10,10,10,0.2) 100%) !important;
+    z-index: 1 !important;
+}
+.hero > *, [class*="hero"] > * {
+    position: relative !important;
+    z-index: 2 !important;
+}
+/* Luxury Typography & Tracking */
+h1, .hero-title {
+    letter-spacing: -0.03em !important;
+    font-weight: 300 !important;
+    text-transform: uppercase !important;
+}
+/* Minimalist Glassmorphism Buttons */
+button, .btn, a.btn {
+    letter-spacing: 0.15em !important;
+    text-transform: uppercase !important;
+    font-size: 0.75rem !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    backdrop-filter: blur(10px) !important;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+button:hover, .btn:hover, a.btn:hover {
+    background: #ffffff !important;
+    color: #0a0a0a !important;
+    border-color: #ffffff !important;
+}
