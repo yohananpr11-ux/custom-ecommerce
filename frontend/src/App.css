@@ -233,3 +233,82 @@ button:hover, .btn:hover, a.btn:hover {
     color: #0a0a0a !important;
     border-color: #ffffff !important;
 }
+
+/* --- JONO STORE: CINEMATIC FULL-BLEED HERO OVERRIDE --- */
+.hero {
+    position: relative !important;
+    width: 100vw !important;
+    min-height: 100vh !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    padding: 0 6% !important;
+    overflow: hidden !important;
+    background: #0a0a0a !important;
+}
+
+.hero-split {
+    position: absolute !important;
+    inset: 0 !important;
+    display: flex !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 1 !important;
+}
+
+.hero-left {
+    position: relative !important;
+    z-index: 3 !important;
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    padding: 4rem 2rem 4rem 0 !important;
+    max-width: 650px !important;
+}
+
+.hero-right {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 2 !important;
+}
+
+.hero-photo {
+    width: 100% !important;
+    height: 100% !important;
+    background-size: cover !important;
+    background-position: center !important;
+}
+
+.hero-right::after {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(90deg, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.75) 45%, rgba(10,10,10,0.3) 100%) !important;
+    z-index: 2 !important;
+}
+
+/* Luxury Typography & Buttons */
+.hero-value-prop {
+    letter-spacing: -0.03em !important;
+    font-weight: 300 !important;
+    text-transform: uppercase !important;
+    color: #ffffff !important;
+}
+
+.hero-cta-primary, .hero-cta-secondary {
+    letter-spacing: 0.15em !important;
+    text-transform: uppercase !important;
+    border: 1px solid rgba(255, 255, 255, 0.4) !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    backdrop-filter: blur(12px) !important;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.hero-cta-primary:hover, .hero-cta-secondary:hover {
+    background: #ffffff !important;
+    color: #0a0a0a !important;
+    border-color: #ffffff !important;
+}
