@@ -1116,6 +1116,7 @@ app.get('/api/admin/test-telegram', async (req, res) => {
 });
 
 app.post('/api/admin/trigger-daily-report', async (req, res) => {
+  console.log('[TRIGGER-DAILY-REPORT] caller ip=' + (req.headers['x-forwarded-for'] || req.ip || 'unknown') + ' ua=' + (req.headers['user-agent'] || 'none') + ' at=' + new Date().toISOString());
   if (!requireAdminAuth(req, res)) return;
   const result = await telegram.sendDailyReport();
   return res.json(result);
