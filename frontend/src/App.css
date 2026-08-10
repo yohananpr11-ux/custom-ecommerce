@@ -406,3 +406,56 @@ button:hover, .btn:hover, a.btn:hover {
     flex-direction: column !important;
     align-items: flex-start !important;
 }
+
+/* --- JONO STORE: ULTIMATE CINEMATIC HERO OVERRIDE --- */
+.hero {
+    position: relative !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    padding: 0 8% !important;
+    overflow: hidden !important;
+    background: #0a0a0a !important;
+}
+.hero-split {
+    position: absolute !important;
+    inset: 0 !important;
+    display: flex !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 1 !important;
+}
+.hero-left {
+    position: relative !important;
+    z-index: 3 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: flex-start !important;
+    max-width: 650px !important;
+    padding: 0 !important;
+    background: transparent !important;
+}
+.hero-right {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 1 !important;
+}
+.hero-photo {
+    width: 100% !important;
+    height: 100% !important;
+    background-size: cover !important;
+    background-position: center !important;
+}
+.hero-right::after {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(90deg, rgba(10,10,10,0.96) 0%, rgba(10,10,10,0.75) 50%, rgba(10,10,10,0.25) 100%) !important;
+    z-index: 2 !important;
+}
