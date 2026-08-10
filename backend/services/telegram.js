@@ -305,6 +305,35 @@ class TelegramService {
         timezone: 'Asia/Jerusalem'
       });
       console.log('✅ Mani V2 Daily Intelligence Cron scheduled for 20:00 Asia/Jerusalem.');
+      // --- DB Migration for Abandoned Carts ---
+      try {
+        db.prepare("ALTER TABLE abandoned_carts ADD COLUMN alerted INTEGER DEFAULT 0").run();
+        console.log("✅ Column 'alerted' added to abandoned_carts successfully.");
+      } catch (e) {} // Ignore if it already exists
+
+      // --- Abandoned Cart Cron ---
+      cron.schedule('0 * * * *', async () => {
+        try {
+          const carts = db.prepare("SELECT * FROM abandoned_carts WHERE alerted = 0 AND datetime(updated_at) <= datetime('now', '-1 hour') LIMIT 10").all();
+          
+          for (const cart of carts) {
+            let itemSummary = 'Unknown items';
+            try {
+              const items = JSON.parse(cart.items_json || '[]');
+              itemSummary = items.map(i => `${i.quantity}x ${i.title}`).join(', ');
+            } catch(e) {}
+            
+            const timeStr = new Date(cart.updated_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+            const msg = `🛒 <b>Abandoned Cart Alert!</b>\n\n<b>Email:</b> ${cart.email || 'None provided'}\n<b>Items:</b> ${itemSummary}\n<b>Last Active:</b> ${timeStr}\n\n<i>💡 Consider reaching out or checking PayPal logs.</i>`;
+            
+            await this.bot.sendMessage(this.adminChatId, msg, { parse_mode: 'HTML' });
+            db.prepare("UPDATE abandoned_carts SET alerted = 1 WHERE id = ?").run(cart.id);
+          }
+        } catch (err) {
+          console.error('Abandoned cart cron error:', err.message);
+        }
+      });
+      console.log('✅ Abandoned Cart Cron scheduled (hourly).');
     } catch (err) {
       console.error('Failed to schedule Daily Report Cron:', err.message);
     }
