@@ -409,7 +409,7 @@ class TelegramService {
                           }
 
                           const reportText = [
-                            `📊 <b>JONO Daily Store Intelligence</b> — ${displayDate}`,
+                            `📊 <b>JONO Daily Store Intelligence</b> [src:render-main] — ${displayDate}`,
                             `━━━━━━━━━━━━━━━━━━━━━`,
                             `👥 <b>Traffic (Human / Bot):</b>`,
                             `• 👤 Humans: <b>${vr.humans}</b>  🤖 Known Bots: ${vr.knownBots}  ⚠️ Suspicious: ${vr.suspicious}`,
