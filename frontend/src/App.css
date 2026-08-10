@@ -369,3 +369,40 @@ button:hover, .btn:hover, a.btn:hover {
     max-width: 750px !important;
     background: transparent !important;
 }
+/* --- TRUE EDITORIAL CINEMATIC HERO --- */
+.cinematic-hero-v2 {
+    position: relative !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    overflow: hidden !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    background: #0a0a0a !important;
+}
+.cinematic-bg {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background-image: url('./assets/jono-hero-paris.png') !important;
+    background-size: cover !important;
+    background-position: center !important;
+    z-index: 1 !important;
+}
+.cinematic-vignette {
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(90deg, rgba(10,10,10,0.96) 0%, rgba(10,10,10,0.78) 45%, rgba(10,10,10,0.25) 100%) !important;
+    z-index: 2 !important;
+}
+.cinematic-content {
+    position: relative !important;
+    z-index: 3 !important;
+    padding: 0 8% !important;
+    max-width: 720px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+}
