@@ -1121,7 +1121,7 @@ app.post('/api/admin/trigger-daily-report', async (req, res) => {
   return res.json(result);
 });
 
-app.post('/api/analytics/visit', detectBot, express.json(), async (req, res) => {
+app.post('/api/analytics/visit', botDetectorMiddleware, express.json(), async (req, res) => {
   // Env-var presence snapshot — logged on every failure path so Render logs
   // make root cause obvious without ever leaking secret values.
   const envSnapshot = () => ({
@@ -1151,6 +1151,8 @@ app.post('/api/analytics/visit', detectBot, express.json(), async (req, res) => 
       visitNotificationCache.set(cacheKey, now);
 
       telegram.queueVisit({
+        visitorType: req.visitorType,
+        visitorDevice: req.visitorDevice,
         path: path || '/',
         isBot,
         botReason,

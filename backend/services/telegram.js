@@ -219,7 +219,9 @@ class TelegramService {
       const label = v.isBot ? `Bot (${v.botReason || 'crawler'})` : 'Real';
       const pathStr = escapeHtml(v.path || '/');
       const countryStr = escapeHtml(v.country || 'Unknown');
-      lines.push(`${icon} <b>${label}</b> | <code>${pathStr}</code> | ${countryStr}`);
+      const deviceStr = escapeHtml(v.visitorDevice || '-');
+      const typeStr = escapeHtml(v.visitorType || (v.isBot ? 'bot' : 'human'));
+      lines.push(`${icon} <b>${label}</b> | <code>${pathStr}</code> | ${countryStr} | ${deviceStr} | ${typeStr}`);
     }
 
     await this.sendMessage(lines.join('\n'));
