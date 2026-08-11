@@ -1140,11 +1140,25 @@ app.get('/api/admin/test-printify', async (req, res) => {
     const axios = require('axios');
     const response = await axios.get('https://api.printify.com/v1/shops.json', {
       headers: {
-        'Authorization': `Bearer ${PRINTIFY_API_TOKEN}`
+        'Authorization': `Bearer ${PRINTIFY_API_TOKEN}`,
+        'User-Agent': 'JONO-Store/1.0'
       }
     });
 
-    const shops = response.data;
+    const shops = Array.isArray(response.data) ? response.data : null;
+
+    if (!shops) {
+      return res.status(502).json({
+        success: false,
+        error: 'Unexpected response from Printify',
+        printify: {
+          ok: false,
+          status: response.status,
+          reason: 'invalid_printify_response'
+        }
+      });
+    }
+
     const shop = shops.find(s => String(s.id) === String(PRINTIFY_SHOP_ID));
 
     if (!shop) {
