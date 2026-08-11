@@ -253,7 +253,8 @@ const capturePayPalOrder = async (accessToken, orderID) => {
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'PayPal-Request-Id': 'capture-' + orderID
       }
     }
   );
