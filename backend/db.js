@@ -114,6 +114,7 @@ db.serialize(() => {
       source TEXT DEFAULT 'web',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      alerted INTEGER DEFAULT 0,
       UNIQUE(email, cart_fingerprint)
     )
   `);
@@ -325,6 +326,7 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('leads', 'emailAttempts', 'INTEGER DEFAULT 0'),
     addColumnIfMissing('leads', 'lastEmailAttemptAt', 'TEXT'),
     addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0'),
+    addColumnIfMissing('abandoned_carts', 'alerted', 'INTEGER DEFAULT 0'),
   ]);
 
   // Local/mock placeholder products (type='local') are never purged here.

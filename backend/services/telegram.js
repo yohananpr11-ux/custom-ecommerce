@@ -305,11 +305,6 @@ class TelegramService {
         timezone: 'Asia/Jerusalem'
       });
       console.log('✅ Mani V2 Daily Intelligence Cron scheduled for 20:00 Asia/Jerusalem.');
-      // --- DB Migration for Abandoned Carts ---
-      try {
-        db.prepare("ALTER TABLE abandoned_carts ADD COLUMN alerted INTEGER DEFAULT 0").run();
-        console.log("✅ Column 'alerted' added to abandoned_carts successfully.");
-      } catch (e) {} // Ignore if it already exists
 
       // --- Abandoned Cart Cron ---
       cron.schedule('0 * * * *', async () => {
