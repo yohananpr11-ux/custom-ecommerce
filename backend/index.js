@@ -1138,19 +1138,44 @@ app.get('/api/admin/test-printify', async (req, res) => {
 
   try {
     const axios = require('axios');
-    const response = await axios.get(`https://api.printify.com/v1/shops/${PRINTIFY_SHOP_ID}.json`, {
+    const response = await axios.get('https://api.printify.com/v1/shops.json', {
       headers: {
-        'Authorization': `Bearer ${PRINTIFY_API_TOKEN}`
+        'Authorization': `Bearer ${PRINTIFY_API_TOKEN}`,
+        'User-Agent': 'JONO-Store/1.0'
       }
     });
+
+    const shops = Array.isArray(response.data) ? response.data : null;
+
+    if (!shops) {
+      return res.status(502).json({
+        success: false,
+        error: 'Unexpected response from Printify',
+        printify: {
+          ok: false,
+          status: response.status,
+          reason: 'invalid_printify_response'
+        }
+      });
+    }
+
+    const shop = shops.find(s => String(s.id) === String(PRINTIFY_SHOP_ID));
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        error: `Shop with ID ${PRINTIFY_SHOP_ID} not found in Printify account`
+      });
+    }
 
     return res.json({
       success: true,
       printify: {
         ok: true,
         status: response.status,
-        shop_id: PRINTIFY_SHOP_ID,
-        shop_name: response.data?.title || 'unknown'
+        shop_id: shop.id,
+        shop_name: shop.title,
+        sales_channel: shop.sales_channel
       }
     });
   } catch (err) {
@@ -1160,7 +1185,7 @@ app.get('/api/admin/test-printify', async (req, res) => {
       printify: {
         ok: false,
         status: err.response?.status || 0,
-        details: err.response?.data || err.message
+        reason: 'printify_api_error'
       }
     });
   }
