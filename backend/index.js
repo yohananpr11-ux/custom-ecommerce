@@ -1116,6 +1116,56 @@ app.get('/api/admin/test-telegram', async (req, res) => {
   return res.json({ success: true, telegram: result });
 });
 
+app.get('/api/admin/test-printify', async (req, res) => {
+  if (!requireAdminAuth(req, res)) return;
+  
+  const PRINTIFY_API_TOKEN = process.env.PRINTIFY_API_TOKEN;
+  const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
+
+  if (!PRINTIFY_API_TOKEN || PRINTIFY_API_TOKEN === 'YOUR_PRINTIFY_TOKEN') {
+    return res.status(503).json({
+      success: false,
+      error: 'PRINTIFY_API_TOKEN not configured on server'
+    });
+  }
+
+  if (!PRINTIFY_SHOP_ID) {
+    return res.status(503).json({
+      success: false,
+      error: 'PRINTIFY_SHOP_ID not configured on server'
+    });
+  }
+
+  try {
+    const axios = require('axios');
+    const response = await axios.get(`https://api.printify.com/v1/shops/${PRINTIFY_SHOP_ID}.json`, {
+      headers: {
+        'Authorization': `Bearer ${PRINTIFY_API_TOKEN}`
+      }
+    });
+
+    return res.json({
+      success: true,
+      printify: {
+        ok: true,
+        status: response.status,
+        shop_id: PRINTIFY_SHOP_ID,
+        shop_name: response.data?.title || 'unknown'
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: 'Printify API connection failed',
+      printify: {
+        ok: false,
+        status: err.response?.status || 0,
+        details: err.response?.data || err.message
+      }
+    });
+  }
+});
+
 app.post('/api/admin/trigger-daily-report', async (req, res) => {
   console.log('[TRIGGER-DAILY-REPORT] caller ip=' + (req.headers['x-forwarded-for'] || req.ip || 'unknown') + ' ua=' + (req.headers['user-agent'] || 'none') + ' at=' + new Date().toISOString());
   if (!requireAdminAuth(req, res)) return;
