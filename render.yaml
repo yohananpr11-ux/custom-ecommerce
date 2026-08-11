@@ -12,11 +12,11 @@ services:
       - key: TARGET_PROFIT_MARGIN
         value: 0.15
       - key: FRONTEND_BASE_URL
-        value: https://custom-ecommerce-seven.vercel.app
+        value: https://www.shopjono.com
       - key: API_BASE_URL
         value: https://custom-ecommerce-qp30.onrender.com
       - key: CORS_ALLOWED_ORIGINS
-        value: https://custom-ecommerce-seven.vercel.app
+        value: https://www.shopjono.com
       - key: PRINTIFY_WEBHOOK_URL
         value: https://custom-ecommerce-qp30.onrender.com/api/webhooks/printify
       - key: TELEGRAM_BOT_TOKEN

@@ -266,7 +266,7 @@ const normalizeUrl = (value) => {
   return value.trim().replace(/\/$/, '');
 };
 
-const DEFAULT_FRONTEND_URL = 'https://custom-ecommerce-seven.vercel.app';
+const DEFAULT_FRONTEND_URL = 'https://www.shopjono.com';
 const FRONTEND_BASE_URL = normalizeUrl(
   process.env.FRONTEND_BASE_URL
   || process.env.PUBLIC_APP_URL
@@ -2628,7 +2628,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
           ` : (statusClass === 'success' ? `
             <button id="resubscribe-btn" class="btn">Keep Me Subscribed</button>
           ` : '')}
-          <a href="https://custom-ecommerce-seven.vercel.app" class="btn btn-secondary">Return to Store</a>
+          <a href="https://www.shopjono.com" class="btn btn-secondary">Return to Store</a>
         </div>
         <div class="footer-brand">&copy; 2026 DRIP STREET SHP</div>
       </div>
@@ -2703,7 +2703,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
                   const btnGroup = document.querySelector('.btn-group');
                   btnGroup.innerHTML = \`
                     <button id="resubscribe-btn-dynamic" class="btn">Keep Me Subscribed</button>
-                    <a href="https://custom-ecommerce-seven.vercel.app" class="btn btn-secondary">Return to Store</a>
+                    <a href="https://www.shopjono.com" class="btn btn-secondary">Return to Store</a>
                   \`;
                   
                   const dynamicResubscribeBtn = document.getElementById('resubscribe-btn-dynamic');
