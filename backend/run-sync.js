@@ -83,17 +83,43 @@ async function main() {
     const db = new sqlite3.Database(dbPath);
 
     for (const prod of processedProducts) {
+      const printifyId = String(prod.printifyId);
       await new Promise((resolve, reject) => {
-        db.get(`SELECT id FROM products WHERE title = ? AND type = 'printify'`, [prod.title], (err, existing) => {
+        // Step 1: Match by printifyId first
+        db.get(`SELECT id FROM products WHERE type = 'printify' AND printifyId = ?`, [printifyId], (err, existing) => {
           if (err) return reject(err);
+
           if (existing) {
-            db.run(`UPDATE products SET price = ?, imageUrl = ?, description = ? WHERE id = ?`,
-              [prod.price, prod.imageUrl, prod.description, existing.id], resolve);
-            console.log(`  ♻️  Updated: ${prod.title}`);
+            // UPDATE including title and printifyId
+            db.run(`UPDATE products SET title = ?, price = ?, imageUrl = ?, description = ?, printifyId = ? WHERE id = ?`,
+              [prod.title, prod.price, prod.imageUrl, prod.description, printifyId, existing.id], (updateErr) => {
+                if (updateErr) return reject(updateErr);
+                console.log(`  ♻️  Updated: ${prod.title}`);
+                resolve();
+              });
           } else {
-            db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
-              [prod.title, prod.description, prod.price, prod.imageUrl, prod.stock, prod.type], resolve);
-            console.log(`  ✅ Inserted: ${prod.title}`);
+            // Step 2: Fallback to title matching for legacy rows
+            db.get(`SELECT id FROM products WHERE type = 'printify' AND title = ? AND (printifyId IS NULL OR printifyId = '')`, [prod.title], (err2, legacyMatch) => {
+              if (err2) return reject(err2);
+
+              if (legacyMatch) {
+                // Backfill printifyId for legacy match
+                db.run(`UPDATE products SET title = ?, price = ?, imageUrl = ?, description = ?, printifyId = ? WHERE id = ?`,
+                  [prod.title, prod.price, prod.imageUrl, prod.description, printifyId, legacyMatch.id], (updateErr) => {
+                    if (updateErr) return reject(updateErr);
+                    console.log(`  ♻️  Updated (legacy backfill): ${prod.title}`);
+                    resolve();
+                  });
+              } else {
+                // INSERT new product with printifyId
+                db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type, printifyId) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                  [prod.title, prod.description, prod.price, prod.imageUrl, prod.stock, prod.type, printifyId], (insertErr) => {
+                    if (insertErr) return reject(insertErr);
+                    console.log(`  ✅ Inserted: ${prod.title}`);
+                    resolve();
+                  });
+              }
+            });
           }
         });
       });
