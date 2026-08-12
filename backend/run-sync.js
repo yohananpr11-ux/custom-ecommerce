@@ -86,26 +86,34 @@ async function main() {
       const printifyId = String(prod.printifyId);
       await new Promise((resolve, reject) => {
         // Step 1: Match by printifyId first
-        db.get(`SELECT id FROM products WHERE type = 'printify' AND printifyId = ?`, [printifyId], (err, existing) => {
+        db.all(`SELECT id FROM products WHERE type = 'printify' AND printifyId = ?`, [printifyId], (err, allMatches) => {
           if (err) return reject(err);
 
-          if (existing) {
+          if (allMatches && allMatches.length > 1) {
+            return reject(new Error(`Duplicate printifyId ${printifyId} found in ${allMatches.length} products. Sync aborted.`));
+          }
+
+          if (allMatches && allMatches.length === 1) {
             // UPDATE including title and printifyId
             db.run(`UPDATE products SET title = ?, price = ?, imageUrl = ?, description = ?, printifyId = ? WHERE id = ?`,
-              [prod.title, prod.price, prod.imageUrl, prod.description, printifyId, existing.id], (updateErr) => {
+              [prod.title, prod.price, prod.imageUrl, prod.description, printifyId, allMatches[0].id], (updateErr) => {
                 if (updateErr) return reject(updateErr);
                 console.log(`  ♻️  Updated: ${prod.title}`);
                 resolve();
               });
           } else {
             // Step 2: Fallback to title matching for legacy rows
-            db.get(`SELECT id FROM products WHERE type = 'printify' AND title = ? AND (printifyId IS NULL OR printifyId = '')`, [prod.title], (err2, legacyMatch) => {
+            db.all(`SELECT id FROM products WHERE type = 'printify' AND title = ? AND (printifyId IS NULL OR printifyId = '')`, [prod.title], (err2, allLegacy) => {
               if (err2) return reject(err2);
 
-              if (legacyMatch) {
+              if (allLegacy && allLegacy.length > 1) {
+                return reject(new Error(`Duplicate legacy title "${prod.title}" found in ${allLegacy.length} products. Sync aborted.`));
+              }
+
+              if (allLegacy && allLegacy.length === 1) {
                 // Backfill printifyId for legacy match
                 db.run(`UPDATE products SET title = ?, price = ?, imageUrl = ?, description = ?, printifyId = ? WHERE id = ?`,
-                  [prod.title, prod.price, prod.imageUrl, prod.description, printifyId, legacyMatch.id], (updateErr) => {
+                  [prod.title, prod.price, prod.imageUrl, prod.description, printifyId, allLegacy[0].id], (updateErr) => {
                     if (updateErr) return reject(updateErr);
                     console.log(`  ♻️  Updated (legacy backfill): ${prod.title}`);
                     resolve();
