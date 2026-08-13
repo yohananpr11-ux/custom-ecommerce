@@ -2,6 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const syncHelpers = require('../services/printify-sync-helpers');
+const assert = require('node:assert/strict');
 
 // Create a temporary test database
 const testDbPath = path.resolve(__dirname, 'test-ecommerce.db');
@@ -106,8 +107,11 @@ async function runTests() {
       else resolve(rows);
     });
   });
-  const test1Pass = products1.length === 1 && products1[0].id === productId1 && products1[0].title === 'New title' && products1[0].printifyId === 'P1';
-  console.log(`  ${test1Pass ? '✅ PASS' : '❌ FAIL'} - ${test1Pass ? 'Product renamed, ID preserved, no duplicate' : 'Test failed'}`);
+  assert.equal(products1.length, 1, 'Should have exactly 1 product');
+  assert.equal(products1[0].id, productId1, 'Product ID should be preserved');
+  assert.equal(products1[0].title, 'New title', 'Product title should be updated');
+  assert.equal(products1[0].printifyId, 'P1', 'Product printifyId should be preserved');
+  console.log('  ✅ PASS - Product renamed, ID preserved, no duplicate');
   await cleanupTestDb();
 
   // TEST 2 — legacy backfill
@@ -134,8 +138,10 @@ async function runTests() {
       else resolve(rows);
     });
   });
-  const test2Pass = products2.length === 1 && products2[0].id === productId2 && products2[0].printifyId === 'P2';
-  console.log(`  ${test2Pass ? '✅ PASS' : '❌ FAIL'} - ${test2Pass ? 'Legacy row backfilled with printifyId, no INSERT' : 'Test failed'}`);
+  assert.equal(products2.length, 1, 'Should have exactly 1 product');
+  assert.equal(products2[0].id, productId2, 'Product ID should be preserved');
+  assert.equal(products2[0].printifyId, 'P2', 'Product printifyId should be backfilled');
+  console.log('  ✅ PASS - Legacy row backfilled with printifyId, no INSERT');
   await cleanupTestDb();
 
   // TEST 3 — new product
@@ -158,8 +164,10 @@ async function runTests() {
       else resolve(rows);
     });
   });
-  const test3Pass = products3.length === 1 && products3[0].printifyId === 'P3' && products3[0].title === 'New Product';
-  console.log(`  ${test3Pass ? '✅ PASS' : '❌ FAIL'} - ${test3Pass ? 'New product inserted with printifyId' : 'Test failed'}`);
+  assert.equal(products3.length, 1, 'Should have exactly 1 product');
+  assert.equal(products3[0].printifyId, 'P3', 'Product printifyId should be set');
+  assert.equal(products3[0].title, 'New Product', 'Product title should be set');
+  console.log('  ✅ PASS - New product inserted with printifyId');
   await cleanupTestDb();
 
   // TEST 4 — existing variant
@@ -196,8 +204,10 @@ async function runTests() {
       else resolve(rows);
     });
   });
-  const test4Pass = variants4.length === 1 && variants4[0].id === variantId4 && variants4[0].price === 110;
-  console.log(`  ${test4Pass ? '✅ PASS' : '❌ FAIL'} - ${test4Pass ? 'Existing variant updated, ID preserved' : 'Test failed'}`);
+  assert.equal(variants4.length, 1, 'Should have exactly 1 variant');
+  assert.equal(variants4[0].id, variantId4, 'Variant ID should be preserved');
+  assert.equal(variants4[0].price, 110, 'Variant price should be updated');
+  console.log('  ✅ PASS - Existing variant updated, ID preserved');
   await cleanupTestDb();
 
   // TEST 5 — new variant
@@ -230,8 +240,9 @@ async function runTests() {
       else resolve(rows);
     });
   });
-  const test5Pass = variants5.length === 1 && variants5[0].printifyVariantId === 'V2';
-  console.log(`  ${test5Pass ? '✅ PASS' : '❌ FAIL'} - ${test5Pass ? 'New variant inserted' : 'Test failed'}`);
+  assert.equal(variants5.length, 1, 'Should have exactly 1 variant');
+  assert.equal(variants5[0].printifyVariantId, 'V2', 'Variant printifyVariantId should be set');
+  console.log('  ✅ PASS - New variant inserted');
   await cleanupTestDb();
 
   // TEST 6 — removed/stale variant
@@ -259,8 +270,11 @@ async function runTests() {
       else resolve(rows);
     });
   });
-  const test6Pass = variants6.length === 1 && variants6[0].printifyVariantId === 'V3' && variants6[0].isEnabled === 0 && variants6[0].isAvailable === 0;
-  console.log(`  ${test6Pass ? '✅ PASS' : '❌ FAIL'} - ${test6Pass ? 'Stale variant disabled, not deleted, ID preserved' : 'Test failed'}`);
+  assert.equal(variants6.length, 1, 'Should have exactly 1 variant');
+  assert.equal(variants6[0].printifyVariantId, 'V3', 'Variant printifyVariantId should be preserved');
+  assert.equal(variants6[0].isEnabled, 0, 'Variant should be disabled');
+  assert.equal(variants6[0].isAvailable, 0, 'Variant should be unavailable');
+  console.log('  ✅ PASS - Stale variant disabled, not deleted, ID preserved');
   await cleanupTestDb();
 
   // TEST 7 — historical reference preservation
@@ -313,8 +327,10 @@ async function runTests() {
       else resolve(rows);
     });
   });
-  const test7Pass = orderItems7.length === 1 && orderItems7[0].variantId === varId7 && variants7.length === 1;
-  console.log(`  ${test7Pass ? '✅ PASS' : '❌ FAIL'} - ${test7Pass ? 'Historical order reference preserved, variant ID unchanged' : 'Test failed'}`);
+  assert.equal(orderItems7.length, 1, 'Should have exactly 1 order item');
+  assert.equal(orderItems7[0].variantId, varId7, 'Order item variantId should be preserved');
+  assert.equal(variants7.length, 1, 'Variant should still exist');
+  console.log('  ✅ PASS - Historical order reference preserved, variant ID unchanged');
   await cleanupTestDb();
 
   // TEST 8 — duplicate product printifyId
@@ -328,9 +344,8 @@ async function runTests() {
     db.run(`INSERT INTO products (title, type, printifyId, price, imageUrl, description) VALUES (?, ?, ?, ?, ?, ?)`,
       ['Product B', 'printify', 'PDUP', 100, 'http://img.jpg', 'desc'], resolve);
   });
-  let test8Pass = false;
-  try {
-    await syncHelpers.matchAndUpsertProduct(db, 'PDUP', {
+  await assert.rejects(
+    syncHelpers.matchAndUpsertProduct(db, 'PDUP', {
       title: 'Product C',
       price: 100,
       imageUrl: 'http://img.jpg',
@@ -340,11 +355,10 @@ async function runTests() {
       fabric: '',
       careInstructions: '',
       deliveryInfo: ''
-    });
-  } catch (err) {
-    test8Pass = err.message.includes('Duplicate printifyId');
-  }
-  console.log(`  ${test8Pass ? '✅ PASS' : '❌ FAIL'} - ${test8Pass ? 'Sync aborted on duplicate printifyId' : 'Test failed'}`);
+    }),
+    /Duplicate printifyId/
+  );
+  console.log('  ✅ PASS - Sync aborted on duplicate printifyId');
   await cleanupTestDb();
 
   // TEST 9 — duplicate variant identity
@@ -369,9 +383,8 @@ async function runTests() {
       [prodId9, 'VDUP', 'Green', '#00FF00', 'L', 100, 50, 10, 1, 1, 'http://var.jpg'], resolve);
   });
   const incomingSet9 = new Set(['VDUP']);
-  let test9Pass = false;
-  try {
-    await syncHelpers.reconcileVariant(db, prodId9, 'VDUP', {
+  await assert.rejects(
+    syncHelpers.reconcileVariant(db, prodId9, 'VDUP', {
       color: 'Green',
       colorHex: '#00FF00',
       size: 'M',
@@ -380,11 +393,10 @@ async function runTests() {
       stockQty: 10,
       isAvailable: 1,
       imageUrl: 'http://var.jpg'
-    });
-  } catch (err) {
-    test9Pass = err.message.includes('Duplicate variant identity');
-  }
-  console.log(`  ${test9Pass ? '✅ PASS' : '❌ FAIL'} - ${test9Pass ? 'Sync aborted on duplicate variant identity' : 'Test failed'}`);
+    }),
+    /Duplicate variant identity/
+  );
+  console.log('  ✅ PASS - Sync aborted on duplicate variant identity');
   await cleanupTestDb();
 
   // TEST 10 — stale variant async completion
@@ -413,8 +425,11 @@ async function runTests() {
       else resolve(rows);
     });
   });
-  const test10Pass = variants10.length === 1 && variants10[0].printifyVariantId === 'VASYNC' && variants10[0].isEnabled === 0 && variants10[0].isAvailable === 0;
-  console.log(`  ${test10Pass ? '✅ PASS' : '❌ FAIL'} - ${test10Pass ? 'Stale variant update completed before promise resolved' : 'Test failed'}`);
+  assert.equal(variants10.length, 1, 'Should have exactly 1 variant');
+  assert.equal(variants10[0].printifyVariantId, 'VASYNC', 'Variant printifyVariantId should be preserved');
+  assert.equal(variants10[0].isEnabled, 0, 'Variant should be disabled');
+  assert.equal(variants10[0].isAvailable, 0, 'Variant should be unavailable');
+  console.log('  ✅ PASS - Stale variant update completed before promise resolved');
   await cleanupTestDb();
 
   // TEST 11 — stale variant DB error rejection
@@ -437,18 +452,92 @@ async function runTests() {
   // Close DB to simulate error
   await new Promise((resolve) => db.close(resolve));
   const incomingSet11 = new Set(['VOTHER']);
-  let test11Pass = false;
-  try {
-    await syncHelpers.disableStaleVariants(db, prodId11, incomingSet11);
-  } catch (err) {
-    test11Pass = err.message.includes('SQLITE') || err.message.includes('database is closed');
-  }
-  console.log(`  ${test11Pass ? '✅ PASS' : '❌ FAIL'} - ${test11Pass ? 'DB error rejects the promise' : 'Test failed'}`);
+  await assert.rejects(
+    syncHelpers.disableStaleVariants(db, prodId11, incomingSet11),
+    /SQLITE|database is closed/
+  );
+  console.log('  ✅ PASS - DB error rejects the promise');
   if (fs.existsSync(testDbPath)) {
     fs.unlinkSync(testDbPath);
   }
 
+  // TEST 12 — sync serialization (concurrent calls)
+  console.log('\nTEST 12 — sync serialization (concurrent calls):');
+  const { PrintifyService } = require('../services/printify');
+  const printifyService = new PrintifyService();
+
+  let executionOrder = [];
+  let sync1Started = false;
+  let sync1Completed = false;
+  let sync2Started = false;
+
+  // Mock _syncProductsOnce to track execution order
+  const originalSyncOnce = printifyService._syncProductsOnce;
+  printifyService._syncProductsOnce = async function(source) {
+    if (source === 'sync1') {
+      sync1Started = true;
+      executionOrder.push('sync1-start');
+      await new Promise(resolve => setTimeout(resolve, 100)); // Simulate work
+      sync1Completed = true;
+      executionOrder.push('sync1-end');
+      return 1;
+    } else if (source === 'sync2') {
+      sync2Started = true;
+      executionOrder.push('sync2-start');
+      return 2;
+    }
+    return 0;
+  };
+
+  // Start both syncs concurrently
+  const p1 = printifyService.syncProducts('sync1');
+  await new Promise(resolve => setTimeout(resolve, 10)); // Small delay to ensure sync1 starts first
+  const p2 = printifyService.syncProducts('sync2');
+
+  await Promise.all([p1, p2]);
+
+  // Verify execution order: sync1 must complete before sync2 starts
+  assert.equal(executionOrder[0], 'sync1-start', 'sync1 should start first');
+  assert.equal(executionOrder[1], 'sync1-end', 'sync1 should end before sync2 starts');
+  assert.equal(executionOrder[2], 'sync2-start', 'sync2 should start after sync1 ends');
+  assert.equal(executionOrder.length, 3, 'Should have exactly 3 execution events');
+
+  // Restore original
+  printifyService._syncProductsOnce = originalSyncOnce;
+  console.log('  ✅ PASS - Concurrent syncs are serialized');
+
+  // TEST 13 — sync failure releases queue
+  console.log('\nTEST 13 — sync failure releases queue:');
+  let sync3Started = false;
+  let sync4Started = false;
+
+  printifyService._syncProductsOnce = async function(source) {
+    if (source === 'sync3') {
+      sync3Started = true;
+      throw new Error('sync3 failed');
+    } else if (source === 'sync4') {
+      sync4Started = true;
+      return 4;
+    }
+    return 0;
+  };
+
+  const p3 = printifyService.syncProducts('sync3').catch(() => {}); // Catch expected error
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const p4 = printifyService.syncProducts('sync4');
+
+  await Promise.all([p3, p4]);
+
+  assert.equal(sync3Started, true, 'sync3 should have started');
+  assert.equal(sync4Started, true, 'sync4 should start after sync3 fails');
+
+  printifyService._syncProductsOnce = originalSyncOnce;
+  console.log('  ✅ PASS - Failed sync releases queue for next sync');
+
   console.log('\n=== ALL TESTS COMPLETED ===');
 }
 
-runTests().catch(console.error);
+runTests().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});

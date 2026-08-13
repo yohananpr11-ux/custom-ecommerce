@@ -1,5 +1,11 @@
 const axios = require('axios');
-const telegram = require('./telegram');
+// Telegram is intentionally required lazily inside _syncProductsOnce —
+// the constructor in services/telegram.js schedules background cron jobs
+// at module-load time, so pulling it in at the top of this file would
+// force every consumer (including hermetic unit tests) to schedule cron
+// and emit "Abandoned Cart Cron scheduled" / "Daily Intelligence Cron
+// scheduled" simply for requiring services/printify. Importing on demand
+// keeps the module itself side-effect free at require time.
 
 // Every fulfillment HTTP call below must have a bounded, finite timeout —
 // the supplier_fulfillments staleness/lease window in services/fulfillment.js
@@ -33,6 +39,7 @@ class PrintifyService {
     this.baseUrl = 'https://api.printify.com/v1';
     this.productSnapshotCache = new Map();
     this.productSnapshotTtlMs = 2 * 60 * 1000;
+    this._syncTail = Promise.resolve();
   }
 
   async getLiveProductSnapshot(printifyProductId) {
@@ -76,7 +83,7 @@ class PrintifyService {
     }
   }
 
-  async syncProducts(rawSource = 'unknown') {
+  async _syncProductsOnce(rawSource = 'unknown') {
     const source = safeSyncSource(rawSource);
     const startedAt = Date.now();
     if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
@@ -262,6 +269,7 @@ class PrintifyService {
       // Only send Telegram alert on error or when triggered manually/on-demand.
       // Scheduled hourly syncs are silent to prevent notification spam.
       if (source !== 'scheduled') {
+        const telegram = require('./telegram');
         await telegram.sendMessage(`🔄 <b>Printify Sync Completed</b>\n\n${syncedCount} products synced successfully. Source: ${source}`);
       }
       return syncedCount;
@@ -273,6 +281,20 @@ class PrintifyService {
       console.error('❌ Printify sync failed:', safeErrMessage(error));
       console.log(`OPS_PRINTIFY_SYNC source=${source} result=failed products_seen=0 products_updated=0 error_code=${this._safeErrorCode(error)} duration_ms=${Date.now() - startedAt}`);
       throw error;
+    }
+  }
+
+  async syncProducts(rawSource = 'unknown') {
+    // Serialize concurrent sync calls - only one active at a time
+    const previousTail = this._syncTail;
+    let release;
+    this._syncTail = new Promise(resolve => { release = resolve; });
+
+    try {
+      await previousTail;
+      return await this._syncProductsOnce(rawSource);
+    } finally {
+      release();
     }
   }
 
@@ -429,4 +451,20 @@ class PrintifyService {
   }
 }
 
-module.exports = new PrintifyService();
+// Production callers in backend/index.js and backend/services/fulfillment.js
+// do `const printify = require('./services/printify')` and expect to receive
+// the singleton service instance. The same module also re-exports the
+// PrintifyService class itself (as a named export) so hermetic tests can
+// instantiate isolated instances via `const { PrintifyService } = require(...)`
+// without having to mutate the production singleton.
+//
+// require-time side effects are intentionally minimal: the class is defined
+// and a singleton is constructed, but no cron jobs are scheduled, no DB
+// connection is opened, and no HTTP work is performed. The only previously
+// eager `require('./telegram')` was moved inside _syncProductsOnce so
+// importing this module never triggers telegram.js's constructor (which
+// is what schedules the daily-intelligence and abandoned-cart crons).
+const printifyService = new PrintifyService();
+
+module.exports = printifyService;
+module.exports.PrintifyService = PrintifyService;
