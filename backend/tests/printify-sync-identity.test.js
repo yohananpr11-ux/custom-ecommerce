@@ -470,23 +470,31 @@ async function runTests() {
   let sync1Started = false;
   let sync1Completed = false;
   let sync2Started = false;
+  let active = 0;
+  let maxActive = 0;
 
-  // Mock _syncProductsOnce to track execution order
+  // Mock _syncProductsOnce to track execution order and active concurrency
   const originalSyncOnce = printifyService._syncProductsOnce;
   printifyService._syncProductsOnce = async function(source) {
-    if (source === 'sync1') {
-      sync1Started = true;
-      executionOrder.push('sync1-start');
-      await new Promise(resolve => setTimeout(resolve, 100)); // Simulate work
-      sync1Completed = true;
-      executionOrder.push('sync1-end');
-      return 1;
-    } else if (source === 'sync2') {
-      sync2Started = true;
-      executionOrder.push('sync2-start');
-      return 2;
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    try {
+      if (source === 'sync1') {
+        sync1Started = true;
+        executionOrder.push('sync1-start');
+        await new Promise(resolve => setTimeout(resolve, 100)); // Simulate work
+        sync1Completed = true;
+        executionOrder.push('sync1-end');
+        return 1;
+      } else if (source === 'sync2') {
+        sync2Started = true;
+        executionOrder.push('sync2-start');
+        return 2;
+      }
+      return 0;
+    } finally {
+      active -= 1;
     }
-    return 0;
   };
 
   // Start both syncs concurrently
@@ -501,38 +509,63 @@ async function runTests() {
   assert.equal(executionOrder[1], 'sync1-end', 'sync1 should end before sync2 starts');
   assert.equal(executionOrder[2], 'sync2-start', 'sync2 should start after sync1 ends');
   assert.equal(executionOrder.length, 3, 'Should have exactly 3 execution events');
+  // Direct concurrency proof: at no point were two _syncProductsOnce bodies
+  // running simultaneously inside the same process.
+  assert.equal(maxActive, 1, 'At most one _syncProductsOnce must be active at a time');
+  assert.equal(sync1Started, true, 'sync1 must have started');
+  assert.equal(sync1Completed, true, 'sync1 must have completed');
+  assert.equal(sync2Started, true, 'sync2 must have started');
+  // Verify the actual return values were preserved through the wrapper.
+  assert.equal(await p1, 1, 'sync1 should resolve to 1');
+  assert.equal(await p2, 2, 'sync2 should resolve to 2');
 
   // Restore original
   printifyService._syncProductsOnce = originalSyncOnce;
-  console.log('  ✅ PASS - Concurrent syncs are serialized');
+  console.log('  ✅ PASS - Concurrent syncs are serialized, maxActive === 1');
 
   // TEST 13 — sync failure releases queue
   console.log('\nTEST 13 — sync failure releases queue:');
   let sync3Started = false;
   let sync4Started = false;
+  active = 0;
+  maxActive = 0;
 
   printifyService._syncProductsOnce = async function(source) {
-    if (source === 'sync3') {
-      sync3Started = true;
-      throw new Error('sync3 failed');
-    } else if (source === 'sync4') {
-      sync4Started = true;
-      return 4;
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    try {
+      if (source === 'sync3') {
+        sync3Started = true;
+        throw new Error('sync3 failed');
+      } else if (source === 'sync4') {
+        sync4Started = true;
+        return 4;
+      }
+      return 0;
+    } finally {
+      active -= 1;
     }
-    return 0;
   };
 
-  const p3 = printifyService.syncProducts('sync3').catch(() => {}); // Catch expected error
-  await new Promise(resolve => setTimeout(resolve, 10));
+  // Launch caller-1 and enqueue caller-2 before awaiting either — the wrapper
+  // must serialize them. We must observe caller-1's rejection with
+  // assert.rejects (NOT swallow it) and then verify caller-2 still runs.
+  const p3 = printifyService.syncProducts('sync3');
   const p4 = printifyService.syncProducts('sync4');
 
-  await Promise.all([p3, p4]);
-
+  // caller-1 must reject with the same intentional error message — this is
+  // the real proof that the original rejection propagated through the
+  // serialization wrapper to the original caller.
+  await assert.rejects(p3, /sync3 failed/, 'caller-1 must receive the rejection');
+  // caller-2 must resolve to 4 and the queue must not be stuck behind the
+  // failure.
+  assert.equal(await p4, 4, 'caller-2 must resolve to 4 after caller-1 fails');
   assert.equal(sync3Started, true, 'sync3 should have started');
   assert.equal(sync4Started, true, 'sync4 should start after sync3 fails');
+  assert.equal(maxActive, 1, 'Failed sync must still keep max concurrency at 1');
 
   printifyService._syncProductsOnce = originalSyncOnce;
-  console.log('  ✅ PASS - Failed sync releases queue for next sync');
+  console.log('  ✅ PASS - Failed sync rejects caller-1 and releases queue for caller-2');
 
   console.log('\n=== ALL TESTS COMPLETED ===');
 }
