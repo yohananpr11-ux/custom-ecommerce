@@ -555,44 +555,142 @@ test('atomic no-overwrite: both PutObject calls carry IfNoneMatch:\'*\', and no 
   assert.ok(client.calls[0] instanceof PutObjectCommand, 'the first call to the client must be a PutObject, never a pre-upload HeadObject');
 });
 
-test('a 412/PreconditionFailed on the .db PutObject is treated as "already uploaded", not an error', async () => {
-  const backupDir = path.join(tmpDir, `already-exists-${Date.now()}`);
-  const backupResult = await seedLocalBackup(backupDir);
+// ═══════════════════════════════════════════════════════════════════════════
+// Retry safety: a 412 on either object verifies the pre-existing object
+// rather than either trusting it blindly or failing the whole attempt.
+// ═══════════════════════════════════════════════════════════════════════════
 
-  const client = makeFakeClient({
-    onSend: async (command) => {
-      if (command instanceof PutObjectCommand && !command.input.Key.endsWith('.sha256')) {
-        throw preconditionFailedError();
-      }
-      return undefined;
-    },
-  });
+test('a 412 on the .db PutObject against a genuinely valid pre-existing object is accepted, and the sidecar step still runs', async () => {
+  const backupDir = path.join(tmpDir, `db-already-valid-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+  const client = makeFakeClient();
+
+  const dbKey = offsite.buildObjectKey(FAKE_CONFIG_ENV.OFFSITE_BACKUP_KEY_PREFIX, backupResult.filename);
+  const localChecksum = fs.readFileSync(`${backupResult.path}.sha256`, 'utf8').trim().split(/\s+/)[0];
+  const dbBuffer = fs.readFileSync(backupResult.path);
+  // Pre-populate the store directly -- the fake client's own default
+  // PutObjectCommand logic will naturally 412 against this on IfNoneMatch,
+  // exactly like a real provider would.
+  client.store.set(dbKey, { body: dbBuffer, metadata: { sha256: localChecksum }, size: dbBuffer.length });
+
+  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+
+  assert.equal(result.uploaded, true, 'the sidecar was genuinely new, so this attempt did real work and must not report a bare "already_exists" skip');
+  assert.ok(client.store.has(result.sha256Key), 'the sidecar must have been uploaded despite the db 412');
+});
+
+test('a 412 on the .db PutObject against a pre-existing object with the WRONG checksum fails safely', async () => {
+  const backupDir = path.join(tmpDir, `db-wrong-checksum-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+  const client = makeFakeClient();
+
+  const dbKey = offsite.buildObjectKey(FAKE_CONFIG_ENV.OFFSITE_BACKUP_KEY_PREFIX, backupResult.filename);
+  const dbBuffer = fs.readFileSync(backupResult.path);
+  client.store.set(dbKey, { body: dbBuffer, metadata: { sha256: 'wrong-checksum-entirely' }, size: dbBuffer.length });
+
+  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+  assert.equal(result.uploaded, false);
+  assert.match(result.error, /checksum metadata mismatch/i);
+});
+
+test('a 412 on the .db PutObject against a pre-existing object with the WRONG size fails safely', async () => {
+  const backupDir = path.join(tmpDir, `db-wrong-size-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+  const client = makeFakeClient();
+
+  const dbKey = offsite.buildObjectKey(FAKE_CONFIG_ENV.OFFSITE_BACKUP_KEY_PREFIX, backupResult.filename);
+  const localChecksum = fs.readFileSync(`${backupResult.path}.sha256`, 'utf8').trim().split(/\s+/)[0];
+  client.store.set(dbKey, { body: Buffer.from('short'), metadata: { sha256: localChecksum }, size: 5 });
+
+  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+  assert.equal(result.uploaded, false);
+  assert.match(result.error, /size mismatch/i);
+});
+
+test('a 412 on the .sha256 PutObject against a pre-existing sidecar with the WRONG size fails safely', async () => {
+  const backupDir = path.join(tmpDir, `sidecar-wrong-size-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+  const client = makeFakeClient();
+
+  const dbKey = offsite.buildObjectKey(FAKE_CONFIG_ENV.OFFSITE_BACKUP_KEY_PREFIX, backupResult.filename);
+  const sha256Key = `${dbKey}.sha256`;
+  client.store.set(sha256Key, { body: Buffer.from('x'), metadata: {}, size: 1 });
+
+  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+  assert.equal(result.uploaded, false);
+  assert.match(result.error, /sidecar size mismatch/i);
+});
+
+test('a 412 on the .sha256 PutObject against a genuinely valid pre-existing sidecar is accepted -- BOTH objects already-present is the only case that reports already_exists', async () => {
+  const backupDir = path.join(tmpDir, `both-already-valid-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+  const client = makeFakeClient();
+
+  const dbKey = offsite.buildObjectKey(FAKE_CONFIG_ENV.OFFSITE_BACKUP_KEY_PREFIX, backupResult.filename);
+  const sha256Key = `${dbKey}.sha256`;
+  const localChecksum = fs.readFileSync(`${backupResult.path}.sha256`, 'utf8').trim().split(/\s+/)[0];
+  const dbBuffer = fs.readFileSync(backupResult.path);
+  const sha256Buffer = fs.readFileSync(`${backupResult.path}.sha256`);
+  client.store.set(dbKey, { body: dbBuffer, metadata: { sha256: localChecksum }, size: dbBuffer.length });
+  client.store.set(sha256Key, { body: sha256Buffer, metadata: { sha256: localChecksum }, size: sha256Buffer.length });
 
   const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
   assert.equal(result.skipped, true);
   assert.equal(result.reason, 'already_exists');
-  // Only the one rejected .db PUT was attempted -- the sidecar PUT must
-  // never be attempted once the .db is known to already exist.
+
+  // No blind overwrite: exactly zero bytes were ever written to either
+  // pre-existing object (both PUTs 412'd, never fell back to overwriting).
   const putCalls = client.calls.filter((c) => c instanceof PutObjectCommand);
-  assert.equal(putCalls.length, 1);
+  assert.equal(putCalls.length, 2, 'both PUTs must still be attempted (that is how the 412s are discovered), but neither may succeed as a write');
+  assert.equal(client.store.get(dbKey).body.equals(dbBuffer), true, 'the pre-existing .db bytes must be completely untouched');
+  assert.equal(client.store.get(sha256Key).body.equals(sha256Buffer), true, 'the pre-existing .sha256 bytes must be completely untouched');
 });
 
-test('a 412 on the .sha256 PutObject when the .db PUT just succeeded is treated as a real failure, never a silent skip', async () => {
-  const backupDir = path.join(tmpDir, `sidecar-anomaly-${Date.now()}`);
+// ═══════════════════════════════════════════════════════════════════════════
+// PARTIAL UPLOAD RECOVERY (explicit scenario): attempt 1 uploads the .db but
+// fails before the sidecar; attempt 2, against the same backup, must
+// complete the sidecar and succeed overall -- not report "already exists"
+// and strand the backup without its sidecar forever.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('PARTIAL UPLOAD RECOVERY: a retry after a db-succeeded/sidecar-failed first attempt completes the sidecar and succeeds', async () => {
+  const backupDir = path.join(tmpDir, `partial-recovery-${Date.now()}`);
   const backupResult = await seedLocalBackup(backupDir);
 
+  let sidecarShouldFail = true;
+  // Deliberately the SAME client/store across both attempts -- this is what
+  // makes attempt 2's .db PutObject genuinely 412 against a real object
+  // attempt 1 actually left behind, not a hand-simulated one.
   const client = makeFakeClient({
     onSend: async (command) => {
-      if (command instanceof PutObjectCommand && command.input.Key.endsWith('.sha256')) {
-        throw preconditionFailedError();
+      if (command instanceof PutObjectCommand && command.input.Key.endsWith('.sha256') && sidecarShouldFail) {
+        throw new Error('simulated network failure after the db upload succeeded');
       }
-      return undefined;
+      return undefined; // real default PutObject/HeadObject behavior otherwise
     },
   });
 
-  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
-  assert.equal(result.uploaded, false);
-  assert.match(result.error, /sidecar.*already exists/i);
+  // Attempt 1: .db PUT succeeds for real; .sha256 PUT fails.
+  const attempt1 = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+  assert.equal(attempt1.uploaded, false, 'attempt 1 must report failure -- the sidecar never made it');
+  const dbKey = offsite.buildObjectKey(FAKE_CONFIG_ENV.OFFSITE_BACKUP_KEY_PREFIX, backupResult.filename);
+  assert.ok(client.store.has(dbKey), 'the .db object really was left behind in storage after attempt 1');
+  assert.ok(!client.store.has(`${dbKey}.sha256`), 'the sidecar must genuinely be missing after attempt 1');
+
+  // Attempt 2: same backup, same stateful client/store. The .db PUT now
+  // hits a real 412 against attempt 1's leftover object; the sidecar PUT is
+  // no longer forced to fail.
+  sidecarShouldFail = false;
+  const attempt2 = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+
+  assert.equal(attempt2.uploaded, true, 'attempt 2 must succeed, completing the sidecar upload attempt 1 never reached');
+  assert.ok(client.store.has(attempt2.dbKey));
+  assert.ok(client.store.has(attempt2.sha256Key));
+
+  // Confirm attempt 2's .db PUT really did take the 412 path (proving
+  // retry-safety), not that it happened to re-upload successfully.
+  const dbPutCallsAcrossBothAttempts = client.calls.filter((c) => c instanceof PutObjectCommand && c.input.Key === dbKey);
+  assert.equal(dbPutCallsAcrossBothAttempts.length, 2, 'expected one .db PutObject attempt per call to uploadBackupOffsite');
 });
 
 test('a provider that rejects the IfNoneMatch parameter itself (not a 412) fails the attempt -- no fallback to a blind overwrite', async () => {

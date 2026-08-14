@@ -32,6 +32,16 @@
 //     provider doesn't support conditional writes at all, the PutObject
 //     call fails for some other reason and the whole attempt is reported as
 //     a failure; there is no fallback to a blind, unconditional overwrite;
+//   - retry-safe across a partial previous attempt: a 412 on the .db never
+//     short-circuits the whole call -- a prior run may have uploaded the
+//     .db and then failed before ever reaching the sidecar, and a retry
+//     must still complete that upload rather than reporting "already
+//     exists" and permanently stranding the backup without its sidecar.
+//     Whichever object ends up at each key (freshly uploaded, or already
+//     present via a 412) is verified identically -- an existing object is
+//     never trusted just because it exists; overall success/already-
+//     existing is only ever reported once BOTH objects are confirmed
+//     present and valid;
 //   - the .db body is streamed (fs.createReadStream), never buffered whole
 //     into process memory -- this module must stay correct as the database
 //     grows well past its current ~400KB;
@@ -243,6 +253,17 @@ async function uploadBackupOffsite(backupResult, options = {}) {
     // whole into memory -- ContentLength is supplied explicitly since a
     // stream's length can't be introspected by the SDK the way a Buffer's
     // can.
+    //
+    // Retry safety: a 412 here does NOT short-circuit the whole attempt.
+    // A previous run may have uploaded the .db and then failed before ever
+    // reaching the sidecar (network drop, process restart, ...) -- a retry
+    // must still be able to complete that upload rather than reporting
+    // "already exists" and permanently stranding the backup without its
+    // sidecar. Whether the .db PutObject succeeded fresh or 412'd against
+    // a pre-existing object, the exact same verification runs below before
+    // either is trusted -- an already-present object is never assumed
+    // valid just because it exists.
+    let dbAlreadyPresent = false;
     try {
       await client.send(new PutObjectCommand({
         Bucket: config.bucket,
@@ -253,38 +274,16 @@ async function uploadBackupOffsite(backupResult, options = {}) {
         IfNoneMatch: '*',
       }));
     } catch (err) {
-      if (isPreconditionFailed(err)) {
-        log(`[SQLite Offsite Backup] ${dbKey} already exists remotely (conditional create rejected); treating as already uploaded, skipping`);
-        return { skipped: true, reason: 'already_exists', dbKey };
-      }
-      throw err;
+      if (!isPreconditionFailed(err)) throw err;
+      dbAlreadyPresent = true;
+      log(`[SQLite Offsite Backup] ${dbKey} already exists remotely (conditional create rejected); verifying it before trusting it`);
     }
 
-    try {
-      await client.send(new PutObjectCommand({
-        Bucket: config.bucket,
-        Key: sha256Key,
-        Body: sha256Buffer,
-        IfNoneMatch: '*',
-      }));
-    } catch (err) {
-      if (isPreconditionFailed(err)) {
-        // The .db key was genuinely new a moment ago (no 412 above), so
-        // these two keys -- always written together -- should never
-        // diverge like this. Treat it as a real failure rather than
-        // silently continuing with a possibly-stale sidecar left over from
-        // some earlier, unrelated state.
-        throw new Error(`sidecar ${sha256Key} already exists remotely even though ${dbKey} did not -- refusing to proceed`);
-      }
-      throw err;
-    }
-
-    // Remote verification -- never re-downloads either object just to
-    // check it; HeadObject's size + the metadata sha256 set on the .db
-    // PutObject are enough to prove both uploads landed intact. HeadObject
-    // is authorized by s3:GetObject in AWS's IAM model (there is no
-    // separate "HeadObject" action) -- this is the only reason this
-    // module's credential needs s3:GetObject at all.
+    // Verifies whichever .db object is now at dbKey -- the one just
+    // uploaded, or the pre-existing one a 412 just revealed. HeadObject is
+    // authorized by s3:GetObject in AWS's IAM model (there is no separate
+    // "HeadObject" action) -- this is the only reason this module's
+    // credential needs s3:GetObject at all.
     const dbVerify = await headObjectSafe(client, config.bucket, dbKey);
     if (!dbVerify.exists) {
       throw new Error('post-upload HEAD verification found no .db object');
@@ -292,9 +291,32 @@ async function uploadBackupOffsite(backupResult, options = {}) {
     if (dbVerify.contentLength !== dbSize) {
       throw new Error(`post-upload size mismatch: local=${dbSize} remote=${dbVerify.contentLength}`);
     }
-    const remoteChecksum = dbVerify.metadata && (dbVerify.metadata.sha256 || dbVerify.metadata.Sha256);
-    if (remoteChecksum !== localChecksum) {
+    const remoteDbChecksum = dbVerify.metadata && (dbVerify.metadata.sha256 || dbVerify.metadata.Sha256);
+    if (remoteDbChecksum !== localChecksum) {
       throw new Error('post-upload checksum metadata mismatch');
+    }
+
+    // Same atomic-create-then-verify pattern for the sidecar, entirely
+    // independent of whether the .db above was fresh or already-present --
+    // this is exactly the step a retry after a partial previous attempt
+    // (db uploaded, sidecar never attempted) needs to actually complete.
+    // The sidecar also carries the same local DB checksum as its own
+    // metadata -- a second, independent cross-check that a pre-existing
+    // sidecar object really belongs to *this* backup, not some unrelated
+    // object that happens to sit at the same key.
+    let sidecarAlreadyPresent = false;
+    try {
+      await client.send(new PutObjectCommand({
+        Bucket: config.bucket,
+        Key: sha256Key,
+        Body: sha256Buffer,
+        Metadata: { sha256: localChecksum },
+        IfNoneMatch: '*',
+      }));
+    } catch (err) {
+      if (!isPreconditionFailed(err)) throw err;
+      sidecarAlreadyPresent = true;
+      log(`[SQLite Offsite Backup] ${sha256Key} already exists remotely (conditional create rejected); verifying it before trusting it`);
     }
 
     const sidecarVerify = await headObjectSafe(client, config.bucket, sha256Key);
@@ -303,6 +325,17 @@ async function uploadBackupOffsite(backupResult, options = {}) {
     }
     if (sidecarVerify.contentLength !== sha256Buffer.length) {
       throw new Error(`post-upload sidecar size mismatch: local=${sha256Buffer.length} remote=${sidecarVerify.contentLength}`);
+    }
+    const remoteSidecarChecksum = sidecarVerify.metadata && (sidecarVerify.metadata.sha256 || sidecarVerify.metadata.Sha256);
+    if (remoteSidecarChecksum !== localChecksum) {
+      throw new Error('post-upload sidecar checksum metadata mismatch');
+    }
+
+    // Only now, with BOTH objects confirmed present and valid, is this
+    // attempt allowed to report success/already-existing.
+    if (dbAlreadyPresent && sidecarAlreadyPresent) {
+      log(`[SQLite Offsite Backup] ${dbKey} and its sidecar already existed remotely and verified intact; nothing new to upload`);
+      return { skipped: true, reason: 'already_exists', dbKey, sha256Key };
     }
 
     log(`[SQLite Offsite Backup] uploaded and verified: ${dbKey}`);
