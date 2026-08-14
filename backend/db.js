@@ -351,3 +351,4 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
 });
 
 module.exports = db;
+module.exports.dbPath = dbPath;

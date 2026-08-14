@@ -24,6 +24,7 @@ const { seedHardwareCatalog } = require('./seed_cj_product.cjs');
 const { detectBot, botDetectorMiddleware } = require('./middleware/botDetector');
 // Phase 3: Multi-Vendor fulfillment router
 const fulfillment = require('./services/fulfillment');
+const sqliteBackup = require('./services/sqlite-backup');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -4135,6 +4136,11 @@ app.listen(PORT, () => {
     console.log('✅ Scheduled stale-fulfillment recovery configured: Every 5 minutes');
   } catch (cronErr) {
     console.warn('⚠️ Cron not available (dev environment):', cronErr.message);
+  }
+
+  // ---- SQLITE BACKUPS: opt-in via ENABLE_SQLITE_BACKUPS=true ----
+  if (sqliteBackup.startScheduler()) {
+    console.log('✅ SQLite backup scheduler started');
   }
 });
 }
