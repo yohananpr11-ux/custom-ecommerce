@@ -67,10 +67,18 @@ const FAKE_DESTINATION = {
 
 // Seeds one product + one order + N printify order_items, returns
 // { productId, orderId, itemIds }.
+//
+// Each call gets its own printifyId (products.printifyId now has a partial
+// unique index -- see backend/db.js) -- this file's tests are about
+// fulfillment reconciliation, not printifyId identity, so a fixed shared
+// literal here would just be an incidental, meaningless collision across
+// the many independent seedPrintifyOrder() calls sharing this file's one
+// temp database, not a real duplicate-product scenario.
+let nextPrintifyId = 1;
 async function seedPrintifyOrder(itemCount = 1) {
   const productInsert = await dbRun(
     `INSERT INTO products (title, description, price, priceUSD, stock, type, supplier_id, printifyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ['Reconciliation Test Product', 'seeded for printify fulfillment reconciliation tests', 150, 40, 10, 'printify', 'printify', 'pf-product-abc']
+    ['Reconciliation Test Product', 'seeded for printify fulfillment reconciliation tests', 150, 40, 10, 'printify', 'printify', `pf-product-abc-${nextPrintifyId++}`]
   );
   const productId = productInsert.lastID;
 

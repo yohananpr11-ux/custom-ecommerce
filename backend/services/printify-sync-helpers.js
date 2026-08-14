@@ -24,6 +24,10 @@ async function matchAndUpsertProduct(db, printifyId, productData) {
           if (err2) return reject(err2);
 
           if (allMatches && allMatches.length > 1) {
+            // Deliberate: never guess which row is stale. See
+            // docs/operations/printify-duplicate-recovery.md for the
+            // manual investigation/resolution procedure -- this must stay
+            // an operator decision, not an automated one.
             return reject(new Error(`Duplicate printifyId ${printifyId} found in ${allMatches.length} products. Sync aborted.`));
           }
 

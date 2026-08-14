@@ -626,6 +626,19 @@ const resolveValidatedOrderItems = async (items = []) => {
       throw new ClientValidationError(`Product ${productId} was not found`);
     }
 
+    // SECURITY: a type='printify' row with no real Printify product identity
+    // (NULL/empty/whitespace-only printifyId) must never reach payment
+    // creation -- it can be checked out and paid for, but fulfillment has no
+    // Printify product id to submit, leaving a paid order permanently stuck
+    // (found in production: two rows silently shared one printifyId,
+    // orphaning the loser with printifyId=NULL once separated). This is the
+    // single choke point every checkout-creation route shares, so it closes
+    // the gap for PayPal/Stripe/PayPlus at once, for any future cause of a
+    // null printifyId -- not just this specific incident.
+    if (product.type === 'printify' && !String(product.printifyId ?? '').trim()) {
+      throw new ClientValidationError(`Product ${productId} is not currently available`);
+    }
+
     if (product.supplier_id === 'manual') {
       // SECURITY: see validateManualProductAccessToken's own comment above
       // -- this is the actual enforcement point for the hidden product's
@@ -1784,16 +1797,25 @@ app.get('/api/products/:id', (req, res) => {
       const row = await dbGetAsync("SELECT * FROM products WHERE id = ?", [id]);
       if (!row) return res.status(404).json({ error: 'Product not found' });
 
-      // SECURITY: hidden manual-fulfillment test products (supplier_id='manual')
+      // SECURITY: hidden manual-fulfillment products (supplier_id='manual')
       // are already excluded from every discovery surface (/api/products,
       // /api/products/active-ids, the Google feed) by their type='local', but
       // this route resolves by bare sequential integer id with no other
       // filter — an ordinary sequential scan of small ids would otherwise
-      // still find them. When the row carries an access_token_hash, this
-      // route requires a matching X-Access-Token request HEADER (SHA-256'd
-      // and compared with a timing-safe comparison against the stored hash,
-      // never the raw token itself) and a still-valid expiration, or it
-      // returns the exact same 404 shape as a genuinely missing product --
+      // still find them. This gate activates on supplier_id='manual' alone
+      // -- it does NOT require access_token_hash to already be set. A
+      // missing hash, missing token, wrong token, or expired token are all
+      // treated identically: fail closed, same 404. (Found in production: a
+      // supplier_id='manual' row with no access_token_hash configured fell
+      // through this gate entirely under the old `&& row.access_token_hash`
+      // condition and was served at 200 with full data -- that condition
+      // assumed every manual row would always have a hash, which is only
+      // true for rows created by scripts/manual-payment-test-product.js,
+      // not for one manually quarantined without also setting a token.)
+      // Shares validateManualProductAccessToken with resolveValidatedOrderItems's
+      // checkout-time check instead of duplicating the hash/expiry
+      // comparison inline, so the two gates can never silently drift apart.
+      // Returns the exact same 404 shape as a genuinely missing product --
       // never a distinguishable "forbidden" response that would itself leak
       // the row's existence. The raw token is never logged.
       //
@@ -1804,13 +1826,10 @@ app.get('/api/products/:id', (req, res) => {
       // grant access even accidentally). The token's own transport-of-record
       // to the browser is a URL FRAGMENT (#access=...), which browsers never
       // send to any server at all -- see ProductDetailRoute in App.jsx.
-      if (row.supplier_id === 'manual' && row.access_token_hash) {
+      if (row.supplier_id === 'manual') {
         const headerToken = req.get('x-access-token');
         const providedToken = typeof headerToken === 'string' ? headerToken : '';
-        const providedHash = providedToken ? crypto.createHash('sha256').update(providedToken).digest('hex') : '';
-        const hashMatches = providedHash && timingSafeEqualStr(providedHash, row.access_token_hash);
-        const notExpired = row.access_token_expires_at && new Date(row.access_token_expires_at).getTime() > Date.now();
-        if (!hashMatches || !notExpired) {
+        if (!validateManualProductAccessToken(row, providedToken)) {
           return res.status(404).json({ error: 'Product not found' });
         }
       }

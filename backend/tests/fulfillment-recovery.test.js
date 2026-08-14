@@ -48,10 +48,16 @@ test.before(async () => {
   await new Promise((resolve) => setTimeout(resolve, 400));
 });
 
+// Each call gets its own printifyId (products.printifyId now has a partial
+// unique index -- see backend/db.js) -- a fixed shared literal here would
+// be an incidental collision across this file's many independent
+// seedPaidPrintifyOrder() calls sharing one temp database, not a real
+// duplicate-product scenario these tests care about.
+let nextPrintifyId = 1;
 async function seedPaidPrintifyOrder({ status = 'paid' } = {}) {
   const productInsert = await dbRun(
     `INSERT INTO products (title, description, price, priceUSD, stock, type, supplier_id, printifyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ['Recovery Test Product', 'seeded for fulfillment-recovery tests', 150, 40, 10, 'printify', 'printify', 'pf-product-abc']
+    ['Recovery Test Product', 'seeded for fulfillment-recovery tests', 150, 40, 10, 'printify', 'printify', `pf-product-abc-${nextPrintifyId++}`]
   );
   const productId = productInsert.lastID;
 
