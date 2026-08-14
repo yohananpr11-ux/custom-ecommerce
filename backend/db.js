@@ -346,6 +346,36 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
   db.run(`CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_supplier ON order_items(supplier_id, fulfillment_status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_supplier_fulfillments_state ON supplier_fulfillments(supplierId, state)`);
+
+  // Enforces at the SQLite engine level what application code (checkout's
+  // printifyId guard, the sync duplicate-detection in
+  // services/printify-sync-helpers.js) can only ever police on its own:
+  // that two products can never share one real Printify identity. Partial
+  // index -- printifyId IS NULL or blank/whitespace-only is explicitly
+  // exempted, so any number of un-synced local rows remain unaffected; only
+  // a genuine non-empty duplicate is rejected.
+  //
+  // CREATE UNIQUE INDEX scans existing data and FAILS if a duplicate
+  // already exists at the moment this first runs (e.g. against a database
+  // that still has an unrepaired duplicate). Explicit callback, not a bare
+  // fire-and-forget db.run like the indexes above: this must never crash
+  // the whole process over a data-hygiene issue -- taking the entire store
+  // offline would be a worse outcome than temporarily missing one integrity
+  // constraint -- but it must also never fail silently. Same
+  // log-don't-crash convention as this whole migration block's own
+  // top-level .catch() below.
+  db.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_printifyId_unique
+       ON products(printifyId)
+       WHERE printifyId IS NOT NULL AND TRIM(printifyId) != ''`,
+    (err) => {
+      if (err) {
+        console.error(
+          `Printify printifyId uniqueness index not active: duplicate printifyId values already exist in products, so this database-level protection could not be enabled. index not active -- run the global duplicate scan (SELECT printifyId, COUNT(*) AS c, GROUP_CONCAT(id) FROM products WHERE printifyId IS NOT NULL AND TRIM(printifyId) != '' GROUP BY printifyId HAVING c > 1) and resolve every duplicate, then restart. Underlying error: ${err.message}`
+        );
+      }
+    }
+  );
 })().catch((err) => {
   console.error('Schema migration block failed:', err.message);
 });

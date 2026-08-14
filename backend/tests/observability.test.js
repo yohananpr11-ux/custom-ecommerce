@@ -61,10 +61,16 @@ function opsLines(lines, tag) {
   return lines.filter((l) => l.startsWith(tag));
 }
 
+// Each call gets its own printifyId (products.printifyId now has a partial
+// unique index -- see backend/db.js) -- a fixed shared literal here would
+// be an incidental collision across this file's many independent
+// seedPaidPrintifyOrder() calls sharing one temp database, not a real
+// duplicate-product scenario these tests care about.
+let nextPrintifyId = 1;
 async function seedPaidPrintifyOrder(email = 'observability-fixture@example.com') {
   const productInsert = await dbRun(
     `INSERT INTO products (title, description, price, priceUSD, stock, type, supplier_id, printifyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ['Observability Test Product', 'seeded for observability tests', 100, 27, 10, 'printify', 'printify', 'pf-obs-product']
+    ['Observability Test Product', 'seeded for observability tests', 100, 27, 10, 'printify', 'printify', `pf-obs-product-${nextPrintifyId++}`]
   );
   const productId = productInsert.lastID;
   const orderInsert = await dbRun(
