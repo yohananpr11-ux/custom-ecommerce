@@ -19,21 +19,43 @@
 //     multipart/SSE-encrypted uploads, not even that -- comparing an ETag
 //     against a SHA-256 sidecar would be comparing two different things);
 //   - the real SHA-256 is instead carried as PutObject metadata and
-//     re-verified with a HeadObject call after upload, against both the
-//     local hash and the local file size;
+//     re-verified with a GetObject-permission-governed HEAD call after
+//     upload, against both the local hash and the local file size (both
+//     objects: the .db and its .sha256 sidecar);
+//   - no overwrite of an existing backup is ever possible: both PutObject
+//     calls use IfNoneMatch:'*' (atomic conditional create), never a
+//     HEAD-then-PUT check -- that would be TOCTOU (existence could change
+//     between the check and the write) and would additionally require a
+//     read-existence permission before the very first upload a fresh bucket
+//     ever receives. A conditional-create rejection (412/PreconditionFailed)
+//     is the *only* signal ever treated as "already uploaded" -- if the
+//     provider doesn't support conditional writes at all, the PutObject
+//     call fails for some other reason and the whole attempt is reported as
+//     a failure; there is no fallback to a blind, unconditional overwrite;
+//   - the .db body is streamed (fs.createReadStream), never buffered whole
+//     into process memory -- this module must stay correct as the database
+//     grows well past its current ~400KB;
 //   - only one upload runs at a time in this process (mirrors
 //     sqlite-backup.js's own backupInProgress guard) -- a second attempt
 //     while one is in flight is skipped immediately, never queued;
 //   - only ever PutObject/HeadObject -- no DeleteObject anywhere in this
 //     module, on purpose (see docs/operations/sqlite-backup-recovery.md):
 //     remote retention is a bucket lifecycle policy an operator configures
-//     on the provider side, never something application code can do;
+//     on the provider side, never something application code can do. IAM
+//     minimum for the credential this module uses: s3:PutObject (upload)
+//     and s3:GetObject (AWS has no separate HeadObject action -- HEAD is
+//     authorized by s3:GetObject). No s3:DeleteObject. No s3:ListBucket --
+//     removing the old pre-upload existence check means the normal upload
+//     path never needs it;
 //   - credentials come only from process.env, are never logged, and no
-//     error object is ever logged whole (only .name/.message) since an SDK
-//     error can carry request/header detail that must never reach a log;
-//   - a configured http:// endpoint is rejected unless it points at
-//     loopback (127.0.0.1/localhost/::1) -- real off-site traffic must be
-//     HTTPS; only a test's own local mock server may use plain http.
+//     error object is ever logged whole (only .name/.message, with the
+//     message text itself scrubbed against the actual configured
+//     credentials) since an SDK error can carry request/header detail, and
+//     AWS's own InvalidAccessKeyId error text is documented to echo the
+//     rejected access key ID back inside the message;
+//   - a configured endpoint must be https:, or http: pointing at loopback
+//     (127.0.0.1/localhost/::1) -- every other scheme (ftp:, file:, ws:,
+//     or a non-loopback http:) is rejected outright.
 
 const fs = require('fs');
 const path = require('path');
@@ -91,7 +113,12 @@ function resolveOffsiteConfig(env = process.env) {
     } catch {
       return { ok: false, reason: 'OFFSITE_BACKUP_ENDPOINT is not a valid URL' };
     }
-    if (parsed.protocol === 'http:' && !isLoopbackHost(parsed.hostname)) {
+    // Allowlist, not a denylist: only https:, or http: pointing at
+    // loopback for a test's own local mock server. Every other scheme
+    // (ftp:, file:, ws:, wss:, a non-loopback http:, ...) is rejected.
+    const isHttps = parsed.protocol === 'https:';
+    const isLoopbackHttp = parsed.protocol === 'http:' && isLoopbackHost(parsed.hostname);
+    if (!isHttps && !isLoopbackHttp) {
       return {
         ok: false,
         reason: 'OFFSITE_BACKUP_ENDPOINT must use https:// (plain http:// is only accepted for a loopback test endpoint)',
@@ -152,6 +179,19 @@ async function headObjectSafe(client, bucket, key) {
   }
 }
 
+// True only for an atomic-conditional-create rejection -- the one and only
+// signal this module treats as "this object already exists, not an error".
+// Any other failure (validation error, network error, a provider that
+// doesn't understand IfNoneMatch at all) falls through as a genuine
+// failure -- there is deliberately no fallback path that retries without
+// the condition, which would silently reintroduce blind-overwrite risk.
+function isPreconditionFailed(err) {
+  if (!err) return false;
+  if (err.name === 'PreconditionFailed') return true;
+  if (err.$metadata && err.$metadata.httpStatusCode === 412) return true;
+  return false;
+}
+
 /**
  * Uploads an already-verified local backup (the exact {path, filename}
  * shape runBackup() returns on success) to off-site object storage.
@@ -189,50 +229,80 @@ async function uploadBackupOffsite(backupResult, options = {}) {
     const filename = backupResult.filename;
     const checksumPath = `${backupPath}.sha256`;
 
-    const dbBuffer = fs.readFileSync(backupPath);
+    const dbSize = fs.statSync(backupPath).size;
     const sha256Buffer = fs.readFileSync(checksumPath);
     const localChecksum = sha256Buffer.toString('utf8').trim().split(/\s+/)[0];
 
     const dbKey = buildObjectKey(config.keyPrefix, filename);
     const sha256Key = `${dbKey}.sha256`;
 
-    // Duplicate-key safety without depending on provider-specific
-    // conditional-write support: check first, never blind-overwrite. Backup
-    // filenames are already unique-per-run, so finding an existing object
-    // here means this exact backup was already uploaded (e.g. a retry) --
-    // treated as an idempotent no-op, not an error.
-    const existing = await headObjectSafe(client, config.bucket, dbKey);
-    if (existing.exists) {
-      log(`[SQLite Offsite Backup] ${dbKey} already exists remotely; treating as already uploaded, skipping`);
-      return { skipped: true, reason: 'already_exists', dbKey };
+    // Atomic conditional create -- never HEAD-then-PUT (TOCTOU: existence
+    // could change between the check and the write, and would additionally
+    // require a read-existence permission before this bucket has ever
+    // received a single object). The .db body is streamed, never buffered
+    // whole into memory -- ContentLength is supplied explicitly since a
+    // stream's length can't be introspected by the SDK the way a Buffer's
+    // can.
+    try {
+      await client.send(new PutObjectCommand({
+        Bucket: config.bucket,
+        Key: dbKey,
+        Body: fs.createReadStream(backupPath),
+        ContentLength: dbSize,
+        Metadata: { sha256: localChecksum },
+        IfNoneMatch: '*',
+      }));
+    } catch (err) {
+      if (isPreconditionFailed(err)) {
+        log(`[SQLite Offsite Backup] ${dbKey} already exists remotely (conditional create rejected); treating as already uploaded, skipping`);
+        return { skipped: true, reason: 'already_exists', dbKey };
+      }
+      throw err;
     }
 
-    await client.send(new PutObjectCommand({
-      Bucket: config.bucket,
-      Key: dbKey,
-      Body: dbBuffer,
-      Metadata: { sha256: localChecksum },
-    }));
-
-    await client.send(new PutObjectCommand({
-      Bucket: config.bucket,
-      Key: sha256Key,
-      Body: sha256Buffer,
-    }));
-
-    // Remote metadata verification -- never re-downloads the object just to
-    // check it; HeadObject's size + the metadata sha256 we set on PutObject
-    // are enough to prove the upload landed intact.
-    const verify = await headObjectSafe(client, config.bucket, dbKey);
-    if (!verify.exists) {
-      throw new Error('post-upload HEAD verification found no object');
+    try {
+      await client.send(new PutObjectCommand({
+        Bucket: config.bucket,
+        Key: sha256Key,
+        Body: sha256Buffer,
+        IfNoneMatch: '*',
+      }));
+    } catch (err) {
+      if (isPreconditionFailed(err)) {
+        // The .db key was genuinely new a moment ago (no 412 above), so
+        // these two keys -- always written together -- should never
+        // diverge like this. Treat it as a real failure rather than
+        // silently continuing with a possibly-stale sidecar left over from
+        // some earlier, unrelated state.
+        throw new Error(`sidecar ${sha256Key} already exists remotely even though ${dbKey} did not -- refusing to proceed`);
+      }
+      throw err;
     }
-    if (verify.contentLength !== dbBuffer.length) {
-      throw new Error(`post-upload size mismatch: local=${dbBuffer.length} remote=${verify.contentLength}`);
+
+    // Remote verification -- never re-downloads either object just to
+    // check it; HeadObject's size + the metadata sha256 set on the .db
+    // PutObject are enough to prove both uploads landed intact. HeadObject
+    // is authorized by s3:GetObject in AWS's IAM model (there is no
+    // separate "HeadObject" action) -- this is the only reason this
+    // module's credential needs s3:GetObject at all.
+    const dbVerify = await headObjectSafe(client, config.bucket, dbKey);
+    if (!dbVerify.exists) {
+      throw new Error('post-upload HEAD verification found no .db object');
     }
-    const remoteChecksum = verify.metadata && (verify.metadata.sha256 || verify.metadata.Sha256);
+    if (dbVerify.contentLength !== dbSize) {
+      throw new Error(`post-upload size mismatch: local=${dbSize} remote=${dbVerify.contentLength}`);
+    }
+    const remoteChecksum = dbVerify.metadata && (dbVerify.metadata.sha256 || dbVerify.metadata.Sha256);
     if (remoteChecksum !== localChecksum) {
       throw new Error('post-upload checksum metadata mismatch');
+    }
+
+    const sidecarVerify = await headObjectSafe(client, config.bucket, sha256Key);
+    if (!sidecarVerify.exists) {
+      throw new Error('post-upload HEAD verification found no .sha256 object');
+    }
+    if (sidecarVerify.contentLength !== sha256Buffer.length) {
+      throw new Error(`post-upload sidecar size mismatch: local=${sha256Buffer.length} remote=${sidecarVerify.contentLength}`);
     }
 
     log(`[SQLite Offsite Backup] uploaded and verified: ${dbKey}`);

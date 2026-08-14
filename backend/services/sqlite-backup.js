@@ -269,7 +269,13 @@ function startScheduler(options = {}) {
     log(`[SQLite Backup] scheduler enabled: every ${intervalMinutes} minutes, retention ${retention}`);
 
     schedulerTimer = setInterval(() => {
-        runBackupCycle({ db: options.db, log }).catch((err) => {
+        runBackupCycle({
+            db: options.db,
+            log,
+            env,
+            offsiteClient: options.offsiteClient,
+            offsiteResolveConfig: options.offsiteResolveConfig,
+        }).catch((err) => {
             console.error('[SQLite Backup] scheduled backup failed:', err.message);
         });
     }, intervalMs);

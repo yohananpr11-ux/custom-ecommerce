@@ -137,3 +137,30 @@ as healthy again:
   That split is deliberate: off-site storage is the disaster-recovery
   boundary of last resort, and a bug in application code should never be
   able to reach in and delete backup history, local or remote.
+
+## Off-site credential: minimum IAM permissions
+
+The credential this application uses (`OFFSITE_BACKUP_ACCESS_KEY_ID` /
+`OFFSITE_BACKUP_SECRET_ACCESS_KEY`) needs exactly two permissions, for
+AWS S3 or any IAM-compatible S3-provider:
+
+- **`s3:PutObject`** — uploads the `.db` and `.sha256` objects.
+- **`s3:GetObject`** — required for the post-upload HEAD verification calls.
+  AWS's IAM model has no separate "HeadObject" permission; the `HeadObject`
+  API action is authorized by `s3:GetObject`, the same permission a full
+  download would need, even though this module never actually downloads
+  object contents.
+
+Deliberately **not** required by the normal upload path:
+
+- **No `s3:DeleteObject`.** This module never deletes anything (see above);
+  granting it would only widen a leaked credential's blast radius for no
+  functional benefit.
+- **No `s3:ListBucket`.** Overwrite protection uses an atomic conditional
+  create (`IfNoneMatch: '*'` on `PutObject`) rather than a HEAD-then-PUT
+  existence check, so nothing in the normal upload path ever needs to
+  enumerate or check bucket contents ahead of a write.
+
+An operator retrieving a backup for restore (see the retrieval steps above)
+uses a *separate*, more-privileged credential of their own — never this
+application's write-oriented one.

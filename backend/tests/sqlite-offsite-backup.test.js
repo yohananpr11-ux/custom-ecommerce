@@ -5,7 +5,10 @@
 // real @aws-sdk/client-s3 client does, using the REAL PutObjectCommand/
 // HeadObjectCommand classes so `instanceof` checks in the module under test
 // behave exactly as they would against the genuine SDK -- only the network
-// transport is replaced.
+// transport is replaced. It also honors IfNoneMatch:'*' semantics (throwing
+// a PreconditionFailed-shaped error on an existing key) and correctly
+// consumes a Readable-stream Body, since the module under test now streams
+// the .db upload rather than buffering it.
 
 'use strict';
 
@@ -53,6 +56,23 @@ const FAKE_CONFIG_ENV = {
   OFFSITE_BACKUP_KEY_PREFIX: 'jono',
 };
 
+function preconditionFailedError() {
+  const err = new Error('At least one of the pre-conditions you specified did not hold');
+  err.name = 'PreconditionFailed';
+  err.$metadata = { httpStatusCode: 412 };
+  return err;
+}
+
+async function readBody(body) {
+  if (Buffer.isBuffer(body)) return body;
+  if (body && typeof body.pipe === 'function') {
+    const chunks = [];
+    for await (const chunk of body) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  }
+  return Buffer.from(body);
+}
+
 /** In-memory stand-in for an S3-compatible client. Never touches a network. */
 function makeFakeClient(overrides = {}) {
   const store = new Map();
@@ -67,9 +87,13 @@ function makeFakeClient(overrides = {}) {
         if (result !== undefined) return result;
       }
       if (command instanceof PutObjectCommand) {
-        const { Key, Body, Metadata } = command.input;
-        const bodyBuffer = Buffer.isBuffer(Body) ? Body : Buffer.from(Body);
-        store.set(Key, { body: bodyBuffer, metadata: Metadata || {}, size: bodyBuffer.length });
+        const { Key, Body, Metadata, IfNoneMatch } = command.input;
+        if (IfNoneMatch === '*' && store.has(Key)) {
+          throw preconditionFailedError();
+        }
+        const isStreamBody = Boolean(Body && typeof Body.pipe === 'function');
+        const bodyBuffer = await readBody(Body);
+        store.set(Key, { body: bodyBuffer, metadata: Metadata || {}, size: bodyBuffer.length, wasStreamBody: isStreamBody });
         return {};
       }
       if (command instanceof HeadObjectCommand) {
@@ -142,8 +166,6 @@ test('TEST 2: a successful local backup triggers exactly one off-site upload att
   });
 
   assert.equal(result.skipped, false);
-  // Two PutObjectCommand + one HeadObjectCommand-before + one HeadObjectCommand-verify = calls, but
-  // the important assertion is that an upload attempt genuinely happened (not zero).
   assert.ok(client.calls.length > 0, 'expected at least one call to the off-site client');
   const putCalls = client.calls.filter((c) => c instanceof PutObjectCommand);
   assert.equal(putCalls.length, 2, 'expected exactly one PutObject for the .db and one for the .sha256');
@@ -203,7 +225,7 @@ test('TEST 4: a skipped local backup (single-flight guard already held) triggers
 // TEST 5/6/7 — upload content, checksum metadata, HEAD verification
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('TEST 5/6/7: uploads both .db and .sha256, metadata sha256 matches the real local checksum, HEAD verifies size + checksum', async () => {
+test('TEST 5/6/7: uploads both .db and .sha256, metadata sha256 matches the real local checksum, HEAD verifies size + checksum for both objects', async () => {
   const backupDir = path.join(tmpDir, `content-${Date.now()}`);
   const client = makeFakeClient();
   const backupResult = await seedLocalBackup(backupDir);
@@ -211,6 +233,7 @@ test('TEST 5/6/7: uploads both .db and .sha256, metadata sha256 matches the real
 
   const localDbBuffer = fs.readFileSync(backupResult.path);
   const localChecksum = crypto.createHash('sha256').update(localDbBuffer).digest('hex');
+  const localSha256Buffer = fs.readFileSync(`${backupResult.path}.sha256`);
 
   const uploadResult = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
 
@@ -225,13 +248,18 @@ test('TEST 5/6/7: uploads both .db and .sha256, metadata sha256 matches the real
   // TEST 6: metadata sha256 matches the real local checksum
   const storedDbObject = client.store.get(uploadResult.dbKey);
   assert.equal(storedDbObject.metadata.sha256, localChecksum);
-
-  // TEST 7: HEAD verification checked size + sha256 metadata (indirectly proven
-  // by uploaded:true, since uploadBackupOffsite throws internally on any
-  // mismatch -- explicitly re-confirm the stored object actually matches too)
   assert.equal(storedDbObject.size, localDbBuffer.length);
+
+  const storedSidecarObject = client.store.get(uploadResult.sha256Key);
+  assert.equal(storedSidecarObject.size, localSha256Buffer.length);
+
+  // TEST 7: HEAD verification -- with the pre-upload existence check removed
+  // (see IfNoneMatch tests below), every HeadObjectCommand call here is
+  // post-upload verification: one for the .db, one for the .sha256.
   const headCalls = client.calls.filter((c) => c instanceof HeadObjectCommand);
-  assert.ok(headCalls.length >= 2, 'expected a pre-upload existence check and a post-upload verification HEAD call');
+  assert.equal(headCalls.length, 2, 'expected exactly two post-upload verification HEAD calls (.db and .sha256), no pre-upload check');
+  assert.equal(headCalls[0].input.Key, uploadResult.dbKey);
+  assert.equal(headCalls[1].input.Key, uploadResult.sha256Key);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -242,13 +270,11 @@ test('TEST 8: a post-upload checksum metadata mismatch is reported as an off-sit
   const backupDir = path.join(tmpDir, `mismatch-${Date.now()}`);
   const backupResult = await seedLocalBackup(backupDir);
 
-  let headCallCount = 0;
   const client = makeFakeClient({
-    onSend: async (command, store) => {
+    onSend: async (command) => {
       if (command instanceof HeadObjectCommand) {
-        headCallCount += 1;
-        if (headCallCount === 1) return undefined; // let the default "not found" behavior run (pre-upload check)
-        // Second HEAD call (post-upload verification): return tampered metadata.
+        // Every HEAD call is now post-upload verification; tamper the first
+        // one (the .db check) to prove a mismatch is caught.
         return { ContentLength: 999999, Metadata: { sha256: 'not-the-real-checksum' } };
       }
       return undefined; // default PutObjectCommand behavior
@@ -259,6 +285,24 @@ test('TEST 8: a post-upload checksum metadata mismatch is reported as an off-sit
   assert.equal(result.skipped, false);
   assert.equal(result.uploaded, false);
   assert.match(result.error, /mismatch/i);
+});
+
+test('TEST 8b: a post-upload sidecar size mismatch is reported as an off-site failure', async () => {
+  const backupDir = path.join(tmpDir, `sidecar-mismatch-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+
+  const client = makeFakeClient({
+    onSend: async (command, store) => {
+      if (command instanceof HeadObjectCommand && command.input.Key.endsWith('.sha256')) {
+        return { ContentLength: 999999, Metadata: {} };
+      }
+      return undefined;
+    },
+  });
+
+  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+  assert.equal(result.uploaded, false);
+  assert.match(result.error, /sidecar size mismatch/i);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -427,7 +471,7 @@ test('TEST 16: object key/prefix normalization strips slashes and rejects path-t
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST 17 — HTTPS required; loopback http allowed only for test mocking
+// TEST 17 — strict endpoint protocol allowlist
 // ═══════════════════════════════════════════════════════════════════════════
 
 test('TEST 17: a non-loopback http:// endpoint is rejected; https:// and loopback http:// are accepted', () => {
@@ -445,9 +489,30 @@ test('TEST 17: a non-loopback http:// endpoint is rejected; https:// and loopbac
 
   const loopback = offsite.resolveOffsiteConfig({ ...base, OFFSITE_BACKUP_ENDPOINT: 'http://127.0.0.1:9000' });
   assert.equal(loopback.ok, true, 'a loopback http endpoint must be allowed so tests can mock a local server');
+  const loopbackLocalhost = offsite.resolveOffsiteConfig({ ...base, OFFSITE_BACKUP_ENDPOINT: 'http://localhost:9000' });
+  assert.equal(loopbackLocalhost.ok, true);
 
   const noEndpoint = offsite.resolveOffsiteConfig({ ...base });
   assert.equal(noEndpoint.ok, true, 'no endpoint at all is valid -- means "use the real AWS S3 default"');
+});
+
+test('TEST 17b: every non-https, non-loopback-http protocol is rejected -- allowlist, not a denylist', () => {
+  const base = {
+    OFFSITE_BACKUP_BUCKET: 'b', OFFSITE_BACKUP_REGION: 'r',
+    OFFSITE_BACKUP_ACCESS_KEY_ID: 'a', OFFSITE_BACKUP_SECRET_ACCESS_KEY: 's',
+  };
+
+  for (const endpoint of [
+    'ftp://storage.example.com',
+    'file:///etc/passwd',
+    'ws://storage.example.com',
+    'wss://storage.example.com',
+    'ftp://127.0.0.1:2121', // even on loopback, only http:/https: are meaningful for this SDK
+  ]) {
+    const result = offsite.resolveOffsiteConfig({ ...base, OFFSITE_BACKUP_ENDPOINT: endpoint });
+    assert.equal(result.ok, false, `expected ${endpoint} to be rejected`);
+    assert.match(result.reason, /https/i);
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -467,6 +532,169 @@ test('TEST 18: no delete/prune method is exported, called, or even imported by t
   for (const name of exportNames) {
     assert.doesNotMatch(name.toLowerCase(), /delete|prune|remove/);
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Atomic no-overwrite: IfNoneMatch on both PutObject calls, no pre-upload HEAD
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('atomic no-overwrite: both PutObject calls carry IfNoneMatch:\'*\', and no HeadObject is ever called before either PUT', async () => {
+  const backupDir = path.join(tmpDir, `ifnonematch-${Date.now()}`);
+  const client = makeFakeClient();
+  const backupResult = await seedLocalBackup(backupDir);
+
+  await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+
+  const putCalls = client.calls.filter((c) => c instanceof PutObjectCommand);
+  assert.equal(putCalls.length, 2);
+  assert.equal(putCalls[0].input.IfNoneMatch, '*', 'the .db PutObject must use IfNoneMatch: \'*\'');
+  assert.equal(putCalls[1].input.IfNoneMatch, '*', 'the .sha256 PutObject must use IfNoneMatch: \'*\'');
+
+  // The very first call to the client must be the .db PUT, not a HEAD --
+  // proves there is no pre-upload existence check anywhere in the flow.
+  assert.ok(client.calls[0] instanceof PutObjectCommand, 'the first call to the client must be a PutObject, never a pre-upload HeadObject');
+});
+
+test('a 412/PreconditionFailed on the .db PutObject is treated as "already uploaded", not an error', async () => {
+  const backupDir = path.join(tmpDir, `already-exists-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+
+  const client = makeFakeClient({
+    onSend: async (command) => {
+      if (command instanceof PutObjectCommand && !command.input.Key.endsWith('.sha256')) {
+        throw preconditionFailedError();
+      }
+      return undefined;
+    },
+  });
+
+  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'already_exists');
+  // Only the one rejected .db PUT was attempted -- the sidecar PUT must
+  // never be attempted once the .db is known to already exist.
+  const putCalls = client.calls.filter((c) => c instanceof PutObjectCommand);
+  assert.equal(putCalls.length, 1);
+});
+
+test('a 412 on the .sha256 PutObject when the .db PUT just succeeded is treated as a real failure, never a silent skip', async () => {
+  const backupDir = path.join(tmpDir, `sidecar-anomaly-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+
+  const client = makeFakeClient({
+    onSend: async (command) => {
+      if (command instanceof PutObjectCommand && command.input.Key.endsWith('.sha256')) {
+        throw preconditionFailedError();
+      }
+      return undefined;
+    },
+  });
+
+  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+  assert.equal(result.uploaded, false);
+  assert.match(result.error, /sidecar.*already exists/i);
+});
+
+test('a provider that rejects the IfNoneMatch parameter itself (not a 412) fails the attempt -- no fallback to a blind overwrite', async () => {
+  const backupDir = path.join(tmpDir, `unsupported-condition-${Date.now()}`);
+  const backupResult = await seedLocalBackup(backupDir);
+
+  const client = makeFakeClient({
+    onSend: async (command) => {
+      if (command instanceof PutObjectCommand) {
+        const err = new Error('Unknown parameter: IfNoneMatch');
+        err.name = 'ValidationException';
+        throw err;
+      }
+      return undefined;
+    },
+  });
+
+  const result = await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+  assert.equal(result.uploaded, false);
+  assert.match(result.error, /IfNoneMatch/);
+  // No object was ever actually written to the store -- confirms there is
+  // no retry-without-the-condition fallback anywhere in the code path.
+  assert.equal(client.store.size, 0);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Streaming: the .db body is a Readable stream, never a fully-buffered Buffer
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('the .db upload Body is a Readable stream, not a Buffer -- the whole file is never held in process memory', async () => {
+  const backupDir = path.join(tmpDir, `streaming-${Date.now()}`);
+  const client = makeFakeClient();
+  const backupResult = await seedLocalBackup(backupDir);
+
+  await offsite.uploadBackupOffsite(backupResult, { env: FAKE_CONFIG_ENV, client, log: () => {} });
+
+  const dbPut = client.calls.find((c) => c instanceof PutObjectCommand && !c.input.Key.endsWith('.sha256'));
+  assert.ok(dbPut, 'expected a PutObjectCommand for the .db key');
+  assert.equal(Buffer.isBuffer(dbPut.input.Body), false, 'the .db Body must not be a Buffer');
+  assert.equal(typeof dbPut.input.Body.pipe, 'function', 'the .db Body must be a Readable stream (has .pipe)');
+  assert.equal(dbPut.input.ContentLength, fs.statSync(backupResult.path).size, 'ContentLength must be supplied explicitly alongside the stream');
+
+  const storedDbObject = client.store.get(dbPut.input.Key);
+  assert.equal(storedDbObject.wasStreamBody, true, 'the fake client must have received and consumed an actual stream, confirming this end to end');
+
+  // The .sha256 sidecar is small and may remain buffered.
+  const sidecarPut = client.calls.find((c) => c instanceof PutObjectCommand && c.input.Key.endsWith('.sha256'));
+  assert.equal(Buffer.isBuffer(sidecarPut.input.Body), true, 'the tiny .sha256 sidecar may still be a plain Buffer');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Scheduler orchestration: startScheduler must thread env/offsite deps through
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('startScheduler threads its resolved env and injected off-site test dependencies into each scheduled backup cycle', async () => {
+  const client = makeFakeClient();
+
+  const sourceDbPath = path.join(tmpDir, `source-scheduler-${Date.now()}.db`);
+  const sourceDb = openDb(sourceDbPath);
+  await run(sourceDb, 'CREATE TABLE t (id INTEGER PRIMARY KEY)');
+
+  // MIN_INTERVAL_MINUTES is 15 -- waiting for a real tick isn't practical in
+  // a test. Capture the exact callback startScheduler registers with
+  // setInterval and invoke it directly instead; this is the same function
+  // object the real timer would have called, just without the real wait.
+  let capturedCallback = null;
+  const realSetInterval = global.setInterval;
+  global.setInterval = (fn) => {
+    capturedCallback = fn;
+    return { unref() {} };
+  };
+
+  try {
+    sqliteBackup.startScheduler({
+      env: { ENABLE_SQLITE_BACKUPS: 'true', ...FAKE_CONFIG_ENV },
+      db: sourceDb,
+      offsiteClient: client,
+      log: () => {},
+    });
+  } finally {
+    global.setInterval = realSetInterval;
+  }
+
+  assert.ok(capturedCallback, 'expected startScheduler to register an interval callback');
+
+  capturedCallback();
+  // The callback is fire-and-forget internally (runBackupCycle(...).catch(...))
+  // and involves real disk I/O (the Online Backup API, integrity_check),
+  // so a fixed small number of microtask ticks isn't reliable -- poll for
+  // the effect instead, bounded so a genuine regression still fails fast.
+  const deadline = Date.now() + 5000;
+  while (client.calls.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  assert.ok(
+    client.calls.some((c) => c instanceof PutObjectCommand),
+    'expected the off-site client injected into startScheduler to have received calls from the scheduled cycle',
+  );
+
+  sqliteBackup.stopScheduler();
+  await closeDb(sourceDb);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
