@@ -28,6 +28,44 @@ backup time.
   Quarantine or delete `-wal`/`-shm` together with the main file — never
   keep one from before the restore and one from after.
 
+## If local backups aren't available: retrieving one off-site
+
+Skip this section entirely when a good local backup exists under
+`SQLITE_BACKUP_DIR` — use that first. This is only for when the local disk
+itself is the problem (lost, corrupted, or the backups directory is
+otherwise unusable), and a copy needs to be pulled from the off-site object
+store (`backend/services/sqlite-offsite-backup.js`, opt-in via
+`ENABLE_OFFSITE_BACKUP`) instead.
+
+1. **Select the desired remote backup.** Same naming as local:
+   `ecommerce-YYYYMMDD-HHMMSSZ.db`, under whatever key prefix
+   `OFFSITE_BACKUP_KEY_PREFIX` was configured with, followed by `sqlite/`.
+2. **Retrieve both objects** — the `.db` file and its `.sha256` sidecar —
+   using the storage provider's own CLI or console, with an operator-level
+   credential. This is a separate, more-privileged credential than the
+   application's own upload-only one; never the app's runtime credential.
+3. **Never retrieve through any JONO HTTP endpoint.** None exists for this
+   on purpose — see "Guardrails" below.
+4. **Verify the downloaded `.db`'s SHA-256 matches the downloaded `.sha256`
+   sidecar** before doing anything else, exactly as you would for a local
+   backup:
+   ```
+   sha256sum ecommerce-YYYYMMDD-HHMMSSZ.db
+   ```
+   Do not proceed on a mismatch — the transfer may have been corrupted, or
+   the wrong object retrieved; re-download or pick a different backup.
+5. **Run `PRAGMA integrity_check` on the downloaded file** before trusting
+   it, same as the local flow:
+   ```
+   sqlite3 ecommerce.db "PRAGMA integrity_check;"
+   ```
+   It must return exactly `ok`.
+6. **Only then continue through the restoring procedure below**, starting
+   at "Choosing and verifying a backup" — from this point on, a verified
+   off-site backup is handled identically to a verified local one. The same
+   "never mix a restored `.db` with an old `-wal`/`-shm`" rule applies
+   without exception.
+
 ## Choosing and verifying a backup
 
 1. List the candidates in the backup directory and pick the target
@@ -90,3 +128,39 @@ as healthy again:
   exists.** Backup files contain full customer PII (names, emails,
   addresses, order history). They are retrieved by direct filesystem/disk
   access only, never served over HTTP.
+- **The off-site layer has no restore, download, or browse endpoint
+  either**, and no application-level delete/prune capability against the
+  object store at all — see `sqlite-offsite-backup.js`'s own module
+  comment. Remote retention is a bucket lifecycle policy an operator
+  configures on the storage provider's side (a starting point of ~30 days
+  is reasonable), never something this codebase's application code can do.
+  That split is deliberate: off-site storage is the disaster-recovery
+  boundary of last resort, and a bug in application code should never be
+  able to reach in and delete backup history, local or remote.
+
+## Off-site credential: minimum IAM permissions
+
+The credential this application uses (`OFFSITE_BACKUP_ACCESS_KEY_ID` /
+`OFFSITE_BACKUP_SECRET_ACCESS_KEY`) needs exactly two permissions, for
+AWS S3 or any IAM-compatible S3-provider:
+
+- **`s3:PutObject`** — uploads the `.db` and `.sha256` objects.
+- **`s3:GetObject`** — required for the post-upload HEAD verification calls.
+  AWS's IAM model has no separate "HeadObject" permission; the `HeadObject`
+  API action is authorized by `s3:GetObject`, the same permission a full
+  download would need, even though this module never actually downloads
+  object contents.
+
+Deliberately **not** required by the normal upload path:
+
+- **No `s3:DeleteObject`.** This module never deletes anything (see above);
+  granting it would only widen a leaked credential's blast radius for no
+  functional benefit.
+- **No `s3:ListBucket`.** Overwrite protection uses an atomic conditional
+  create (`IfNoneMatch: '*'` on `PutObject`) rather than a HEAD-then-PUT
+  existence check, so nothing in the normal upload path ever needs to
+  enumerate or check bucket contents ahead of a write.
+
+An operator retrieving a backup for restore (see the retrieval steps above)
+uses a *separate*, more-privileged credential of their own — never this
+application's write-oriented one.

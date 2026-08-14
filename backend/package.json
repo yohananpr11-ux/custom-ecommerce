@@ -18,6 +18,7 @@
     "node": "24.14.1"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1110.0",
     "axios": "^1.16.1",
     "better-sqlite3": "^13.0.3",
     "cloudinary": "^2.10.0",

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3');
 const dbModule = require('../db');
+const offsiteBackup = require('./sqlite-offsite-backup');
 
 const BACKUP_FILENAME_PATTERN = /^ecommerce-\d{8}-\d{6}Z\.db$/;
 
@@ -226,6 +227,31 @@ async function runBackup(options = {}) {
     }
 }
 
+// Orchestration only -- runBackup() itself above is completely unmodified.
+// Off-site upload is attempted only after a successful, non-skipped local
+// backup, and only ever as a separate step whose own failure is caught and
+// logged here, never allowed to affect what runBackup() already returned.
+// This is the one and only place uploadBackupOffsite() is ever called from
+// production code -- calling runBackup() directly (as most existing tests
+// and any manual/one-off invocation do) never triggers an off-site upload.
+async function runBackupCycle(options = {}) {
+    const result = await runBackup(options);
+    if (result && result.skipped === false) {
+        try {
+            await offsiteBackup.uploadBackupOffsite(result, {
+                log: options.log,
+                env: options.env,
+                client: options.offsiteClient,
+                resolveConfig: options.offsiteResolveConfig,
+            });
+        } catch (err) {
+            const log = options.log || console.error;
+            log(`[SQLite Offsite Backup] upload failed: ${err && err.message}`);
+        }
+    }
+    return result;
+}
+
 function startScheduler(options = {}) {
     if (!shouldStartScheduler(options.env || process.env)) {
         return null;
@@ -243,7 +269,13 @@ function startScheduler(options = {}) {
     log(`[SQLite Backup] scheduler enabled: every ${intervalMinutes} minutes, retention ${retention}`);
 
     schedulerTimer = setInterval(() => {
-        runBackup({ db: options.db, log }).catch((err) => {
+        runBackupCycle({
+            db: options.db,
+            log,
+            env,
+            offsiteClient: options.offsiteClient,
+            offsiteResolveConfig: options.offsiteResolveConfig,
+        }).catch((err) => {
             console.error('[SQLite Backup] scheduled backup failed:', err.message);
         });
     }, intervalMs);
@@ -286,6 +318,7 @@ module.exports = {
     listManagedBackupFiles,
     pruneOldBackups,
     runBackup,
+    runBackupCycle,
     startScheduler,
     stopScheduler,
     _resetBackupStateForTests,
