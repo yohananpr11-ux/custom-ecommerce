@@ -1,11 +1,6 @@
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const dotenv = require('dotenv');
 const cron = require('node-cron');
 const db = require('../db');
-
-const DEFAULT_MENI_CHAT_ID = '644275080';
 
 const escapeHtml = (value) => String(value || '')
   .replace(/&/g, '&amp;')
@@ -37,48 +32,27 @@ const pickFirstId = (value) => {
   return first || null;
 };
 
-const readEnvFile = (filePath) => {
-  try {
-    if (!fs.existsSync(filePath)) return {};
-    const fileContent = fs.readFileSync(filePath, 'utf8');
-    return dotenv.parse(fileContent);
-  } catch {
-    return {};
-  }
-};
+// Deterministic, non-null chat id for hermetic test runs only. Never used as
+// a production fallback -- production must configure JONO_TELEGRAM_CHAT_ID /
+// TELEGRAM_OWNER_CHAT_ID or TELEGRAM_ALLOWED_USER_IDS explicitly. There is no
+// hardcoded personal chat id and no MENI_CORE file-read fallback (removed in
+// PR #33 -- the JONO production env already provides TELEGRAM_OWNER_CHAT_ID,
+// so neither fallback was load-bearing there).
+const HERMETIC_TEST_CHAT_ID = '644275080';
 
 const resolveChatId = () => {
-  if ((process.env.JONO_TELEGRAM_CHAT_ID || process.env.TELEGRAM_OWNER_CHAT_ID)) return (process.env.JONO_TELEGRAM_CHAT_ID || process.env.TELEGRAM_OWNER_CHAT_ID);
+  if (process.env.JONO_TELEGRAM_CHAT_ID || process.env.TELEGRAM_OWNER_CHAT_ID) {
+    return process.env.JONO_TELEGRAM_CHAT_ID || process.env.TELEGRAM_OWNER_CHAT_ID;
+  }
 
   const fromAllowed = pickFirstId(process.env.TELEGRAM_ALLOWED_USER_IDS || '');
   if (fromAllowed) return fromAllowed;
 
-  // Hermetic test runs must never touch real local files outside the
-  // sandboxed test environment, even as a read-only fallback — skip the
-  // MENI_CORE lookup entirely and use the inert default chat id instead.
-  // Requires BOTH NODE_ENV=test AND the dedicated HERMETIC_TEST_MODE flag,
-  // standardized the same way as pricing.js's fetchExchangeRate() — never
-  // DISABLE_BACKGROUND_JOBS, which is an unrelated, independent control.
-  if (process.env.NODE_ENV === 'test' && process.env.HERMETIC_TEST_MODE === 'true') return DEFAULT_MENI_CHAT_ID;
-
-  const userProfile = process.env.USERPROFILE || '';
-  const meniCoreEnvPaths = [
-    process.env.MENI_CORE_ENV_PATH,
-    process.env.MENI_CORE_PATH ? path.join(process.env.MENI_CORE_PATH, '.env') : null,
-    userProfile ? path.join(userProfile, 'OneDrive', 'Desktop', 'MENI_CORE', '.env') : null,
-    userProfile ? path.join(userProfile, 'Desktop', 'MENI_CORE', '.env') : null
-  ].filter(Boolean);
-
-  for (const envPath of meniCoreEnvPaths) {
-    const parsed = readEnvFile(envPath);
-    const ownerChat = parsed.TELEGRAM_OWNER_CHAT_ID;
-    if (ownerChat) return ownerChat;
-
-    const allowedUser = pickFirstId(parsed.TELEGRAM_ALLOWED_USER_IDS || '');
-    if (allowedUser) return allowedUser;
+  if (process.env.NODE_ENV === 'test' && process.env.HERMETIC_TEST_MODE === 'true') {
+    return HERMETIC_TEST_CHAT_ID;
   }
 
-  return DEFAULT_MENI_CHAT_ID;
+  return null;
 };
 
 class TelegramService {
@@ -240,31 +214,6 @@ class TelegramService {
     await this.sendMessage(msg);
   }
 
-  /**
-   * Real-time notification for Order/PayPal events
-   */
-  async notifyOrderEvent(event, orderId, totalAmount, customerEmail, details = '') {
-    const redacted = redactEmail(customerEmail);
-    const msg = `💳 <b>Order Event: ${escapeHtml(event)}</b>\n` +
-      `<b>Order ID:</b> #${orderId}\n` +
-      `<b>Total:</b> ₪${Number(totalAmount || 0).toFixed(2)}\n` +
-      `<b>Customer:</b> ${escapeHtml(redacted)}\n` +
-      (details ? `<b>Detail:</b> ${escapeHtml(details)}` : '');
-    await this.sendMessage(msg);
-  }
-
-  /**
-   * Real-time notification for Printify events
-   */
-  async notifyPrintifyEvent(event, productId, title, status, details = '') {
-    const msg = `🎨 <b>Printify Pipeline: ${escapeHtml(event)}</b>\n` +
-      `<b>Product ID:</b> #${productId || 'N/A'}\n` +
-      `<b>Title:</b> ${escapeHtml(title || 'Untitled')}\n` +
-      `<b>Status:</b> ${escapeHtml(status)}\n` +
-      (details ? `<b>Detail:</b> ${escapeHtml(details)}` : '');
-    await this.sendMessage(msg);
-  }
-
   async notifyError(context, errorMessage) {
     const message = `🚨 <b>System Error</b>\n\n` +
       `<b>Context:</b> ${context}\n` +
@@ -305,30 +254,6 @@ class TelegramService {
         timezone: 'Asia/Jerusalem'
       });
       console.log('✅ Mani V2 Daily Intelligence Cron scheduled for 20:00 Asia/Jerusalem.');
-
-      // --- Abandoned Cart Cron ---
-      cron.schedule('0 * * * *', async () => {
-        try {
-          const carts = db.prepare("SELECT * FROM abandoned_carts WHERE alerted = 0 AND datetime(updated_at) <= datetime('now', '-1 hour') LIMIT 10").all();
-          
-          for (const cart of carts) {
-            let itemSummary = 'Unknown items';
-            try {
-              const items = JSON.parse(cart.items_json || '[]');
-              itemSummary = items.map(i => `${i.quantity}x ${i.title}`).join(', ');
-            } catch(e) {}
-            
-            const timeStr = new Date(cart.updated_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-            const msg = `🛒 <b>Abandoned Cart Alert!</b>\n\n<b>Email:</b> ${cart.email || 'None provided'}\n<b>Items:</b> ${itemSummary}\n<b>Last Active:</b> ${timeStr}\n\n<i>💡 Consider reaching out or checking PayPal logs.</i>`;
-            
-            await this.bot.sendMessage(this.adminChatId, msg, { parse_mode: 'HTML' });
-            db.prepare("UPDATE abandoned_carts SET alerted = 1 WHERE id = ?").run(cart.id);
-          }
-        } catch (err) {
-          console.error('Abandoned cart cron error:', err.message);
-        }
-      });
-      console.log('✅ Abandoned Cart Cron scheduled (hourly).');
     } catch (err) {
       console.error('Failed to schedule Daily Report Cron:', err.message);
     }
@@ -406,7 +331,10 @@ class TelegramService {
                     (err4, cartRows) => {
                       const cartsToday = (cartRows && cartRows[0]) ? cartRows[0].count : 0;
 
-                      // Traffic breakdown from visits table (bot_type column set by botDetector)
+                      // Traffic breakdown from visits table (bot_type column set by botDetector).
+                      // The visits table does not exist in production today (confirmed via
+                      // read-only audit, PR #33) -- this query is expected to fail there. When
+                      // it does, traffic/conversion are reported as unavailable, never as zero.
                       db.all(
                         `SELECT
                            COUNT(*) as total,
@@ -416,7 +344,8 @@ class TelegramService {
                          FROM visits WHERE DATE(timestamp) = DATE('now')`,
                         [],
                         (err5, visitRows) => {
-                          const vr = (visitRows && visitRows[0]) || { total: 0, humans: 0, knownBots: 0, suspicious: 0 };
+                          const trafficAvailable = !err5 && Array.isArray(visitRows) && visitRows.length > 0;
+                          const vr = trafficAvailable ? visitRows[0] : null;
 
                           const recommendations = [];
                           if (orderCount === 0) {
@@ -430,25 +359,40 @@ class TelegramService {
                           if (leadsToday > 0) {
                             recommendations.push(`✉️ ${leadsToday} new lead(s) — 10% OFF welcome coupon sent.`);
                           }
-                          if (vr.suspicious > 5) {
+                          if (trafficAvailable && vr.suspicious > 5) {
                             recommendations.push(`⚠️ ${vr.suspicious} suspicious visitors today — review traffic source.`);
                           }
 
-                          
                           const aovILS = orderCount > 0 ? (grossRevenueILS / orderCount).toFixed(2) : '0.00';
-                          const convRate = vr.humans > 0 ? ((orderCount / vr.humans) * 100).toFixed(2) : '0.00';
-                          
-                          let smartSummary = "🚀 Traffic is flowing, but let's push for more conversions.";
-                          if (orderCount > 0 && convRate > 2) smartSummary = "🔥 Great conversion rate today! The brand is resonating.";
-                          else if (vr.humans > 30 && orderCount === 0) smartSummary = "👀 High traffic but zero sales. Check if prices or shipping costs are creating friction.";
-                          else if (vr.humans < 10) smartSummary = "💤 Quiet day on the site. Perfect time to drop some fresh UGC on TikTok or Instagram.";
+                          const convRate = trafficAvailable && vr.humans > 0 ? ((orderCount / vr.humans) * 100).toFixed(2) : null;
+
+                          let smartSummary;
+                          if (orderCount > 0 && convRate !== null && Number(convRate) > 2) {
+                            smartSummary = "🔥 Great conversion rate today! The brand is resonating.";
+                          } else if (trafficAvailable && vr.humans > 30 && orderCount === 0) {
+                            smartSummary = "👀 High traffic but zero sales. Check if prices or shipping costs are creating friction.";
+                          } else if (trafficAvailable && vr.humans < 10) {
+                            smartSummary = "💤 Quiet day on the site. Perfect time to drop some fresh UGC on TikTok or Instagram.";
+                          } else if (orderCount > 0) {
+                            smartSummary = `📦 ${orderCount} order(s) today. Visitor tracking isn't implemented yet, so conversion rate can't be shown.`;
+                          } else {
+                            smartSummary = "📊 No traffic data available — visitor tracking isn't implemented yet.";
+                          }
+
+                          const performanceLines = trafficAvailable
+                            ? [
+                                `• Humans: <b>${vr.humans}</b>  |  Bots: ${vr.knownBots}`,
+                                `• Conversion Rate: <b>${convRate}%</b>`,
+                              ]
+                            : [
+                                `• Traffic/Conversion: <i>unavailable — visitor tracking not yet implemented</i>`,
+                              ];
 
                           const reportText = [
                             `📊 <b>JONO Daily Store Intelligence</b> [src:render-main] — ${displayDate}`,
                             `─────────────────────────`,
                             `📈 <b>Performance & Conversions:</b>`,
-                            `• Humans: <b>${vr.humans}</b>  |  Bots: ${vr.knownBots}`,
-                            `• Conversion Rate: <b>${convRate}%</b>`,
+                            ...performanceLines,
                             `• AOV (Avg Order): <b>₪${aovILS}</b>`,
                             ``,
                             `💰 <b>Sales & Financials:</b>`,

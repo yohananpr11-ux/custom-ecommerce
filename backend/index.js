@@ -1087,19 +1087,28 @@ app.all('/api/admin/register-telegram-webhook', async (req, res) => {
   try {
     // Read what's currently set so we can show before/after in the response.
     const before = await axios.get(`https://api.telegram.org/bot${token}/getWebhookInfo`, { timeout: 8000 });
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    const setPayload = {
+      url: webhookUrl,
+      allowed_updates: ['message', 'callback_query'],
+      drop_pending_updates: true,
+    };
+    // PR #33: when TELEGRAM_WEBHOOK_SECRET is configured, register it with
+    // Telegram so it starts sending X-Telegram-Bot-Api-Secret-Token on every
+    // update -- the webhook handler validates that header once it's set.
+    if (webhookSecret) {
+      setPayload.secret_token = webhookSecret;
+    }
     const setResp = await axios.post(
       `https://api.telegram.org/bot${token}/setWebhook`,
-      {
-        url: webhookUrl,
-        allowed_updates: ['message', 'callback_query'],
-        drop_pending_updates: true,
-      },
+      setPayload,
       { timeout: 8000 }
     );
     const after = await axios.get(`https://api.telegram.org/bot${token}/getWebhookInfo`, { timeout: 8000 });
     return res.json({
       success: setResp.data && setResp.data.ok === true,
       newWebhookUrl: webhookUrl,
+      secretTokenRegistered: !!webhookSecret,
       telegramResponse: setResp.data,
       before: before.data && before.data.result ? { url: before.data.result.url, pending: before.data.result.pending_update_count } : null,
       after:  after.data  && after.data.result  ? { url: after.data.result.url,  pending: after.data.result.pending_update_count }  : null,
@@ -1224,27 +1233,11 @@ app.post('/api/analytics/event', express.json(), async (req, res) => {
     const visitorType = isBot ? '🤖 Bot / Crawler' : '👤 לקוח אמיתי (Human)';
 
     const payload_json = payload ? JSON.stringify(payload) : null;
-    
+
     db.prepare(`
       INSERT INTO analytics_events (event_type, visitor_id, device_type, payload_json)
       VALUES (?, ?, ?, ?)
     `).run(event_type, visitor_id, device_type, payload_json);
-
-    // If it's a real human doing a high-intent action, notify via Telegram instantly!
-    if (!isBot && (event_type === 'begin_checkout' || event_type === 'purchase')) {
-      try {
-        const telegramService = req.app.locals.telegramService; // or direct call if available
-        // We can trigger a direct telegram notification here
-        const msg = `🚨 <b>פעילות בעלת ערך גבוה באתר!</b>\n\n<b>סוג משתמש:</b> ${visitorType}\n<b>פעולה:</b> ${event_type}\n<b>מכשיר:</b> ${device_type || 'Unknown'}\n<b>מזהה:</b> ${visitor_id}`;
-        
-        // Send via telegram service if instantiated
-        if (global.telegramBotInstance && global.telegramAdminChatId) {
-          await global.telegramBotInstance.sendMessage(global.telegramAdminChatId, msg, { parse_mode: 'HTML' });
-        }
-      } catch (tgErr) {
-        console.error('Real-time telegram alert error:', tgErr.message);
-      }
-    }
 
     res.json({ success: true, event_type, visitorType });
   } catch (err) {
@@ -3604,15 +3597,46 @@ const appendAdminReplyToSession = async (sessionId, messageText) => {
   return true;
 };
 
+// SECURITY (PR #33): Telegram's own secret_token mechanism is the correct
+// way to verify inbound webhook requests actually come from Telegram (a
+// chat-id match alone is not a cryptographic secret). Warn once at startup
+// when it isn't configured yet, rather than failing closed immediately, so
+// rollout is safe: (1) deploy this code first, (2) then set
+// TELEGRAM_WEBHOOK_SECRET and re-register the webhook via
+// /api/admin/register-telegram-webhook so Telegram starts sending the
+// X-Telegram-Bot-Api-Secret-Token header, (3) verify this warning stops
+// appearing, (4) only then treat an unconfigured secret as an error.
+if (!process.env.TELEGRAM_WEBHOOK_SECRET) {
+  console.warn(
+    '⚠️ SECURITY: TELEGRAM_WEBHOOK_SECRET is not configured. Inbound Telegram webhook ' +
+    'requests are currently accepted without secret-token verification (temporary ' +
+    'backward-compatible mode). Configure TELEGRAM_WEBHOOK_SECRET and re-register the ' +
+    'webhook with Telegram to close this gap.'
+  );
+}
+
 app.post('/api/webhooks/telegram', async (req, res) => {
   try {
+    const configuredWebhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (configuredWebhookSecret) {
+      const providedSecret = req.get('X-Telegram-Bot-Api-Secret-Token') || '';
+      if (!timingSafeEqualStr(providedSecret, configuredWebhookSecret)) {
+        return res.status(401).json({ received: false, error: 'unauthorized' });
+      }
+    }
+
     const update = req.body || {};
     const message = update.message;
     if (!message || !message.text) {
       return res.json({ received: true, ignored: true, reason: 'no_text_message' });
     }
 
-    if (telegram.chatId && String(message.chat?.id || '') !== String(telegram.chatId)) {
+    // Fail-closed: if no authorized chat id is configured at all, reject
+    // rather than silently processing commands from any chat (PR #33).
+    if (!telegram.chatId) {
+      return res.status(503).json({ received: false, error: 'no_authorized_chat_configured' });
+    }
+    if (String(message.chat?.id || '') !== String(telegram.chatId)) {
       return res.json({ received: true, ignored: true, reason: 'unauthorized_chat' });
     }
 
