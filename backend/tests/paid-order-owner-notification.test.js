@@ -176,18 +176,19 @@ test('H: a successful paid order sends exactly one paid_purchase owner notificat
     const paidCalls = spy.calls.filter((c) => c.eventType === 'paid_purchase' && c.sent);
     assert.equal(paidCalls.length, 1, 'exactly one paid_purchase notification');
     assert.equal(paidCalls[0].dedupKey, `paid_purchase:order:${createRes.json.orderId}`);
-    assert.match(paidCalls[0].message, new RegExp(`#${createRes.json.orderId}\\b`), 'message must reference the real order id');
+    assert.match(paidCalls[0].message, new RegExp(`Order-ID:\\s*${createRes.json.orderId}\\b`), 'message must reference the real order id');
+    assert.match(paidCalls[0].message, /Event: PAID_ORDER/);
+    assert.match(paidCalls[0].message, /Payment-ID: \S+/, 'a real capture id must be present');
 
-    // Compare against the REAL persisted total/customer/item rather than
-    // assuming a value -- proves the message reflects actual DB/payment
-    // data (never invented), independent of exactly how pricing/shipping
-    // computed the final captured amount.
-    const order = await dbGet(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [createRes.json.orderId]);
+    // Compare against the REAL persisted total/item rather than assuming a
+    // value -- proves the message reflects actual DB/payment data (never
+    // invented), independent of exactly how pricing/shipping computed the
+    // final captured amount.
+    const order = await dbGet(`SELECT totalAmount FROM orders WHERE id = ?`, [createRes.json.orderId]);
     const items = await new Promise((resolve, reject) => {
       db.all(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [createRes.json.orderId], (err, rows) => (err ? reject(err) : resolve(rows)));
     });
     assert.match(paidCalls[0].message, new RegExp(Number(order.totalAmount).toFixed(2).replace('.', '\\.')), 'message must reference the real persisted total');
-    assert.match(paidCalls[0].message, new RegExp(order.customerName));
     assert.match(paidCalls[0].message, new RegExp(items[0].title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   } finally {
     axiosMock.restore();

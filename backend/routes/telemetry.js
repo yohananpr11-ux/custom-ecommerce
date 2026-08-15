@@ -13,12 +13,22 @@ const visitorTelemetry = require('../services/visitor-telemetry');
 const technicalIssues = require('../services/technical-issues');
 const ownerNotifications = require('../services/owner-notifications');
 
-const escapeHtml = (value) => String(value || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
+function referrerDomain(referrer) {
+  if (!referrer) return undefined;
+  try {
+    const host = new URL(referrer).hostname;
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Short, non-identifying prefix of an opaque id -- enough to eyeball/
+// correlate in a message without printing the full value unnecessarily.
+function abbreviateId(id) {
+  if (!id) return undefined;
+  return String(id).slice(0, 12);
+}
 
 const getClientIp = (req) => {
   const forwarded = req.headers['x-forwarded-for'];
@@ -111,11 +121,22 @@ router.post('/session-start', botDetectorMiddleware, express.json({ limit: '4kb'
     // and duplicate/replayed session_ids are stored (useful for PR #35
     // volume reporting) but never notify.
     if (isNew && isHuman) {
-      const message = `<b>New visitor</b>\n`
-        + `<b>Source:</b> ${escapeHtml(source || 'direct')}\n`
-        + `<b>Device:</b> ${escapeHtml(deviceCategory)}\n`
-        + `<b>Landing page:</b> <code>${escapeHtml(landingPath)}</code>\n`
-        + `<b>Time:</b> ${new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}`;
+      const message = ownerNotifications.buildOperatorMessage({
+        icon: '👤',
+        titleHe: 'JONO — מבקר אנושי חדש',
+        summaryHe: 'התחילה סשן גלישה אנושי חדש באתר.',
+        fields: [
+          ['Event', 'HUMAN_SESSION_STARTED'],
+          ['Time', new Date().toISOString()],
+          ['Session-ID', sessionId],
+          ['Visitor-ID', abbreviateId(visitorId)],
+          ['Source', source || 'direct'],
+          ['Device', deviceCategory],
+          ['Landing-Page', landingPath],
+          ['Referrer-Domain', referrerDomain(referrer)],
+          ['Human-Classification', req.visitorType],
+        ],
+      });
 
       try {
         // dedupKey is unique per session_id, and this branch is only ever

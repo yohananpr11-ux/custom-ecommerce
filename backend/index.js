@@ -333,16 +333,6 @@ const getClientIp = (req) => {
   return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
 };
 
-// PR #34: used by the owner-notifications.js call sites below (paid
-// purchase, checkout/capture failures) -- notify()'s message is
-// HTML-formatted, so any dynamic content embedded in it must be escaped.
-const escapeHtml = (value) => String(value || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
-
 const getOrderTotalAmount = (orderId) => new Promise((resolve, reject) => {
   db.get(`SELECT totalAmount FROM orders WHERE id = ?`, [orderId], (err, row) => {
     if (err) return reject(err);
@@ -3265,6 +3255,8 @@ app.post('/api/paypal/create-order', async (req, res) => {
         type: 'checkout_request_failure',
         route: req.originalUrl || req.path,
         message: err && err.message,
+        method: req.method,
+        httpStatus: statusCode,
         severity: ownerNotifications.SEVERITY.WARNING,
       }).catch((issueErr) => console.error('[technical-issues] failed to record checkout_request_failure:', issueErr.message));
     }
@@ -3421,10 +3413,6 @@ app.post('/api/paypal/capture-order', async (req, res) => {
         await consumeLeadPromoCode(existingOrder.promoCode);
       }
 
-      const amountText = captureCurrency === 'USD'
-        ? `$${captureValue.toFixed(2)}`
-        : `₪${captureValue.toFixed(2)}`;
-
       // PR #34: single owner notification for a genuinely new paid order,
       // through the centralized owner-notifications.js module -- replaces
       // the previous two separate direct Telegram sends
@@ -3438,13 +3426,30 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
       const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [localOrderId]);
       if (paidOrder) {
-        const itemsList = paidOrderItems.map((item) => `- ${item.quantity}x ${item.title || 'Unknown item'}`).join('\n') || '-';
-        const message = `<b>Paid order</b>\n`
-          + `<b>Order:</b> #${localOrderId}\n`
-          + `<b>Provider:</b> PayPal\n`
-          + `<b>Total:</b> ${amountText}\n`
-          + `<b>Customer:</b> ${escapeHtml(paidOrder.customerName)}\n`
-          + `<b>Items:</b>\n${escapeHtml(itemsList)}`;
+        const itemCount = paidOrderItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+        const productsList = paidOrderItems.map((item) => `${item.quantity}x ${item.title || 'Unknown item'}`).join(', ');
+        // Severity here is a label describing the event's nature in the
+        // message body, independent of the notify() call's own severity
+        // param below (which controls SEND behavior -- INFO never sends
+        // immediately in owner-notifications.js, so it must stay CRITICAL
+        // there even though a successful payment is good news, not an
+        // error).
+        const message = ownerNotifications.buildOperatorMessage({
+          icon: '💰',
+          titleHe: 'JONO — הזמנה שולמה בהצלחה',
+          summaryHe: 'התקבל תשלום מוצלח מלקוח.',
+          fields: [
+            ['Event', 'PAID_ORDER'],
+            ['Severity', 'INFO'],
+            ['Time', new Date().toISOString()],
+            ['Order-ID', localOrderId],
+            ['Payment-ID', captureId],
+            ['Amount', captureValue.toFixed(2)],
+            ['Currency', captureCurrency],
+            ['Items', itemCount],
+            ['Products', productsList],
+          ],
+        });
         try {
           await ownerNotifications.notify({
             severity: ownerNotifications.SEVERITY.CRITICAL,
@@ -3479,6 +3484,8 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       type: 'payment_capture_failure',
       route: req.originalUrl || req.path,
       message: err && err.message,
+      method: req.method,
+      httpStatus: 500,
       severity: ownerNotifications.SEVERITY.CRITICAL,
     }).catch((issueErr) => console.error('[technical-issues] failed to record payment_capture_failure:', issueErr.message));
     return res.status(500).json({ error: 'Failed to capture PayPal order' });
@@ -4304,7 +4311,9 @@ async function recordCustomerFacing5xxIssue(err, req) {
     const result = await technicalIssues.recordIssue({
       type: 'backend_5xx',
       route: path,
-      message: `[${req.method}] ${(err && err.name) || 'Error'}`,
+      message: (err && err.name) || 'Error',
+      method: req.method,
+      httpStatus: 500,
       sessionId,
       severity: ownerNotifications.SEVERITY.WARNING,
     });
@@ -4326,7 +4335,36 @@ app.use((err, req, res, next) => {
     // response below. recordCustomerFacing5xxIssue never throws/rejects.
     recordCustomerFacing5xxIssue(err, req).catch(() => {});
   } else {
-    telegram.sendMessage(`🚨 <b>Critical Server Error</b>\n\nRoute: ${req.url}\nError: ${err.message}`).catch(console.error);
+    // PR #34 follow-up: migrated off the previous direct, unconditional
+    // telegram-service send call -- this is a genuine owner/system
+    // operational alert (an unhandled exception on an admin/internal/
+    // webhook route), not interactive Telegram protocol handling, so it
+    // belongs behind owner-notifications.js like every other operational
+    // send. A short cooldown (unlike this path's old behavior, which had
+    // none at all) keeps a persistently broken internal route from
+    // flooding Telegram; occurrence_count durability is not needed here
+    // the way it is for customer-impacting issues, so this intentionally
+    // does not go through the technical_issues table.
+    const internalMessage = ownerNotifications.buildOperatorMessage({
+      icon: '🚨',
+      titleHe: 'JONO — שגיאת מערכת פנימית',
+      summaryHe: 'אירעה שגיאה לא צפויה בנתיב פנימי/ניהולי (לא לקוח).',
+      fields: [
+        ['Event', 'INTERNAL_SERVER_ERROR'],
+        ['Severity', 'CRITICAL'],
+        ['Time', new Date().toISOString()],
+        ['Route', path],
+        ['Method', req.method],
+        ['Error-Signature', (err && err.name) || 'Error'],
+      ],
+    });
+    ownerNotifications.notify({
+      severity: ownerNotifications.SEVERITY.CRITICAL,
+      eventType: 'internal_server_error',
+      dedupKey: `internal_server_error:${req.method}:${path}:${(err && err.name) || 'Error'}`,
+      cooldownMs: 5 * 60 * 1000,
+      message: internalMessage,
+    }).catch((notifyErr) => console.error('[owner-notifications] failed to send internal_server_error alert:', notifyErr.message));
   }
 
   res.status(500).json({ error: 'Internal Server Error' });

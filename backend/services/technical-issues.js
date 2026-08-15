@@ -56,13 +56,6 @@ function parseSqliteUtcTimestamp(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-const escapeHtml = (value) => String(value || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
-
 function sanitizeMessage(message) {
   if (!message) return '';
   return String(message).replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE_LEN);
@@ -82,16 +75,33 @@ function buildSignature({ type, route, message }) {
   return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32);
 }
 
-function buildMessageHtml({ type, safeRoute, safeMessage, orderId, occurrenceCount, notifiedCount }) {
-  const recurrenceNote = notifiedCount > 1
-    ? `\n<i>(notified ${notifiedCount} time${notifiedCount === 1 ? '' : 's'} for this issue so far)</i>`
-    : '';
-  return `<b>Customer-impacting issue</b>\n`
-    + `<b>Type:</b> ${escapeHtml(type)}\n`
-    + (safeRoute ? `<b>Route:</b> <code>${escapeHtml(safeRoute)}</code>\n` : '')
-    + (safeMessage ? `<b>Details:</b> ${escapeHtml(safeMessage)}\n` : '')
-    + (orderId ? `<b>Order:</b> #${escapeHtml(String(orderId))}\n` : '')
-    + `<b>Occurrences:</b> ${occurrenceCount}${recurrenceNote}`;
+function buildIssueMessage({
+  issueId, type, severity, safeRoute, safeMessage, method, httpStatus,
+  sessionId, orderId, signature, occurrenceCount, firstSeenAt, lastSeenAt,
+}) {
+  return ownerNotifications.buildOperatorMessage({
+    icon: severity === 'CRITICAL' ? '🚨' : '⚠️',
+    titleHe: 'JONO — תקלה המשפיעה על לקוח',
+    summaryHe: 'זוהתה תקלה טכנית שעלולה להשפיע על לקוח באתר.',
+    fields: [
+      ['Event', 'CUSTOMER_IMPACTING_ERROR'],
+      ['Severity', severity],
+      ['Time', new Date().toISOString()],
+      ['Issue-ID', issueId],
+      ['Error-Signature', signature ? signature.slice(0, 16) : undefined],
+      ['Type', type],
+      ['Route', safeRoute],
+      ['Method', method],
+      ['HTTP-Status', httpStatus],
+      ['Details', safeMessage],
+      ['Session-ID', sessionId],
+      ['Order-ID', orderId],
+      ['Occurrences', occurrenceCount],
+      ['First-Seen', firstSeenAt],
+      ['Last-Seen', lastSeenAt],
+      ['Customer-Impact', 'YES'],
+    ],
+  });
 }
 
 // True only when Telegram genuinely confirmed delivery -- notify() itself
@@ -119,9 +129,11 @@ function wasGenuinelyDelivered(notifyResult) {
  * @param {string} [params.message] - safe, non-PII summary (truncated, no tokens/passwords/bodies)
  * @param {string} [params.sessionId]
  * @param {number|string} [params.orderId]
+ * @param {string} [params.method] - HTTP method, if known
+ * @param {number} [params.httpStatus] - HTTP status returned to the client, if known
  * @param {'CRITICAL'|'WARNING'} [params.severity] - defaults to WARNING
  */
-async function recordIssue({ type, route, message, sessionId, orderId, severity = 'WARNING' } = {}) {
+async function recordIssue({ type, route, message, sessionId, orderId, method, httpStatus, severity = 'WARNING' } = {}) {
   if (!type) throw new Error('technical-issues: type is required');
   const effectiveSeverity = ownerNotifications.SEVERITY[severity] ? severity : 'WARNING';
 
@@ -144,7 +156,7 @@ async function recordIssue({ type, route, message, sessionId, orderId, severity 
   );
 
   const row = await dbGetAsync(
-    `SELECT occurrence_count, last_notified_at, notified_count FROM technical_issues WHERE signature = ?`,
+    `SELECT id, occurrence_count, last_notified_at, notified_count, first_seen_at, last_seen_at FROM technical_issues WHERE signature = ?`,
     [signature]
   );
   const occurrenceCount = row ? row.occurrence_count : 1;
@@ -174,7 +186,21 @@ async function recordIssue({ type, route, message, sessionId, orderId, severity 
 
     if (claim.changes > 0) {
       notifiedCount += 1;
-      const messageHtml = buildMessageHtml({ type, safeRoute, safeMessage, orderId, occurrenceCount, notifiedCount });
+      const messageHtml = buildIssueMessage({
+        issueId: row && row.id,
+        type,
+        severity: effectiveSeverity,
+        safeRoute,
+        safeMessage,
+        method,
+        httpStatus,
+        sessionId,
+        orderId,
+        signature,
+        occurrenceCount,
+        firstSeenAt: row && row.first_seen_at,
+        lastSeenAt: row && row.last_seen_at,
+      });
 
       try {
         notifyResult = await ownerNotifications.notify({

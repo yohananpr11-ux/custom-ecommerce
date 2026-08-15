@@ -212,8 +212,9 @@ test('O: a simulated internal failure attributed to a telemetry-endpoint path is
 
 // ── P. No sensitive request values in stored issue context/signature ───
 
-test('P: sensitive request data (body fields, tokens, query string) never reaches the stored issue row', async () => {
+test('P: sensitive request data (body fields, tokens, query string) never reaches the stored issue row or the rendered Telegram text', async () => {
   const telegramMock = installGenuineTelegramDelivery();
+  const spy = installNotifySpy();
   try {
     const req = fakeReq({
       path: '/api/leads?token=SECRET-QUERY-TOKEN&email=leaked@example.com',
@@ -233,8 +234,13 @@ test('P: sensitive request data (body fields, tokens, query string) never reache
     assert.equal(row.route, '/api/leads', 'query string must never be persisted');
     assert.doesNotMatch(row.route, /token=|email=/);
     assert.doesNotMatch(row.message, /SECRET|password|Bearer|cookie|4111111111111111|leaked@|plain-body-email@/i);
-    assert.equal(row.message, '[POST] Error', 'only method + error class is stored, nothing from the request body');
+    assert.equal(row.message, 'Error', 'only the error class is stored in the message column, nothing from the request body');
+
+    const sentText = spy.calls.find((c) => c.eventType === 'customer_impacting_technical_issue').message;
+    assert.doesNotMatch(sentText, /SECRET|password|Bearer|cookie|4111111111111111|leaked@|plain-body-email@/i, 'the full rendered Telegram text must also be clean, not just the DB row');
+    assert.match(sentText, /Method: POST/, 'the safe method field is still present');
   } finally {
+    spy.restore();
     telegramMock.mock.restore();
   }
 });
