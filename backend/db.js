@@ -374,6 +374,15 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('leads', 'lastEmailAttemptAt', 'TEXT'),
     addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0'),
     addColumnIfMissing('abandoned_carts', 'alerted', 'INTEGER DEFAULT 0'),
+    // technical_issues (PR #34 follow-up: durable notification/cooldown
+    // state, so a repeated issue stays suppressed across a process
+    // restart instead of relying on owner-notifications' in-memory-only
+    // cooldown Map). last_notified_at is NULL until the first successful
+    // (or attempted) notification; notified_count is separate from
+    // occurrence_count, which keeps incrementing on every sighting
+    // regardless of whether an alert was actually sent.
+    addColumnIfMissing('technical_issues', 'last_notified_at', 'DATETIME'),
+    addColumnIfMissing('technical_issues', 'notified_count', 'INTEGER NOT NULL DEFAULT 0'),
   ]);
 
   // Local/mock placeholder products (type='local') are never purged here.
@@ -400,6 +409,7 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
   db.run(`CREATE INDEX IF NOT EXISTS idx_visitor_sessions_started_at ON visitor_sessions(started_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_last_seen ON technical_issues(last_seen_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_type ON technical_issues(type)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_last_notified ON technical_issues(last_notified_at)`);
 
   // Enforces at the SQLite engine level what application code (checkout's
   // printifyId guard, the sync duplicate-detection in

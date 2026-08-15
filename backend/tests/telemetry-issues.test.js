@@ -59,8 +59,7 @@ test.beforeEach(() => {
 // Wraps (not replaces) owner-notifications.notify() -- the REAL
 // cooldown/dedup logic in owner-notifications.js still runs, this only
 // records what was requested and what it actually decided (sent vs
-// suppressed-by-cooldown). telegram.sendMessage itself is never mocked --
-// it already safely no-ops with TELEGRAM_BOT_TOKEN unset in this suite.
+// suppressed-by-cooldown).
 function installTelegramSpy() {
   const calls = [];
   const originalNotify = ownerNotifications.notify.bind(ownerNotifications);
@@ -72,6 +71,17 @@ function installTelegramSpy() {
   return { calls, restore: () => spy.mock.restore() };
 }
 
+// The issue-notification cooldown gate is now durable (SQLite-backed, see
+// technical-issues.js) and only calls notify() at all once it has already
+// decided a real attempt is due -- to observe that "first sends, repeats
+// are suppressed" behavior, delivery must be mocked to genuinely succeed
+// (an unconfigured TELEGRAM_BOT_TOKEN, the default in this suite, is
+// correctly treated as a non-delivery and would make every call look
+// eligible to retry instead of demonstrating cooldown suppression).
+function installGenuineTelegramDelivery() {
+  return mock.method(telegram, 'sendMessage', async () => ({ ok: true, status: 200 }));
+}
+
 function uniqueType(label) {
   return `test_issue_${label}_${Math.random().toString(36).slice(2)}`;
 }
@@ -79,6 +89,7 @@ function uniqueType(label) {
 // ── L. First customer-impacting issue ───────────────────────────────────
 
 test('L: the first occurrence of a customer-impacting issue is stored and alerts immediately', async () => {
+  const telegramMock = installGenuineTelegramDelivery();
   const spy = installTelegramSpy();
   const type = uniqueType('first');
   try {
@@ -92,14 +103,17 @@ test('L: the first occurrence of a customer-impacting issue is stored and alerts
     assert.ok(row);
     assert.equal(row.occurrence_count, 1);
     assert.equal(row.type, type);
+    assert.ok(row.last_notified_at, 'the durable notification-state column must be set on a genuine send');
   } finally {
     spy.restore();
+    telegramMock.mock.restore();
   }
 });
 
 // ── M. Repeated identical issue: occurrence_count increments, deduped ───
 
 test('M: a repeated identical issue increments occurrence_count but is deduped/cooled down, not re-alerted', async () => {
+  const telegramMock = installGenuineTelegramDelivery();
   const spy = installTelegramSpy();
   const type = uniqueType('repeat');
   try {
@@ -110,23 +124,27 @@ test('M: a repeated identical issue increments occurrence_count but is deduped/c
     assert.equal(first.signature, second.signature, 'identical type+route+message must share one signature');
     assert.equal(second.signature, third.signature);
     assert.equal(third.occurrenceCount, 3, 'occurrence_count keeps incrementing every time');
+    assert.equal(third.notifiedCount, 1, 'notified_count stays at 1 -- durable cooldown suppressed the rest');
 
-    assert.equal(spy.calls.length, 3, 'notify() is asked every time (occurrence tracking never stops)');
-    const sentCalls = spy.calls.filter((c) => c.sent);
-    assert.equal(sentCalls.length, 1, 'only the first occurrence may actually send -- the rest are cooled down');
-    assert.equal(spy.calls[1].reason, 'cooldown');
-    assert.equal(spy.calls[2].reason, 'cooldown');
+    // The durable (DB-backed) cooldown gate decides BEFORE ever calling
+    // notify() -- unlike the old in-memory-only design, a cooled-down
+    // occurrence never reaches notify() at all.
+    assert.equal(spy.calls.length, 1, 'only the first occurrence ever invokes notify() -- the rest are gated out beforehand');
+    assert.equal(spy.calls[0].sent, true);
 
-    const row = await dbGet(`SELECT occurrence_count FROM technical_issues WHERE signature = ?`, [first.signature]);
+    const row = await dbGet(`SELECT occurrence_count, notified_count FROM technical_issues WHERE signature = ?`, [first.signature]);
     assert.equal(row.occurrence_count, 3, 'DB truth reflects every occurrence even though Telegram was suppressed');
+    assert.equal(row.notified_count, 1);
   } finally {
     spy.restore();
+    telegramMock.mock.restore();
   }
 });
 
 // ── N. A distinct issue gets its own separate alert ─────────────────────
 
 test('N: a distinct issue (different type) gets its own separate alert, independent of an unrelated issue\'s cooldown', async () => {
+  const telegramMock = installGenuineTelegramDelivery();
   const spy = installTelegramSpy();
   const typeA = uniqueType('a');
   const typeB = uniqueType('b');
@@ -140,6 +158,7 @@ test('N: a distinct issue (different type) gets its own separate alert, independ
     assert.notEqual(sentCalls[0].dedupKey, sentCalls[1].dedupKey);
   } finally {
     spy.restore();
+    telegramMock.mock.restore();
   }
 });
 

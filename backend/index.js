@@ -4262,12 +4262,75 @@ if (!isProduction) {
   console.log('🧪 Development simulation router mounted at /api/test');
 }
 
+// PR #34 follow-up: only genuine customer-facing storefront/checkout/
+// payment paths are recorded as a structured technical issue below -- a
+// well-defined allowlist (prefix match), not a blocklist, so admin/
+// internal/webhook/telemetry routes are structurally excluded rather than
+// relying on remembering to exclude each one. Deliberately does NOT
+// include /api/telemetry/ itself: a telemetry-endpoint failure must never
+// be able to recursively trigger another issue record through this path.
+const CUSTOMER_FACING_PATH_PREFIXES = [
+  '/api/paypal/',
+  '/api/checkout/',
+  '/api/products',
+  '/api/coupons/',
+  '/api/promo/',
+  '/api/leads',
+  '/api/contact',
+  '/api/geolocation',
+  '/api/chat/',
+];
+
+function isCustomerFacingPath(path) {
+  const p = String(path || '');
+  return CUSTOMER_FACING_PATH_PREFIXES.some((prefix) => p.startsWith(prefix));
+}
+
+// Structured, deduped issue record for a customer-facing 5xx -- extracted
+// as its own named function (rather than inlined in the handler below) so
+// it can be exercised directly in tests without needing to force a live
+// route into an uncaught throw. Only the error's class/name is stored, not
+// its raw message, since this can be reached from arbitrary code paths
+// whose error messages are not all individually vetted the way each
+// route's own local catch blocks are. Never throws -- always resolves,
+// even on its own internal failure (recordIssue already catches its own
+// notify() errors; this is a last line of defense on top of that).
+async function recordCustomerFacing5xxIssue(err, req) {
+  const path = String(req.path || req.url || '').split('?')[0];
+  if (!isCustomerFacingPath(path)) return { recorded: false };
+
+  const sessionId = (req.body && typeof req.body === 'object') ? req.body.sessionId : undefined;
+  try {
+    const result = await technicalIssues.recordIssue({
+      type: 'backend_5xx',
+      route: path,
+      message: `[${req.method}] ${(err && err.name) || 'Error'}`,
+      sessionId,
+      severity: ownerNotifications.SEVERITY.WARNING,
+    });
+    return { recorded: true, ...result };
+  } catch (issueErr) {
+    console.error('[technical-issues] failed to record backend_5xx (response already independent):', issueErr.message);
+    return { recorded: false, error: issueErr.message };
+  }
+}
+
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Exception:', err);
-  telegram.sendMessage(`🚨 <b>Critical Server Error</b>\n\nRoute: ${req.url}\nError: ${err.message}`).catch(console.error);
+
+  const path = String(req.path || req.url || '').split('?')[0];
+
+  if (isCustomerFacingPath(path)) {
+    // Fire-and-forget: must never delay or risk this handler's own
+    // response below. recordCustomerFacing5xxIssue never throws/rejects.
+    recordCustomerFacing5xxIssue(err, req).catch(() => {});
+  } else {
+    telegram.sendMessage(`🚨 <b>Critical Server Error</b>\n\nRoute: ${req.url}\nError: ${err.message}`).catch(console.error);
+  }
+
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
 // Exported for tests only (no effect when run directly via `node index.js`).
-module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing };
+module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing, isCustomerFacingPath, recordCustomerFacing5xxIssue };
