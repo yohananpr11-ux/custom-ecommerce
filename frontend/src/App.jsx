@@ -19,6 +19,7 @@ import {
   trackInitiateCheckout,
   trackPurchase,
 } from './utils/analytics.js'
+import { initTelemetry, reportFrontendError } from './utils/telemetry.js'
 import './index.css'
 
 // Shared Components
@@ -2321,14 +2322,25 @@ function MainApp() {
   }, [currentPath, cart.length]);
 
   useEffect(() => {
+    // PR #34: same handlers, extended to also report to first-party
+    // telemetry (production-only, rate-limited/deduped client-side --
+    // see utils/telemetry.js). The existing toast/console behavior is
+    // unchanged.
+    const errorContext = () => (window.location.pathname.includes('checkout') ? 'checkout' : 'general');
+
     const handleUnhandledRejection = (event) => {
       console.error('Unhandled promise rejection:', event.reason);
       showToast(GLOBAL_ERROR_TOAST_HE);
+      const reason = event.reason;
+      const message = (reason && (reason.message || String(reason))) || 'Unhandled promise rejection';
+      reportFrontendError({ message, source: 'unhandledrejection', context: errorContext() });
     };
 
     const handleWindowError = (event) => {
       console.error('Unhandled runtime error:', event.error || event.message);
       showToast(GLOBAL_ERROR_TOAST_HE);
+      const message = (event.error && event.error.message) || event.message || 'Unhandled runtime error';
+      reportFrontendError({ message, source: 'window.error', context: errorContext() });
     };
 
     const handleBoundaryToast = (event) => {
@@ -3404,6 +3416,7 @@ function MainApp() {
 
   useEffect(() => {
     initAnalytics();
+    initTelemetry();
   }, []);
 
   useEffect(() => {

@@ -20,6 +20,9 @@ const feedsRouter = require('./routes/feeds');
 const cartsRouter = require('./routes/carts');
 const marketingWebhooksRouter = require('./routes/marketing-webhooks');
 const adminReportsRouter = require('./routes/admin-reports');
+const telemetryRouter = require('./routes/telemetry');
+const ownerNotifications = require('./services/owner-notifications');
+const technicalIssues = require('./services/technical-issues');
 const { seedHardwareCatalog } = require('./seed_cj_product.cjs');
 const { detectBot, botDetectorMiddleware } = require('./middleware/botDetector');
 // Phase 3: Multi-Vendor fulfillment router
@@ -329,6 +332,16 @@ const getClientIp = (req) => {
   }
   return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
 };
+
+// PR #34: used by the owner-notifications.js call sites below (paid
+// purchase, checkout/capture failures) -- notify()'s message is
+// HTML-formatted, so any dynamic content embedded in it must be escaped.
+const escapeHtml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
 const getOrderTotalAmount = (orderId) => new Promise((resolve, reject) => {
   db.get(`SELECT totalAmount FROM orders WHERE id = ?`, [orderId], (err, row) => {
@@ -1310,6 +1323,12 @@ app.post('/api/analytics/visit', botDetectorMiddleware, express.json(), async (r
     });
   }
 });
+
+// Mounted before the blanket express.json({limit:'5mb'}) below so its own
+// narrower per-route body-size limit (routes/telemetry.js) actually takes
+// effect -- once an earlier json() middleware has parsed req.body, a later
+// one is a no-op and would silently defeat a smaller limit.
+app.use('/api/telemetry', telemetryRouter);
 
 // --- Webhooks must be before express.json() to parse raw body for Stripe ---
 app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async (req, res) => {
@@ -3237,6 +3256,18 @@ app.post('/api/paypal/create-order', async (req, res) => {
   } catch (err) {
     console.error('PayPal create-order failed:', safeProviderErrorSummary(err));
     const statusCode = isClientValidationError(err) ? 400 : 500;
+    // PR #34: only a genuine server/provider-side failure (500) counts as a
+    // customer-impacting technical issue -- ordinary client validation
+    // errors (400, e.g. an empty/invalid cart) are ordinary storefront
+    // behavior, not something the owner needs paged about.
+    if (statusCode === 500) {
+      technicalIssues.recordIssue({
+        type: 'checkout_request_failure',
+        route: req.originalUrl || req.path,
+        message: err && err.message,
+        severity: ownerNotifications.SEVERITY.WARNING,
+      }).catch((issueErr) => console.error('[technical-issues] failed to record checkout_request_failure:', issueErr.message));
+    }
     return res.status(statusCode).json({ error: err.message || 'Failed to create PayPal order' });
   }
 });
@@ -3394,11 +3425,36 @@ app.post('/api/paypal/capture-order', async (req, res) => {
         ? `$${captureValue.toFixed(2)}`
         : `₪${captureValue.toFixed(2)}`;
 
-      await sendPaymentNotification({ provider: 'PayPal', orderId: localOrderId, amountText });
+      // PR #34: single owner notification for a genuinely new paid order,
+      // through the centralized owner-notifications.js module -- replaces
+      // the previous two separate direct Telegram sends
+      // (sendPaymentNotification + telegram.notifyNewOrder), which fired
+      // back-to-back for every purchase. dedupKey is the real order id, and
+      // this whole block only ever runs once per order because it is
+      // reached only when the atomic `claim.changes` check above just
+      // performed the genuine pending->paid transition -- a PayPal retry or
+      // a second capture call for the same order returns earlier as
+      // `duplicate: true` and never reaches here.
       const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
       const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [localOrderId]);
       if (paidOrder) {
-        telegram.notifyNewOrder(localOrderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
+        const itemsList = paidOrderItems.map((item) => `- ${item.quantity}x ${item.title || 'Unknown item'}`).join('\n') || '-';
+        const message = `<b>Paid order</b>\n`
+          + `<b>Order:</b> #${localOrderId}\n`
+          + `<b>Provider:</b> PayPal\n`
+          + `<b>Total:</b> ${amountText}\n`
+          + `<b>Customer:</b> ${escapeHtml(paidOrder.customerName)}\n`
+          + `<b>Items:</b>\n${escapeHtml(itemsList)}`;
+        try {
+          await ownerNotifications.notify({
+            severity: ownerNotifications.SEVERITY.CRITICAL,
+            eventType: 'paid_purchase',
+            dedupKey: `paid_purchase:order:${localOrderId}`,
+            message,
+          });
+        } catch (notifyErr) {
+          console.error(`[PayPal capture] owner notification failed for order #${localOrderId} (payment already captured and marked paid, unaffected):`, notifyErr.message);
+        }
       }
     } catch (bookkeepingErr) {
       console.error(`[PayPal capture] Post-claim bookkeeping failed for order #${localOrderId} (payment already captured and marked paid, unaffected):`, bookkeepingErr.message);
@@ -3416,6 +3472,15 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     });
   } catch (err) {
     console.error('PayPal capture-order failed:', safeProviderErrorSummary(err));
+    // PR #34: structured, deduped record of a real payment/capture failure.
+    // Fire-and-forget -- must never delay or risk the error response the
+    // customer is waiting on.
+    technicalIssues.recordIssue({
+      type: 'payment_capture_failure',
+      route: req.originalUrl || req.path,
+      message: err && err.message,
+      severity: ownerNotifications.SEVERITY.CRITICAL,
+    }).catch((issueErr) => console.error('[technical-issues] failed to record payment_capture_failure:', issueErr.message));
     return res.status(500).json({ error: 'Failed to capture PayPal order' });
   }
 });
