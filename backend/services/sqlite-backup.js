@@ -235,21 +235,52 @@ async function runBackup(options = {}) {
 // production code -- calling runBackup() directly (as most existing tests
 // and any manual/one-off invocation do) never triggers an off-site upload.
 async function runBackupCycle(options = {}) {
-    const result = await runBackup(options);
-    if (result && result.skipped === false) {
-        try {
-            await offsiteBackup.uploadBackupOffsite(result, {
-                log: options.log,
-                env: options.env,
-                client: options.offsiteClient,
-                resolveConfig: options.offsiteResolveConfig,
-            });
-        } catch (err) {
-            const log = options.log || console.error;
-            log(`[SQLite Offsite Backup] upload failed: ${err && err.message}`);
+    try {
+        const result = await runBackup(options);
+        if (result && result.skipped === false) {
+            try {
+                await offsiteBackup.uploadBackupOffsite(result, {
+                    log: options.log,
+                    env: options.env,
+                    client: options.offsiteClient,
+                    resolveConfig: options.offsiteResolveConfig,
+                });
+            } catch (err) {
+                const log = options.log || console.error;
+                log(`[SQLite Offsite Backup] upload failed: ${err && err.message}`);
+            }
         }
+        return result;
+    } catch (backupErr) {
+        const log = options.log || console.error;
+        log(`[SQLite Backup] backup failed: ${backupErr && backupErr.message}`);
+        try {
+            const ownerNotifications = require('./owner-notifications');
+            const operatorMsg = ownerNotifications.buildOperatorMessage({
+                icon: '🚨',
+                titleHe: 'כשל בגיבוי מסד הנתונים',
+                summaryHe: 'הגיבוי התקופתי של מסד הנתונים נכשל',
+                fields: [
+                    ['Event', 'CRITICAL_INFRA_FAILURE'],
+                    ['Severity', 'CRITICAL'],
+                    ['Time', new Date().toISOString()],
+                    ['Component', 'sqlite-backup'],
+                    ['Error', backupErr.message || 'unknown_backup_failure'],
+                    ['Action-Required', 'YES'],
+                ],
+            });
+            await ownerNotifications.notify({
+                severity: ownerNotifications.SEVERITY.CRITICAL,
+                eventType: 'critical_infra_failure',
+                dedupKey: 'sqlite_backup_failure',
+                cooldownMs: 15 * 60 * 1000,
+                message: operatorMsg,
+            });
+        } catch (_) {
+            // Safe no-op on notification failure
+        }
+        throw backupErr;
     }
-    return result;
 }
 
 function startScheduler(options = {}) {

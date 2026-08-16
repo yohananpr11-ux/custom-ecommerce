@@ -318,11 +318,30 @@ async function handleManual(orderId, items) {
   // item -- fulfillment can run minutes behind capture. Decrementing again
   // here would double-consume stock that create-order already reserved.
 
-  await telegram.sendMessage(
-    `📦 <b>Manual fulfillment required</b>\n` +
-    `Order #${orderId} has ${items.length} item(s) with <code>supplier_id='manual'</code>.\n` +
-    `Please fulfill these items manually and update the status.`
-  ).catch(() => null);
+  try {
+    const ownerNotifications = require('./owner-notifications');
+    const operatorMsg = ownerNotifications.buildOperatorMessage({
+      icon: '📦',
+      titleHe: 'נדרש טיפול ידני בהזמנה',
+      summaryHe: `הזמנה #${orderId} כוללת ${items.length} פריטים הדורשים טיפול ידני`,
+      fields: [
+        ['Event', 'MANUAL_FULFILLMENT_REQUIRED'],
+        ['Time', new Date().toISOString()],
+        ['Order-ID', orderId],
+        ['Items-Count', items.length],
+        ['Supplier', 'manual'],
+        ['Action-Required', 'YES'],
+      ],
+    });
+    await ownerNotifications.notify({
+      severity: ownerNotifications.SEVERITY.INFO,
+      eventType: 'manual_fulfillment_required',
+      dedupKey: `manual_fulfillment_${orderId}`,
+      message: operatorMsg,
+    }).catch(() => null);
+  } catch (_) {
+    // Safe no-op
+  }
   return { supplier: 'manual', ref, count: items.length };
 }
 
@@ -383,17 +402,25 @@ async function routeOrderToSupplier(orderId, shippingDestination, items) {
     if (result.status === 'fulfilled') {
       const { supplier, ref, count } = result.value;
       console.log(`[fulfillment] ✓ ${supplier}: ${count} item(s) → ${ref}`);
-      await telegram.sendMessage(
-        `✅ <b>Fulfillment submitted</b>\n` +
-        `Order #${orderId} · supplier=<code>${supplier}</code>\n` +
-        `Items: ${count} · Ref: <code>${ref}</code>`
-      ).catch(() => null);
+      // Routine fulfillment progress is logged only (no immediate Telegram spam)
     } else {
       const err = result.reason;
       console.error(`[fulfillment] ✗ ${sid}:`, err.message);
       // Mark these items as failed in DB
       await writeItemStatus(groups[sid].map(i => i.id), 'failed', `ERR: ${err.message.slice(0, 120)}`).catch(() => null);
       failures.push({ supplier: sid, error: err.message });
+      try {
+        const technicalIssues = require('./technical-issues');
+        technicalIssues.recordIssue({
+          type: 'fulfillment_failure',
+          severity: 'CRITICAL',
+          route: `fulfillment/${sid}`,
+          message: `Fulfillment failed for supplier ${sid}: ${err.message}`,
+          orderId,
+        }).catch(() => null);
+      } catch (_) {
+        // Safe no-op
+      }
     }
   }
 

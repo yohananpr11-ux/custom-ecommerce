@@ -57,14 +57,14 @@ function buildOperatorMessage({ icon = '🚨', titleHe, summaryHe, fields = [] }
 
 const SEVERITY = Object.freeze({ CRITICAL: 'CRITICAL', WARNING: 'WARNING', INFO: 'INFO' });
 
-// No cooldown by default for CRITICAL (always immediate); 15 minutes for
-// WARNING (groupable -- repeats within the window are suppressed and
-// counted, not resent); INFO is not sent immediately at all by default (see
-// notify() below) so it has no cooldown concept yet.
+// Default cooldowns:
+// CRITICAL: 0ms (immediate)
+// WARNING: 15 minutes (groupable -- repeats within the window are suppressed and counted)
+// INFO: 0ms for immediate business events (idempotency/dedup handled at event level)
 const DEFAULT_COOLDOWN_MS = {
   [SEVERITY.CRITICAL]: 0,
   [SEVERITY.WARNING]: 15 * 60 * 1000,
-  [SEVERITY.INFO]: null,
+  [SEVERITY.INFO]: 0,
 };
 
 // In-process only, per the spec -- no database persistence yet. Resets on
@@ -76,8 +76,30 @@ function buildDedupKey(eventType, dedupKey) {
   return dedupKey || eventType;
 }
 
+// Documents the target notification policy (PR #34 / hotfix).
+// IMMEDIATE: High-value operational alerts sent immediately.
+// DAILY: Routine success/informational events suppressed from immediate alerts (reserved for daily digest).
+const NOTIFICATION_POLICY = Object.freeze({
+  IMMEDIATE: Object.freeze([
+    'new_human_session',
+    'paid_purchase',
+    'customer_impacting_technical_issue',
+    'critical_infra_failure',
+    'manual_fulfillment_required',
+    'internal_server_error',
+  ]),
+  DAILY: Object.freeze([
+    'routine_sync_success',
+    'routine_backup_success',
+    'ordinary_fulfillment_progress',
+    'abandoned_cart_summary',
+    'general_health',
+    'routine_lead',
+  ]),
+});
+
 /**
- * Send (or suppress, per severity/cooldown) an owner notification.
+ * Send (or suppress, per severity/cooldown/policy) an owner notification.
  *
  * @param {object} params
  * @param {'CRITICAL'|'WARNING'|'INFO'} params.severity
@@ -100,18 +122,21 @@ async function notify({ severity, eventType, message, dedupKey, cooldownMs } = {
   const timestamp = new Date().toISOString();
   const key = buildDedupKey(eventType, dedupKey);
 
-  if (severity === SEVERITY.INFO) {
-    // INFO is routed to the future daily-digest batch, not sent immediately.
-    // Batching itself is out of scope for this PR (see NOTIFICATION_POLICY
-    // below) -- this just makes sure INFO calls don't silently start
-    // flooding Telegram once callers start using this module.
-    console.log(`[owner-notifications] INFO not sent immediately (daily-batch only, not yet implemented): eventType=${eventType} at=${timestamp}`);
+  // Suppress routine daily events from immediate Telegram alerts
+  if (NOTIFICATION_POLICY.DAILY.includes(eventType)) {
+    console.log(`[owner-notifications] routine event suppressed from immediate alerts: eventType=${eventType} at=${timestamp}`);
+    return { sent: false, reason: 'routine_suppressed', severity, eventType, dedupKey: key, timestamp };
+  }
+
+  // If INFO severity, only allow explicit IMMEDIATE policy events
+  if (severity === SEVERITY.INFO && !NOTIFICATION_POLICY.IMMEDIATE.includes(eventType)) {
+    console.log(`[owner-notifications] INFO not sent immediately (daily-batch only): eventType=${eventType} at=${timestamp}`);
     return { sent: false, reason: 'info_not_immediate', severity, eventType, dedupKey: key, timestamp };
   }
 
   const effectiveCooldown = cooldownMs != null ? cooldownMs : DEFAULT_COOLDOWN_MS[severity];
 
-  if (effectiveCooldown) {
+  if (effectiveCooldown && effectiveCooldown > 0) {
     const last = lastSentAt.get(key);
     if (last && (Date.now() - last) < effectiveCooldown) {
       const count = (suppressedSinceLastSend.get(key) || 0) + 1;
@@ -125,32 +150,17 @@ async function notify({ severity, eventType, message, dedupKey, cooldownMs } = {
   suppressedSinceLastSend.set(key, 0);
   lastSentAt.set(key, Date.now());
 
-  const icon = severity === SEVERITY.CRITICAL ? '🚨' : '⚠️';
+  // Only add prefix icon if severity is CRITICAL or WARNING and message doesn't already start with an emoji
+  const hasLeadingEmoji = /^[\p{Emoji}\u200d]+/u.test(message.trim());
+  const icon = (severity === SEVERITY.CRITICAL ? '🚨' : (severity === SEVERITY.WARNING ? '⚠️' : ''));
+  const prefix = (icon && !hasLeadingEmoji) ? `${icon} ` : '';
   const groupedSuffix = groupedCount > 0
     ? `\n\n<i>(${groupedCount} similar alert${groupedCount === 1 ? '' : 's'} suppressed since the last notice)</i>`
     : '';
 
-  const telegramResult = await telegram.sendMessage(`${icon} ${message}${groupedSuffix}`);
+  const telegramResult = await telegram.sendMessage(`${prefix}${message}${groupedSuffix}`);
   return { sent: true, severity, eventType, dedupKey: key, timestamp, telegram: telegramResult };
 }
-
-// Documents the target policy from the PR #33 audit. Not wired to any
-// sender yet -- IMMEDIATE categories still need per-sender migration, and
-// DAILY categories need the 22:00 report to exist. Both are future PRs.
-const NOTIFICATION_POLICY = Object.freeze({
-  IMMEDIATE: Object.freeze([
-    'new_human_session',
-    'paid_purchase',
-    'customer_impacting_technical_issue',
-  ]),
-  DAILY: Object.freeze([
-    'routine_sync_success',
-    'routine_backup_success',
-    'ordinary_fulfillment_progress',
-    'abandoned_cart_summary',
-    'general_health',
-  ]),
-});
 
 function _resetForTests() {
   lastSentAt = new Map();

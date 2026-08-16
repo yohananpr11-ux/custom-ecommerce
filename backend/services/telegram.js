@@ -160,45 +160,14 @@ class TelegramService {
   }
 
   /**
-   * Queue store visit for batched real-time reporting.
+   * Queue store visit for batched real-time reporting (deprecated: superseded by /api/telemetry/session-start).
    */
-  queueVisit(visitData) {
-    this.visitQueue.push({
-      ...visitData,
-      timestamp: new Date().toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' })
-    });
-
-    if (this.visitQueue.length >= this.MAX_BATCH_SIZE) {
-      this.flushVisitBatch();
-    } else if (!this.batchTimer) {
-      this.batchTimer = setTimeout(() => this.flushVisitBatch(), this.BATCH_INTERVAL_MS);
-    }
+  queueVisit(_visitData) {
+    // Deprecated: legacy un-deduped batcher silenced to prevent Telegram spam.
   }
 
   async flushVisitBatch() {
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer);
-      this.batchTimer = null;
-    }
-
-    if (this.visitQueue.length === 0) return;
-
-    const visits = [...this.visitQueue];
-    this.visitQueue = [];
-
-    let lines = [`👁️ <b>JONO Store Visits</b> (${visits.length} new)`];
-    
-    for (const v of visits) {
-      const icon = v.isBot ? '🤖' : '👤';
-      const label = v.isBot ? `Bot (${v.botReason || 'crawler'})` : 'Real';
-      const pathStr = escapeHtml(v.path || '/');
-      const countryStr = escapeHtml(v.country || 'Unknown');
-      const deviceStr = escapeHtml(v.visitorDevice || '-');
-      const typeStr = escapeHtml(v.visitorType || (v.isBot ? 'bot' : 'human'));
-      lines.push(`${icon} <b>${label}</b> | <code>${pathStr}</code> | ${countryStr} | ${deviceStr} | ${typeStr}`);
-    }
-
-    await this.sendMessage(lines.join('\n'));
+    // Deprecated: no-op.
   }
 
   /**

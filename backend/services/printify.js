@@ -264,14 +264,8 @@ class PrintifyService {
         syncedCount++;
       }
 
-      console.log(`✅ Synced ${syncedCount} products with variants from Printify.`);
       console.log(`OPS_PRINTIFY_SYNC source=${source} result=success products_seen=${products.length} products_updated=${syncedCount} duration_ms=${Date.now() - startedAt}`);
-      // Only send Telegram alert on error or when triggered manually/on-demand.
-      // Scheduled hourly syncs are silent to prevent notification spam.
-      if (source !== 'scheduled') {
-        const telegram = require('./telegram');
-        await telegram.sendMessage(`🔄 <b>Printify Sync Completed</b>\n\n${syncedCount} products synced successfully. Source: ${source}`);
-      }
+      // Routine sync success is silent on Telegram (logged only, preserved for daily digest).
       return syncedCount;
     } catch (error) {
       // safeErrMessage/_safeErrorCode must never themselves throw here --
