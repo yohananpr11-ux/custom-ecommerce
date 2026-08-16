@@ -4326,6 +4326,10 @@ app.listen(PORT, () => {
   if (sqliteBackup.startScheduler()) {
     console.log('✅ SQLite backup scheduler started');
   }
+
+  // ---- DAILY OWNER REPORT: Daily at 22:00 Europe/Jerusalem (PR #36) ----
+  const dailyOwnerReport = require('./services/daily-owner-report');
+  dailyOwnerReport.startDailyReportScheduler({ db });
 });
 }
 

@@ -139,6 +139,8 @@ function installPrintifySuccessMocks() {
 }
 
 function installNotifySpy() {
+  const telegram = require('../services/telegram');
+  const tgMock = mock.method(telegram, 'sendMessage', async () => ({ ok: true, status: 200 }));
   const calls = [];
   const originalNotify = ownerNotifications.notify.bind(ownerNotifications);
   const spy = mock.method(ownerNotifications, 'notify', async (params) => {
@@ -146,7 +148,7 @@ function installNotifySpy() {
     calls.push({ ...params, sent: result.sent });
     return result;
   });
-  return { calls, restore: () => spy.mock.restore() };
+  return { calls, restore: () => { spy.mock.restore(); tgMock.mock.restore(); } };
 }
 
 async function createAndCapture({ price = 77 } = {}) {

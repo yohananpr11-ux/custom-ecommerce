@@ -269,6 +269,24 @@ db.serialize(() => {
     )
   `);
 
+  // Daily owner report execution history (PR #36).
+  // Ensures restart-safe, duplicate-safe daily reports at 22:00 Europe/Jerusalem.
+  // One row per (report_type, report_date).
+  db.run(`
+    CREATE TABLE IF NOT EXISTS daily_owner_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_type TEXT NOT NULL DEFAULT 'daily_summary',
+      report_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at DATETIME,
+      sent_at DATETIME,
+      payload_summary TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(report_type, report_date)
+    )
+  `);
+
 });
 
 // Helper to safely add column if not exists — returns a Promise

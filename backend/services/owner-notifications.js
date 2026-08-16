@@ -87,6 +87,7 @@ const NOTIFICATION_POLICY = Object.freeze({
     'critical_infra_failure',
     'manual_fulfillment_required',
     'internal_server_error',
+    'daily_owner_report',
   ]),
   DAILY: Object.freeze([
     'routine_sync_success',

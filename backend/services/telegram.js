@@ -208,24 +208,11 @@ class TelegramService {
   }
 
   /**
-   * Initialize Daily Summary Cron at 23:00 Asia/Jerusalem
+   * Deprecated legacy daily cron -- replaced by restart-safe services/daily-owner-report.js at 22:00 (PR #36).
    */
   initDailyCron() {
-    if (process.env.NODE_ENV === 'test' || process.env.DISABLE_BACKGROUND_JOBS === 'true') {
-      return;
-    }
-
-    try {
-      cron.schedule('0 20 * * *', async () => {
-        console.log('⏰ Running JONO Daily Report Cron (20:00 Asia/Jerusalem)...');
-        await this.sendDailyReport();
-      }, {
-        timezone: 'Asia/Jerusalem'
-      });
-      console.log('✅ Mani V2 Daily Intelligence Cron scheduled for 20:00 Asia/Jerusalem.');
-    } catch (err) {
-      console.error('Failed to schedule Daily Report Cron:', err.message);
-    }
+    // Silenced and deprecated in favor of centralized services/daily-owner-report.js
+    return;
   }
 
   /**
