@@ -235,21 +235,38 @@ async function runBackup(options = {}) {
 // production code -- calling runBackup() directly (as most existing tests
 // and any manual/one-off invocation do) never triggers an off-site upload.
 async function runBackupCycle(options = {}) {
-    const result = await runBackup(options);
-    if (result && result.skipped === false) {
-        try {
-            await offsiteBackup.uploadBackupOffsite(result, {
-                log: options.log,
-                env: options.env,
-                client: options.offsiteClient,
-                resolveConfig: options.offsiteResolveConfig,
-            });
-        } catch (err) {
-            const log = options.log || console.error;
-            log(`[SQLite Offsite Backup] upload failed: ${err && err.message}`);
+    try {
+        const result = await runBackup(options);
+        if (result && result.skipped === false) {
+            try {
+                await offsiteBackup.uploadBackupOffsite(result, {
+                    log: options.log,
+                    env: options.env,
+                    client: options.offsiteClient,
+                    resolveConfig: options.offsiteResolveConfig,
+                });
+            } catch (err) {
+                const log = options.log || console.error;
+                log(`[SQLite Offsite Backup] upload failed: ${err && err.message}`);
+            }
         }
+        return result;
+    } catch (backupErr) {
+        const log = options.log || console.error;
+        log(`[SQLite Backup] backup failed: ${backupErr && backupErr.message}`);
+        try {
+            const technicalIssues = require('./technical-issues');
+            await technicalIssues.recordIssue({
+                type: 'sqlite_backup_failure',
+                severity: 'CRITICAL',
+                route: 'sqlite-backup/runBackupCycle',
+                message: backupErr.message || 'unknown_backup_failure',
+            });
+        } catch (_) {
+            // Safe no-op on notification failure
+        }
+        throw backupErr;
     }
-    return result;
 }
 
 function startScheduler(options = {}) {

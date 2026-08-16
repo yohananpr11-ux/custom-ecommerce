@@ -757,17 +757,51 @@ const sendPaymentNotification = async ({ provider, orderId, amountText }) => {
   try {
     const totalPaid = await getPaidRevenueTotal();
     const itemSummary = await getOrderItemSummary(orderId);
-    await telegram.sendMessage(
-      `🛍️ <b>NEW ORDER RECEIVED</b>\n\n`
-      + `<b>Order:</b> #${orderId}\n`
-      + `<b>Provider:</b> ${provider}\n`
-      + `<b>Total:</b> ${amountText}\n`
-      + `<b>Items:</b> ${itemSummary.totalItems}\n`
-      + `<b>Top Item:</b> ${itemSummary.firstItemLabel}\n`
-      + `<b>Total Revenue:</b> ₪${totalPaid.toFixed(2)}`
-    );
+    const message = ownerNotifications.buildOperatorMessage({
+      icon: '🛍️',
+      titleHe: 'JONO — הזמנה חדשה שולמה',
+      summaryHe: `התקבל תשלום מוצלח עבור הזמנה #${orderId}.`,
+      fields: [
+        ['Event', 'PAID_ORDER'],
+        ['Severity', 'INFO'],
+        ['Time', new Date().toISOString()],
+        ['Order-ID', orderId],
+        ['Provider', provider],
+        ['Total', amountText],
+        ['Items', itemSummary.totalItems],
+        ['Top-Item', itemSummary.firstItemLabel],
+        ['Total-Revenue', `₪${totalPaid.toFixed(2)}`],
+      ],
+    });
+    await ownerNotifications.notify({
+      severity: ownerNotifications.SEVERITY.CRITICAL,
+      eventType: 'paid_purchase',
+      dedupKey: `paid_purchase:order:${orderId}`,
+      message,
+    });
   } catch (err) {
-    await telegram.sendMessage(`⚠️ <b>Payment captured but cumulative total calculation failed</b>\nOrder #${orderId}`).catch(() => null);
+    try {
+      const fallbackMsg = ownerNotifications.buildOperatorMessage({
+        icon: '⚠️',
+        titleHe: 'שגיאה בחישוב סך ההכנסות לתשלום',
+        summaryHe: `תשלום עבור הזמנה #${orderId} נקלט, אך חישוב סך ההכנסות נכשל.`,
+        fields: [
+          ['Event', 'CUSTOMER_IMPACTING_ERROR'],
+          ['Severity', 'WARNING'],
+          ['Time', new Date().toISOString()],
+          ['Order-ID', orderId],
+          ['Error', err.message || 'revenue_calculation_failed'],
+        ],
+      });
+      await ownerNotifications.notify({
+        severity: ownerNotifications.SEVERITY.WARNING,
+        eventType: 'customer_impacting_technical_issue',
+        dedupKey: `revenue_calc_failure:${orderId}`,
+        message: fallbackMsg,
+      });
+    } catch (_) {
+      // Safe no-op
+    }
   }
 };
 
@@ -961,7 +995,18 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
       `UPDATE order_items SET fulfillment_status = 'failed', fulfillment_ref = ? WHERE orderId = ? AND fulfillment_status = 'processing'`,
       [`ERR: ${pErr.message.slice(0, 200)}`, orderId]
     ).catch(() => null);
-    await telegram.sendMessage(`🚨 <b>Production submission failed</b>\nOrder #${orderId} was paid but fulfillment routing failed: ${pErr.message.slice(0, 200)}`).catch(() => null);
+    try {
+      const technicalIssues = require('./services/technical-issues');
+      await technicalIssues.recordIssue({
+        type: 'production_submission_failure',
+        severity: 'CRITICAL',
+        route: 'processPaidOrderFulfillment',
+        message: `Fulfillment routing failed: ${pErr.message.slice(0, 200)}`,
+        orderId,
+      });
+    } catch (_) {
+      // Safe no-op
+    }
   }
 };
 
@@ -1277,22 +1322,9 @@ app.post('/api/analytics/visit', botDetectorMiddleware, express.json(), async (r
     const lastNotifiedAt = visitNotificationCache.get(cacheKey);
     if (!lastNotifiedAt || now - lastNotifiedAt > VISIT_CACHE_TTL_MS) {
       visitNotificationCache.set(cacheKey, now);
-
-      telegram.queueVisit({
-        visitorType: req.visitorType,
-        visitorDevice: req.visitorDevice,
-        path: path || '/',
-        isBot,
-        botReason,
-        country,
-        source: source || 'web',
-        ip,
-        ua,
-        locale: locale || '-',
-        currency: currency || '-'
-      });
-
-      return res.json({ success: true, deduped: false, queued: true, isBot, botReason });
+      // Legacy un-deduped analytics visits are recorded in DB/cache only;
+      // immediate owner alerts are handled exclusively by /api/telemetry/session-start.
+      return res.json({ success: true, deduped: false, queued: false, isBot, botReason });
     }
 
     return res.json({ success: true, deduped: true, telegram: { ok: true, skipped: true, reason: 'deduped' } });
@@ -1566,11 +1598,20 @@ app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res
       setImmediate(async () => {
         try {
           const count = await printify.syncProducts();
-          const eventInfo = `Printify event: ${type}`;
-          await telegram.sendMessage(`✅ <b>Automatic Printify Sync Complete</b>\n\n${eventInfo}\n${count} products synced successfully.`);
+          console.log(`[Printify Webhook] sync complete: ${count} products synced for event ${type}`);
         } catch (err) {
           console.error('❌ Auto-sync failed:', err.message);
-          await telegram.sendMessage(`⚠️ <b>Automatic Printify Sync Failed</b>\nEvent: ${type}\nError: ${err.message}`);
+          try {
+            const technicalIssues = require('./services/technical-issues');
+            await technicalIssues.recordIssue({
+              type: 'printify_webhook_sync_failure',
+              severity: 'WARNING',
+              route: `webhooks/printify/${type}`,
+              message: err.message || 'webhook_sync_failed',
+            });
+          } catch (_) {
+            // Safe no-op
+          }
         }
       });
     }
@@ -1965,16 +2006,11 @@ app.post('/api/leads', async (req, res) => {
           await dbRunAsync(`UPDATE leads SET emailSent = 1 WHERE email = ?`, [email]).catch(e => console.error(`Error updating lead emailSent for ${email}:`, e.message));
         } else {
           console.warn(`[leads] welcome email failed to deliver to ${email} (ok: false)`);
-          const errorMsg = resObj?.error?.message || resObj?.reason || 'Unknown delivery failure';
-          await telegram.sendMessage(`⚠️ <b>Welcome email delivery failed</b>\nLead: ${email}\nError: ${errorMsg}`).catch(() => null);
         }
       })
-      .catch(async (err) => {
+      .catch((err) => {
         console.error(`[leads] welcome email system error for ${email}:`, err.message);
-        await telegram.sendMessage(`⚠️ <b>Welcome email system error</b>\nLead: ${email}\nError: ${err.message}`).catch(() => null);
       });
-
-    await telegram.sendMessage(`🔥 <b>New Lead</b>: ${email} | <b>Code Generated</b>: ${promoCode}`).catch(() => null);
 
     return res.json({ success: true, promoCode });
   } catch (err) {
@@ -2901,8 +2937,6 @@ app.post('/api/resubscribe', async (req, res) => {
     );
 
     console.log(`✉️ [Resubscribe] Opt-in completed for ${email}`);
-    await telegram.sendMessage(`🔥 <b>Lead Resubscribed</b>\nEmail: <code>${email}</code>`).catch(() => null);
-
     return res.json({ success: true, message: 'Resubscribed successfully.' });
   } catch (err) {
     console.error('Resubscribe POST failed:', err.message);
@@ -2949,13 +2983,17 @@ app.post('/api/webhooks/resend', express.raw({type: 'application/json'}), async 
           // Mark as unsubscribed to block further recovery attempts
           await dbRunAsync(`UPDATE leads SET unsubscribed = 1 WHERE email = ?`, [email]);
           
-          let alertMsg = '';
-          if (type === 'email.bounced') {
-            alertMsg = `⚠️ <b>Email Bounced (Resend)</b>\nRecipient: <code>${email}</code>\nSubject: ${data.subject || 'N/A'}\nStatus: Marked as unsubscribed/bounced locally.`;
-          } else {
-            alertMsg = `⚠️ <b>Spam Complaint (Resend)</b>\nRecipient: <code>${email}</code>\nSubject: ${data.subject || 'N/A'}\nStatus: Marked as unsubscribed locally.`;
+          try {
+            const technicalIssues = require('./services/technical-issues');
+            await technicalIssues.recordIssue({
+              type: type === 'email.bounced' ? 'resend_email_bounced' : 'resend_spam_complaint',
+              severity: 'WARNING',
+              route: 'webhooks/resend',
+              message: `Recipient: ${email} (Subject: ${data.subject || 'N/A'})`,
+            });
+          } catch (_) {
+            // Safe no-op
           }
-          await telegram.sendMessage(alertMsg).catch(() => null);
         }
       }
     }
@@ -3936,7 +3974,18 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           } else {
             console.warn(`⚠️ [Retry Recovery] Email attempt failed for order #${order.id}`);
             if (nextAttemptCount >= 5) {
-              await telegram.sendMessage(`🚨 <b>Email Delivery Permanently Failed</b>\nOrder #${order.id} for ${order.customerName} has reached 5 delivery attempts and will not be retried automatically. Please verify customer email manually: <code>${order.customerEmail}</code>`).catch(() => null);
+              try {
+                const technicalIssues = require('./services/technical-issues');
+                await technicalIssues.recordIssue({
+                  type: 'order_email_permanent_failure',
+                  severity: 'WARNING',
+                  route: 'runEmailRetryRecovery/order',
+                  message: `Confirmation email permanently failed after 5 attempts for order #${order.id}`,
+                  orderId: order.id,
+                });
+              } catch (_) {
+                // Safe no-op
+              }
             }
           }
         } catch (itemErr) {
@@ -3986,7 +4035,17 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           } else {
             console.warn(`⚠️ [Retry Recovery] Welcome email attempt failed for lead #${lead.id}`);
             if (nextAttemptCount >= 5) {
-              await telegram.sendMessage(`🚨 <b>Welcome Email Permanently Failed</b>\nLead #${lead.id} (${lead.email}) has reached 5 delivery attempts and will not be retried automatically. Please verify manually.`).catch(() => null);
+              try {
+                const technicalIssues = require('./services/technical-issues');
+                await technicalIssues.recordIssue({
+                  type: 'lead_email_permanent_failure',
+                  severity: 'WARNING',
+                  route: 'runEmailRetryRecovery/lead',
+                  message: `Welcome coupon email permanently failed after 5 attempts for lead #${lead.id}`,
+                });
+              } catch (_) {
+                // Safe no-op
+              }
             }
           }
         } catch (leadErr) {
@@ -4109,7 +4168,17 @@ app.listen(PORT, () => {
       }
     } catch (err) {
       console.error('⚠️ Sync failed:', err.message);
-      telegram.sendMessage(`⚠️ <b>Printify Sync Error</b>\n\nTime: ${new Date().toLocaleString('he-IL')}\nError: ${err.message}`).catch(console.error);
+      try {
+        const technicalIssues = require('./services/technical-issues');
+        await technicalIssues.recordIssue({
+          type: 'printify_sync_failure',
+          severity: 'WARNING',
+          route: `printify-sync/${source}`,
+          message: err.message || 'unknown_sync_error',
+        });
+      } catch (_) {
+        // Safe no-op
+      }
       console.log('🔄 Triggering safe catalog fallback seeder after sync failure...');
       await seedFallbackCatalog();
       return 0;
