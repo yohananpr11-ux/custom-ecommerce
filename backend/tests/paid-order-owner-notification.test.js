@@ -26,7 +26,8 @@ process.env.ENABLE_PRINTIFY_SYNC = 'false';
 process.env.PAYPAL_CLIENT_ID = 'test-paypal-client-id-owner-notif';
 process.env.PAYPAL_CLIENT_SECRET = 'test-paypal-client-secret-owner-notif';
 process.env.PRINTIFY_API_TOKEN = '';
-process.env.TELEGRAM_BOT_TOKEN = '';
+process.env.TELEGRAM_BOT_TOKEN = 'mock-telegram-token-paid';
+process.env.TELEGRAM_OWNER_CHAT_ID = '123456789';
 process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-owner-notif';
 
 const { app } = require('../index.js');
@@ -53,31 +54,36 @@ test.before(async () => {
 
 test.after(async () => {
   await new Promise((resolve) => server.close(resolve));
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort on Windows */ }
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 
 test.beforeEach(() => {
   ownerNotifications._resetForTests();
 });
 
-async function apiPost(pathname, body) {
-  const res = await fetch(`${baseUrl}${pathname}`, {
+const SYNTHETIC_SHIPPING = {
+  customerName: 'Test Customer',
+  customerEmail: 'test@example.invalid',
+  firstName: 'Test',
+  lastName: 'Customer',
+  phone: '+15550000000',
+  addressLine1: 'Synthetic Street 1',
+  address: 'Synthetic Street 1',
+  city: 'Faketown',
+  postalCode: '00000',
+  country: 'US',
+  region: 'CA',
+};
+
+async function apiPost(endpoint, body) {
+  const res = await fetch(`${baseUrl}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const text = await res.text();
-  let json = null;
-  try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON */ }
+  const json = await res.json().catch(() => ({}));
   return { status: res.status, json };
 }
-
-const SYNTHETIC_SHIPPING = {
-  customerName: 'Test Customer',
-  customerEmail: 'test@example.invalid',
-  firstName: 'Test', lastName: 'Customer', phone: '+15550000000',
-  addressLine1: 'Synthetic Street 1', city: 'Faketown', postalCode: '00000', country: 'US', region: 'CA',
-};
 
 let nextProductId = 920001;
 async function seedPrintifyProduct({ price = 100 } = {}) {
@@ -107,6 +113,7 @@ function installAxiosPostMock() {
 
 function installPaypalHappyPathMocks(axiosMock) {
   const created = new Map();
+  axiosMock.on('api.telegram.org', async () => ({ status: 200, data: { ok: true, result: { message_id: 1 } } }));
   axiosMock.on('/v1/oauth2/token', async () => ({ data: { access_token: 'fake-token' } }));
   axiosMock.on('/v2/checkout/orders', async (url, data) => {
     if (url.endsWith('/capture')) {
