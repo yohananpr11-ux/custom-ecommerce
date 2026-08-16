@@ -91,7 +91,8 @@ db.serialize(() => {
       status TEXT DEFAULT 'pending',
       locale TEXT DEFAULT 'he',
       currency TEXT DEFAULT 'ILS',
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      paid_at DATETIME
     )
   `);
 
@@ -373,6 +374,7 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     // fail closed at capture time rather than being silently trusted).
     addColumnIfMissing('orders', 'expected_payment_currency', 'TEXT'),
     addColumnIfMissing('orders', 'expected_payment_amount', 'REAL'),
+    addColumnIfMissing('orders', 'paid_at', 'DATETIME'),
     // design_jobs
     addColumnIfMissing('design_jobs', 'lastError', 'TEXT'),
     // product_variants

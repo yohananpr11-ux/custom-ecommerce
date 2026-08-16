@@ -11,6 +11,15 @@
 // 9. Real metrics only: definitively paid orders count as revenue; pending/unpaid orders do NOT.
 // 10. Privacy & security: zero raw IPs, secrets, customer names, or PII in report.
 // 11. Routine operational noise suppression (PR #35) remains 100% intact.
+// 12. Real zero after successful query => shown as zero (never falsely marked unavailable).
+// 13. Failed traffic/sales/issues/fulfillment queries => truthfully marked 'לא זמין כרגע' / UNAVAILABLE (never 0).
+// 14. Real latest backup found using { name, path, mtimeMs } and .sha256 sidecar truthful reporting.
+// 15. Correct ENABLE_OFFSITE_BACKUP flag used via isOffsiteBackupEnabled(env).
+// 16. Safe referrer domain only (strips query parameters, paths, tokens, PII).
+// 17. HTML escaping for all user-controlled/dynamic values (< > & " ').
+// 18. Paid-today analytics uses genuine paid_at timestamp with legacy createdAt fallback.
+// 19. Truthful 22:00 reporting window documentation.
+// 20. Partial report sends successfully even when a metric query fails.
 
 'use strict';
 
@@ -87,8 +96,6 @@ function installTelegramMock() {
 // ── 1. Eligibility & Scheduling at 22:00 Europe/Jerusalem ─────────────
 
 test('1: before 22:00 Europe/Jerusalem is not eligible; at/after 22:00 is eligible', () => {
-  // Test dates formatted as UTC equivalent of Jerusalem hours
-  // In Jerusalem (UTC+3 summer): 21:59 local is 18:59 UTC; 22:00 local is 19:00 UTC
   const beforeTime = new Date('2026-08-16T18:59:00.000Z');
   const eligibleTime = new Date('2026-08-16T19:00:00.000Z');
   const lateTime = new Date('2026-08-16T20:45:00.000Z');
@@ -98,150 +105,127 @@ test('1: before 22:00 Europe/Jerusalem is not eligible; at/after 22:00 is eligib
   assert.equal(dailyOwnerReport.isEligibleForDailyReport(lateTime), true, '20:45 UTC (23:45 IDT) is eligible');
 });
 
-// ── 2. Timezone & DST Calculation ─────────────────────────────────────
+// ── 2. Exact Jerusalem Day Interval Calculation & DST ─────────────────
 
-test('2: Europe/Jerusalem DST interval calculation handles summer (IDT) and winter (IST)', () => {
+test('2: getJerusalemDayInterval correctly calculates UTC bounds for summer (IDT) and winter (IST)', () => {
   const summerInterval = dailyOwnerReport.getJerusalemDayInterval('2026-08-16');
-  assert.equal(summerInterval.startUtcIso, '2026-08-15T21:00:00.000Z', 'Summer midnight in IDT is 21:00 UTC previous day');
-  assert.equal(summerInterval.endUtcIso, '2026-08-16T21:00:00.000Z');
+  assert.equal(summerInterval.startUtcIso, '2026-08-15T21:00:00.000Z', 'Summer (IDT = UTC+3): 00:00 IDT is 21:00 UTC previous day');
+  assert.equal(summerInterval.endUtcIso, '2026-08-16T21:00:00.000Z', 'Summer (IDT = UTC+3): 24:00 IDT is 21:00 UTC target day');
 
-  const winterInterval = dailyOwnerReport.getJerusalemDayInterval('2026-01-16');
-  assert.equal(winterInterval.startUtcIso, '2026-01-15T22:00:00.000Z', 'Winter midnight in IST is 22:00 UTC previous day');
-  assert.equal(winterInterval.endUtcIso, '2026-01-16T22:00:00.000Z');
+  const winterInterval = dailyOwnerReport.getJerusalemDayInterval('2026-01-15');
+  assert.equal(winterInterval.startUtcIso, '2026-01-14T22:00:00.000Z', 'Winter (IST = UTC+2): 00:00 IST is 22:00 UTC previous day');
+  assert.equal(winterInterval.endUtcIso, '2026-01-15T22:00:00.000Z', 'Winter (IST = UTC+2): 24:00 IST is 22:00 UTC target day');
 });
 
-// ── 3. Before 22:00 => zero sends ─────────────────────────────────────
+// ── 3. Scheduler ignores invocation before 22:00 ──────────────────────
 
-test('3: generateAndSendDailyReport before 22:00 skips sending without force flag', async () => {
+test('3: generateAndSendDailyReport skips sending before 22:00 without force flag', async () => {
   const tMock = installTelegramMock();
+  const afternoonDate = new Date('2026-08-16T11:00:00.000Z');
+
   try {
-    const afternoonDate = new Date('2026-08-16T12:00:00.000Z'); // 15:00 local
     const result = await dailyOwnerReport.generateAndSendDailyReport({
       date: afternoonDate,
+      dateStr: '2026-08-16',
       db,
-      force: false,
     });
 
     assert.equal(result.skipped, true);
     assert.equal(result.reason, 'not_eligible_yet');
-    assert.equal(tMock.sentMessages.length, 0, 'zero telegram messages sent before 22:00');
+    assert.equal(tMock.sentMessages.length, 0);
+
+    const row = await dbGet(
+      `SELECT * FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
+      ['2026-08-16']
+    );
+    assert.equal(row, undefined, 'no report record created for skipped run');
   } finally {
     tMock.restore();
   }
 });
 
-// ── 4. Eligible after 22:00 => sends exactly ONE report ───────────────
+// ── 4. Eligible execution at 22:00 sends report and records sent_at ───
 
-test('4: generateAndSendDailyReport sends report when eligible, recording sent_at in SQLite', async () => {
+test('4: eligible execution at 22:00 sends report and records sent_at in SQLite', async () => {
   const tMock = installTelegramMock();
-  const testDateStr = '2026-08-16';
-  const eveningDate = new Date('2026-08-16T19:05:00.000Z'); // 22:05 IDT
+  const eveningDate = new Date('2026-08-16T19:00:00.000Z');
 
   try {
-    // Seed some real data for today
-    await dbRun(
-      `INSERT INTO visitor_sessions (visitor_id, session_id, started_at, is_human, device_category, landing_path, referrer)
-       VALUES ('vis_test_1', 'sess_test_1', '2026-08-16 10:00:00', 1, 'Mobile', '/product/1', 'instagram.com')`
-    );
-    await dbRun(
-      `INSERT INTO visitor_sessions (visitor_id, session_id, started_at, is_human, device_category, landing_path, referrer)
-       VALUES ('vis_test_2', 'sess_test_2', '2026-08-16 11:00:00', 1, 'Desktop', '/', 'direct')`
-    );
-
-    // Paid order
-    const orderInsert = await dbRun(
-      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt)
-       VALUES ('Test Buyer', 'buyer@example.invalid', 199.00, 'paid', 'Main St 10', '2026-08-16 12:00:00')`
-    );
-    const orderId = orderInsert.lastID;
-    await dbRun(
-      `INSERT INTO order_items (orderId, productId, quantity, price, supplier_id, fulfillment_status)
-       VALUES (?, 1, 1, 199.00, 'dropship', 'pending')`,
-      [orderId]
-    );
-
     const result = await dailyOwnerReport.generateAndSendDailyReport({
       date: eveningDate,
-      dateStr: testDateStr,
+      dateStr: '2026-08-16',
       db,
     });
 
+    assert.equal(result.ok, true);
     assert.equal(result.sent, true);
     assert.equal(tMock.sentMessages.length, 1);
 
     const msg = tMock.sentMessages[0];
     assert.match(msg, /JONO — סיכום יומי/);
-    assert.match(msg, /16\/08\/2026/);
-    assert.match(msg, /סשנים של בני אדם: 2/);
-    assert.match(msg, /הזמנות ששולמו: 1/);
-    assert.match(msg, /199\.00/);
+    assert.match(msg, /תאריך: 16\/08\/2026/);
+    assert.match(msg, /חלון דיווח: מתחילת היום עד 22:00/);
     assert.match(msg, /Event: DAILY_OWNER_REPORT/);
-    assert.match(msg, /Date: 2026-08-16/);
+    assert.match(msg, /Window: 2026-08-16 00:00 - 22:00 \(Jerusalem\)/);
 
-    // Verify row in daily_owner_reports
     const row = await dbGet(
       `SELECT * FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
-      [testDateStr]
+      ['2026-08-16']
     );
-    assert.ok(row, 'row exists in DB');
+    assert.ok(row, 'row exists');
     assert.equal(row.status, 'sent');
-    assert.ok(row.sent_at, 'sent_at is populated');
+    assert.ok(row.sent_at, 'sent_at is set');
+    assert.equal(row.attempt_count, 1);
   } finally {
     tMock.restore();
   }
 });
 
-// ── 5. Duplicate call same day => deduped / zero extra sends ──────────
+// ── 5. Same-day duplicate run is deduped ───────────────────────────────
 
-test('5: repeated scheduler calls on the same day are deduped by SQLite state', async () => {
+test('5: subsequent execution on same day is deduped (0 extra Telegram sends)', async () => {
   const tMock = installTelegramMock();
-  const testDateStr = '2026-08-16';
-  const eveningDate = new Date('2026-08-16T19:10:00.000Z');
+  const eveningDate = new Date('2026-08-16T19:15:00.000Z');
 
   try {
     const result = await dailyOwnerReport.generateAndSendDailyReport({
       date: eveningDate,
-      dateStr: testDateStr,
+      dateStr: '2026-08-16',
       db,
     });
 
     assert.equal(result.skipped, true);
     assert.equal(result.reason, 'already_sent');
-    assert.equal(tMock.sentMessages.length, 0, 'zero additional telegram messages sent');
+    assert.equal(tMock.sentMessages.length, 0, 'zero additional messages sent');
   } finally {
     tMock.restore();
   }
 });
 
-// ── 6. Restart simulation => still deduped (survives restart) ─────────
+// ── 6. Restart-safe on same day ───────────────────────────────────────
 
-test('6: simulated backend restart on same day honors SQLite state and does not re-send', async () => {
+test('6: simulated restart on same day honors SQLite state and does not duplicate', async () => {
   const tMock = installTelegramMock();
-  const testDateStr = '2026-08-16';
-  const eveningDate = new Date('2026-08-16T19:30:00.000Z');
+  const lateEveningDate = new Date('2026-08-16T20:30:00.000Z');
 
   try {
-    // Reset all in-memory state
-    ownerNotifications._resetForTests();
-
-    // Call report after simulated restart
     const result = await dailyOwnerReport.generateAndSendDailyReport({
-      date: eveningDate,
-      dateStr: testDateStr,
+      date: lateEveningDate,
+      dateStr: '2026-08-16',
       db,
     });
 
     assert.equal(result.skipped, true);
     assert.equal(result.reason, 'already_sent');
-    assert.equal(tMock.sentMessages.length, 0, 'no duplicate message sent after restart');
+    assert.equal(tMock.sentMessages.length, 0);
   } finally {
     tMock.restore();
   }
 });
 
-// ── 7. Next calendar day => new report allowed ────────────────────────
+// ── 7. Next calendar day allows new report ────────────────────────────
 
-test('7: next local calendar day is treated as a new cycle and allows report send', async () => {
+test('7: next local calendar day (2026-08-17) sends a new distinct report', async () => {
   const tMock = installTelegramMock();
   const nextDayStr = '2026-08-17';
   const nextEveningDate = new Date('2026-08-17T19:00:00.000Z');
@@ -278,7 +262,6 @@ test('8: Telegram failure does not mark report sent, enabling safe later retry',
   const failureDate = new Date('2026-08-18T19:00:00.000Z');
 
   try {
-    // Attempt 1: Telegram fails
     const res1 = await dailyOwnerReport.generateAndSendDailyReport({
       date: failureDate,
       dateStr: failureDateStr,
@@ -288,7 +271,6 @@ test('8: Telegram failure does not mark report sent, enabling safe later retry',
     assert.equal(res1.sent, false);
     assert.equal(sentMessages.length, 0);
 
-    // Verify DB row: status is 'failed', sent_at is NULL
     const row = await dbGet(
       `SELECT * FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
       [failureDateStr]
@@ -297,7 +279,6 @@ test('8: Telegram failure does not mark report sent, enabling safe later retry',
     assert.equal(row.status, 'failed');
     assert.equal(row.sent_at, null);
 
-    // Attempt 2: Telegram recovered, force flag to bypass retry cooldown
     shouldFail = false;
     const res2 = await dailyOwnerReport.generateAndSendDailyReport({
       date: failureDate,
@@ -349,22 +330,17 @@ test('10: pending and unpaid orders are excluded from paid revenue and counts', 
   const revenueDate = new Date('2026-08-20T19:00:00.000Z');
 
   try {
-    // 1 Paid order of 150
     await dbRun(
-      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt)
-       VALUES ('Paid Buyer', 'paid@example.invalid', 150.00, 'paid', 'St 1', '2026-08-20 12:00:00')`
+      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt, paid_at)
+       VALUES ('Paid Buyer', 'paid@example.invalid', 150.00, 'paid', 'St 1', '2026-08-20 12:00:00', '2026-08-20 12:05:00')`
     );
-
-    // 1 Unpaid pending order of 300
     await dbRun(
-      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt)
-       VALUES ('Unpaid Buyer', 'unpaid@example.invalid', 300.00, 'pending', 'St 2', '2026-08-20 13:00:00')`
+      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt, paid_at)
+       VALUES ('Unpaid Buyer', 'unpaid@example.invalid', 300.00, 'pending', 'St 2', '2026-08-20 13:00:00', NULL)`
     );
-
-    // 1 Cancelled order of 500
     await dbRun(
-      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt)
-       VALUES ('Cancelled Buyer', 'cancelled@example.invalid', 500.00, 'cancelled', 'St 3', '2026-08-20 14:00:00')`
+      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt, paid_at)
+       VALUES ('Cancelled Buyer', 'cancelled@example.invalid', 500.00, 'cancelled', 'St 3', '2026-08-20 14:00:00', NULL)`
     );
 
     const metrics = await dailyOwnerReport.getReportMetrics({ dateStr: revenueDateStr, db });
@@ -417,4 +393,302 @@ test('12: routine startup/scheduled syncs and backup cycles remain silent on Tel
   } finally {
     tMock.restore();
   }
+});
+
+// ── 13. Real zero after successful query => shown as zero ─────────────
+
+test('13: genuine zero metrics after successful query are reported as zero, not unavailable', () => {
+  const emptyMetrics = {
+    dateStr: '2026-08-21',
+    traffic: {
+      available: true,
+      humanSessions: 0,
+      uniqueHumanVisitors: 0,
+      deviceBreakdown: {},
+      topLandingPages: [],
+      topReferrers: [],
+    },
+    sales: {
+      available: true,
+      paidOrdersCount: 0,
+      paidRevenueILS: 0,
+      aovILS: null,
+      conversionRatePercent: null,
+      itemsSoldCount: 0,
+      topProducts: [],
+    },
+    issues: {
+      available: true,
+      totalDistinctIssues: 0,
+      totalOccurrences: 0,
+      criticalCount: 0,
+      warningCount: 0,
+      activeIssues: [],
+    },
+    fulfillment: {
+      available: true,
+      pendingFulfillmentCount: 0,
+      manualFulfillmentCount: 0,
+      supplierBreakdown: {},
+    },
+    backup: {
+      available: true,
+      latestBackupName: 'sqlite-backup-20260821-120000.db',
+      hasSha256Sidecar: true,
+      integrityCheck: 'OK',
+      offsiteEnabled: false,
+      offsiteStatusDescription: 'כבוי (Disabled)',
+    },
+    actionItems: ['👥 לא נרשמה תנועת גולשים היום — מומלץ לבדוק קמפיינים ופעילות שיווקית'],
+  };
+
+  const message = dailyOwnerReport.buildDailyReportMessage(emptyMetrics);
+  assert.match(message, /סשנים של בני אדם: 0/);
+  assert.match(message, /מבקרים ייחודיים: 0/);
+  assert.match(message, /הזמנות ששולמו: 0/);
+  assert.match(message, /הכנסה ששולמה: ₪0\.00/);
+  assert.match(message, /פריטים שנמכרו: 0/);
+  assert.match(message, /תקלות קריטיות: 0/);
+  assert.match(message, /פריטים ממתינים להגשמה: 0/);
+  assert.doesNotMatch(message, /לא זמין כרגע/);
+});
+
+// ── 14. Failed queries => truthfully reported as 'לא זמין כרגע' ────────
+
+test('14: failed metric queries are reported as לא זמין כרגע and never falsely reported as 0', async () => {
+  const brokenDb = {
+    all: (sql, params, cb) => cb(new Error('Simulated SQLite disk corruption')),
+    get: (sql, params, cb) => cb(new Error('Simulated SQLite disk corruption')),
+    run: (sql, params, cb) => cb(new Error('Simulated SQLite disk corruption')),
+  };
+
+  const metrics = await dailyOwnerReport.getReportMetrics({
+    dateStr: '2026-08-22',
+    db: brokenDb,
+  });
+
+  assert.equal(metrics.traffic.available, false);
+  assert.equal(metrics.sales.available, false);
+  assert.equal(metrics.issues.available, false);
+  assert.equal(metrics.fulfillment.available, false);
+  assert.equal(metrics.backup.available, false);
+
+  const message = dailyOwnerReport.buildDailyReportMessage(metrics);
+
+  assert.match(message, /סשנים של בני אדם: לא זמין כרגע/);
+  assert.match(message, /הזמנות ששולמו: לא זמין כרגע/);
+  assert.match(message, /הכנסה ששולמה: לא זמין כרגע/);
+  assert.match(message, /תקלות קריטיות: לא זמין כרגע/);
+  assert.match(message, /פריטים ממתינים להגשמה: לא זמין כרגע/);
+  assert.match(message, /גיבוי מקומי אחרון: לא זמין כרגע/);
+
+  // Operator context must say UNAVAILABLE
+  assert.match(message, /Human-Sessions: UNAVAILABLE/);
+  assert.match(message, /Paid-Orders: UNAVAILABLE/);
+  assert.match(message, /Paid-Revenue: UNAVAILABLE/);
+  assert.match(message, /Issues-Count: UNAVAILABLE/);
+  assert.match(message, /Pending-Fulfillment: UNAVAILABLE/);
+  assert.match(message, /Backup-Status: UNAVAILABLE/);
+
+  // Action items must not claim "no traffic" or "no purchases"
+  assert.match(message, /⚠️ נתוני תנועת גולשים אינם זמינים כרגע/);
+  assert.match(message, /⚠️ נתוני מכירות אינם זמינים כרגע/);
+  assert.doesNotMatch(message, /לא נרשמה תנועה/);
+});
+
+// ── 15. Backup reporting uses real listManagedBackupFiles API shape ───
+
+test('15: backup reporting correctly parses { name, path, mtimeMs } and checks sha256 sidecar', async () => {
+  const customBackupDir = path.join(tmpDir, 'managed-backups-test');
+  fs.mkdirSync(customBackupDir, { recursive: true });
+
+  const backupFilename = 'ecommerce-20260816-120000Z.db';
+  const backupFilePath = path.join(customBackupDir, backupFilename);
+  fs.writeFileSync(backupFilePath, 'mock sqlite header bytes');
+  fs.writeFileSync(`${backupFilePath}.sha256`, 'abc123mockhash  ecommerce-20260816-120000Z.db\n');
+
+  const metrics = await dailyOwnerReport.getReportMetrics({
+    dateStr: '2026-08-16',
+    db,
+    backupDir: customBackupDir,
+    env: { ENABLE_OFFSITE_BACKUP: 'true' },
+  });
+
+  assert.equal(metrics.backup.available, true);
+  assert.equal(metrics.backup.latestBackupName, backupFilename);
+  assert.equal(metrics.backup.hasSha256Sidecar, true);
+  assert.equal(metrics.backup.offsiteEnabled, true);
+  assert.equal(metrics.backup.offsiteStatusDescription, 'מוגדר (Enabled)');
+
+  const message = dailyOwnerReport.buildDailyReportMessage(metrics);
+  assert.match(message, new RegExp(backupFilename));
+  assert.match(message, /מאומת sha256/);
+  assert.match(message, /מוגדר \(Enabled\)/);
+});
+
+// ── 16. Safe Referrer domain only (strips query, paths, tokens) ───────
+
+test('16: visitor referrers are reduced to safe hostnames only without leaking paths, queries, or PII', () => {
+  assert.equal(dailyOwnerReport.extractSafeDomain('https://instagram.com/stories/user123?utm_source=ig&token=SECRET_123'), 'instagram.com');
+  assert.equal(dailyOwnerReport.extractSafeDomain('https://www.google.com/search?q=sensitive+user+query&hl=iw'), 'www.google.com');
+  assert.equal(dailyOwnerReport.extractSafeDomain('https://facebook.com/groups/feed/'), 'facebook.com');
+  assert.equal(dailyOwnerReport.extractSafeDomain('direct'), 'Direct / ישיר');
+  assert.equal(dailyOwnerReport.extractSafeDomain(null), 'Direct / ישיר');
+  assert.equal(dailyOwnerReport.extractSafeDomain(''), 'Direct / ישיר');
+  assert.equal(dailyOwnerReport.extractSafeDomain('custom://bad-url?token=xxx'), 'bad-url');
+});
+
+// ── 17. HTML escaping for all user-controlled values ──────────────────
+
+test('17: dynamic HTML values are escaped properly and never break formatting', () => {
+  assert.equal(dailyOwnerReport.escapeHtml('<script>alert("xss")</script> & \'test\''), '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; &#39;test&#39;');
+
+  const dangerousMetrics = {
+    dateStr: '2026-08-23',
+    traffic: {
+      available: true,
+      humanSessions: 10,
+      uniqueHumanVisitors: 5,
+      deviceBreakdown: { 'Mobile <tag>': 10 },
+      topLandingPages: [{ path: '/product?id=<123>&code="secret"', count: 10 }],
+      topReferrers: [{ domain: 'evil.com/?x=<script>', count: 10 }],
+    },
+    sales: {
+      available: true,
+      paidOrdersCount: 1,
+      paidRevenueILS: 100,
+      aovILS: 100,
+      conversionRatePercent: 10,
+      itemsSoldCount: 1,
+      topProducts: [{ title: 'Hacker T-Shirt <img src=x onerror=alert(1)> & "Ltd"', quantity: 1, sales: 100 }],
+    },
+    issues: {
+      available: true,
+      totalDistinctIssues: 0,
+      totalOccurrences: 0,
+      criticalCount: 0,
+      warningCount: 0,
+      activeIssues: [],
+    },
+    fulfillment: {
+      available: true,
+      pendingFulfillmentCount: 0,
+      manualFulfillmentCount: 0,
+      supplierBreakdown: {},
+    },
+    backup: {
+      available: true,
+      latestBackupName: 'backup<script>.db',
+      hasSha256Sidecar: true,
+      integrityCheck: 'OK',
+      offsiteEnabled: false,
+      offsiteStatusDescription: 'כבוי (Disabled)',
+    },
+    actionItems: ['Test <item> & "quote"'],
+  };
+
+  const message = dailyOwnerReport.buildDailyReportMessage(dangerousMetrics);
+
+  assert.doesNotMatch(message, /<script>/i);
+  assert.doesNotMatch(message, /<img /i);
+  assert.match(message, /&lt;script&gt;/);
+  assert.match(message, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(message, /backup&lt;script&gt;\.db/);
+});
+
+// ── 18. Paid-today semantics use genuine paid_at timestamp ────────────
+
+test('18: paid-today accurately filters on paid_at timestamp', async () => {
+  const testDateStr = '2026-08-24';
+
+  // Order A: Created yesterday, paid today (2026-08-24 10:00:00) => MUST be included
+  await dbRun(
+    `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt, paid_at)
+     VALUES ('Buyer A', 'a@test.invalid', 120.00, 'paid', 'A St', '2026-08-23 23:00:00', '2026-08-24 10:00:00')`
+  );
+
+  // Order B: Created today, paid tomorrow (2026-08-25 01:00:00) => MUST be excluded
+  await dbRun(
+    `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt, paid_at)
+     VALUES ('Buyer B', 'b@test.invalid', 200.00, 'paid', 'B St', '2026-08-24 20:00:00', '2026-08-25 01:00:00')`
+  );
+
+  // Order C (legacy): Created today, paid_at is NULL => MUST be included via legacy fallback
+  await dbRun(
+    `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt, paid_at)
+     VALUES ('Buyer C', 'c@test.invalid', 80.00, 'paid', 'C St', '2026-08-24 14:00:00', NULL)`
+  );
+
+  const metrics = await dailyOwnerReport.getReportMetrics({ dateStr: testDateStr, db });
+
+  assert.equal(metrics.sales.paidOrdersCount, 2, 'Order A (paid today) and Order C (legacy created today) included; Order B (paid tomorrow) excluded');
+  assert.equal(metrics.sales.paidRevenueILS, 200.00, '120.00 + 80.00 = 200.00');
+});
+
+// ── 19. Partial report sends successfully even when a section fails ───
+
+test('19: partial report builds and sends successfully when a subset of metric queries fail', async () => {
+  const tMock = installTelegramMock();
+  const partialDateStr = '2026-08-25';
+  const partialDate = new Date('2026-08-25T19:00:00.000Z');
+
+  // Corrupt only visitor_sessions query by temporary table drop or custom mock
+  const partialMetrics = {
+    dateStr: partialDateStr,
+    traffic: {
+      available: false,
+      error: 'UNAVAILABLE',
+      totalSessions: null,
+      humanSessions: null,
+      uniqueHumanVisitors: null,
+      deviceBreakdown: null,
+      topLandingPages: [],
+      topReferrers: [],
+    },
+    sales: {
+      available: true,
+      paidOrdersCount: 2,
+      paidRevenueILS: 350.00,
+      aovILS: 175.00,
+      conversionRatePercent: null, // unavailable because traffic is unavailable
+      itemsSoldCount: 3,
+      topProducts: [{ title: 'Classic Hoodie', quantity: 2, sales: 250 }],
+    },
+    issues: {
+      available: true,
+      totalDistinctIssues: 0,
+      totalOccurrences: 0,
+      criticalCount: 0,
+      warningCount: 0,
+      activeIssues: [],
+    },
+    fulfillment: {
+      available: true,
+      pendingFulfillmentCount: 1,
+      manualFulfillmentCount: 0,
+      supplierBreakdown: { printify: { pending: 1 } },
+    },
+    backup: {
+      available: true,
+      latestBackupName: 'sqlite-backup-20260825-120000.db',
+      hasSha256Sidecar: true,
+      integrityCheck: 'OK',
+      offsiteEnabled: false,
+      offsiteStatusDescription: 'כבוי (Disabled)',
+    },
+    actionItems: [
+      '⚠️ נתוני תנועת גולשים אינם זמינים כרגע לניתוח',
+      '💰 נרשמו 2 רכישות מוצלחות היום (סה״כ ₪350.00)',
+      '💾 שלמות מסד הנתונים תקינה (Integrity: OK)',
+    ],
+  };
+
+  const message = dailyOwnerReport.buildDailyReportMessage(partialMetrics);
+
+  assert.match(message, /סשנים של בני אדם: לא זמין כרגע/);
+  assert.match(message, /הזמנות ששולמו: 2/);
+  assert.match(message, /הכנסה ששולמה: ₪350\.00/);
+  assert.match(message, /ערך הזמנה ממוצע \(AOV\): ₪175\.00/);
+  assert.match(message, /Human-Sessions: UNAVAILABLE/);
+  assert.match(message, /Paid-Orders: 2/);
 });

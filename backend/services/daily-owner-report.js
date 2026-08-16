@@ -16,10 +16,42 @@
  * 5. Privacy: zero raw IP addresses, tokens, passwords, customer names, or PII.
  */
 
+const fs = require('fs');
 const path = require('path');
 const defaultDb = require('../db');
 const ownerNotifications = require('./owner-notifications');
 const sqliteBackup = require('./sqlite-backup');
+const sqliteOffsiteBackup = require('./sqlite-offsite-backup');
+
+/**
+ * HTML-escape any dynamic user- or DB-derived string before inserting into Telegram HTML messages.
+ */
+function escapeHtml(val) {
+  if (val === null || val === undefined) return '';
+  return String(val)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Extract safe hostname/domain from referrer URL, stripping paths, queries, tokens, and PII.
+ */
+function extractSafeDomain(referrer) {
+  if (!referrer || typeof referrer !== 'string') return 'Direct / ישיר';
+  const trimmed = referrer.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'direct') return 'Direct / ישיר';
+  try {
+    const url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+    if (url.hostname) return url.hostname;
+  } catch (_) {
+    // fallback to regex extraction
+  }
+  const clean = trimmed.split('?')[0].split('#')[0].replace(/^[a-zA-Z0-9+.-]+:\/\//, '').split('/')[0];
+  return clean.slice(0, 50) || 'Direct / ישיר';
+}
 
 // Dynamically resolve valid IANA Jerusalem timezone across all OS/ICU environments
 function resolveJerusalemTimezone() {
@@ -147,6 +179,8 @@ const dbRunAsync = (db, sql, params = []) => new Promise((resolve, reject) => {
 
 /**
  * Collect real metrics from SQLite tables for the specified local date.
+ * Every section tracks `.available` (true on successful query, false on failure).
+ * Query failures are NEVER silently reported as 0.
  */
 async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = process.env } = {}) {
   const targetDate = dateStr || getJerusalemDateString();
@@ -154,6 +188,8 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
 
   // 1. Traffic Metrics (visitor_sessions)
   let trafficSummary = {
+    available: true,
+    error: null,
     totalSessions: 0,
     humanSessions: 0,
     uniqueHumanVisitors: 0,
@@ -175,7 +211,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     const humanRows = trafficRows.filter(r => r.is_human === 1);
     trafficSummary.totalSessions = trafficRows.length;
     trafficSummary.humanSessions = humanRows.length;
-    
+
     const uniqueVisitorIds = new Set(humanRows.map(r => r.visitor_id).filter(Boolean));
     trafficSummary.uniqueHumanVisitors = uniqueVisitorIds.size;
 
@@ -187,11 +223,12 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     }
     trafficSummary.deviceBreakdown = devices;
 
-    // Top landing pages
+    // Top landing pages (sanitize path: strip query/hash)
     const landingCounts = {};
     for (const r of humanRows) {
       if (r.landing_path) {
-        landingCounts[r.landing_path] = (landingCounts[r.landing_path] || 0) + 1;
+        const cleanPath = String(r.landing_path).split('?')[0].split('#')[0].slice(0, 100);
+        landingCounts[cleanPath] = (landingCounts[cleanPath] || 0) + 1;
       }
     }
     trafficSummary.topLandingPages = Object.entries(landingCounts)
@@ -199,39 +236,55 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
       .slice(0, 3)
       .map(([landingPath, count]) => ({ path: landingPath, count }));
 
-    // Top referrers
+    // Top referrers (safe domain only)
     const referrerCounts = {};
     for (const r of humanRows) {
-      if (r.referrer) {
-        referrerCounts[r.referrer] = (referrerCounts[r.referrer] || 0) + 1;
-      }
+      const domain = extractSafeDomain(r.referrer);
+      referrerCounts[domain] = (referrerCounts[domain] || 0) + 1;
     }
     trafficSummary.topReferrers = Object.entries(referrerCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([referrer, count]) => ({ referrer, count }));
+      .map(([domain, count]) => ({ domain, count }));
   } catch (err) {
     console.error('[daily-owner-report] Error collecting traffic metrics:', err.message);
+    trafficSummary = {
+      available: false,
+      error: 'UNAVAILABLE',
+      totalSessions: null,
+      humanSessions: null,
+      uniqueHumanVisitors: null,
+      deviceBreakdown: null,
+      topLandingPages: [],
+      topReferrers: [],
+    };
   }
 
   // 2. Sales Metrics (orders & order_items)
+  // Uses paid_at for genuine payment timestamp, falling back to createdAt for legacy orders where paid_at IS NULL.
   let salesSummary = {
+    available: true,
+    error: null,
     paidOrdersCount: 0,
     paidRevenueILS: 0,
     aovILS: null,
     conversionRatePercent: null,
     itemsSoldCount: 0,
     topProducts: [],
+    paidTimestampSource: 'paid_at (legacy fallback: createdAt)',
   };
 
   try {
     const paidOrders = await dbAllAsync(
       db,
-      `SELECT id, totalAmount, expected_payment_currency, expected_payment_amount, createdAt
+      `SELECT id, totalAmount, expected_payment_currency, expected_payment_amount, createdAt, paid_at
        FROM orders
        WHERE status = 'paid'
-         AND datetime(createdAt) >= datetime(?) AND datetime(createdAt) < datetime(?)`,
-      [startUtcIso, endUtcIso]
+         AND (
+           (paid_at IS NOT NULL AND datetime(paid_at) >= datetime(?) AND datetime(paid_at) < datetime(?))
+           OR (paid_at IS NULL AND datetime(createdAt) >= datetime(?) AND datetime(createdAt) < datetime(?))
+         )`,
+      [startUtcIso, endUtcIso, startUtcIso, endUtcIso]
     );
 
     salesSummary.paidOrdersCount = paidOrders.length;
@@ -241,7 +294,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
       salesSummary.aovILS = salesSummary.paidRevenueILS / salesSummary.paidOrdersCount;
     }
 
-    if (trafficSummary.humanSessions > 0) {
+    if (trafficSummary.available && trafficSummary.humanSessions > 0) {
       salesSummary.conversionRatePercent = (salesSummary.paidOrdersCount / trafficSummary.humanSessions) * 100;
     }
 
@@ -257,11 +310,14 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
        JOIN orders o ON oi.orderId = o.id
        LEFT JOIN products p ON oi.productId = p.id
        WHERE o.status = 'paid'
-         AND datetime(o.createdAt) >= datetime(?) AND datetime(o.createdAt) < datetime(?)
+         AND (
+           (o.paid_at IS NOT NULL AND datetime(o.paid_at) >= datetime(?) AND datetime(o.paid_at) < datetime(?))
+           OR (o.paid_at IS NULL AND datetime(o.createdAt) >= datetime(?) AND datetime(o.createdAt) < datetime(?))
+         )
        GROUP BY oi.productId, p.title
        ORDER BY qty_sold DESC
        LIMIT 5`,
-      [startUtcIso, endUtcIso]
+      [startUtcIso, endUtcIso, startUtcIso, endUtcIso]
     );
 
     salesSummary.itemsSoldCount = productSales.reduce((sum, p) => sum + (Number(p.qty_sold) || 0), 0);
@@ -273,10 +329,23 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     }));
   } catch (err) {
     console.error('[daily-owner-report] Error collecting sales metrics:', err.message);
+    salesSummary = {
+      available: false,
+      error: 'UNAVAILABLE',
+      paidOrdersCount: null,
+      paidRevenueILS: null,
+      aovILS: null,
+      conversionRatePercent: null,
+      itemsSoldCount: null,
+      topProducts: [],
+      paidTimestampSource: null,
+    };
   }
 
   // 3. Technical & Customer Issues (technical_issues)
   let issuesSummary = {
+    available: true,
+    error: null,
     totalDistinctIssues: 0,
     totalOccurrences: 0,
     criticalCount: 0,
@@ -307,10 +376,21 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     }));
   } catch (err) {
     console.error('[daily-owner-report] Error collecting technical issues:', err.message);
+    issuesSummary = {
+      available: false,
+      error: 'UNAVAILABLE',
+      totalDistinctIssues: null,
+      totalOccurrences: null,
+      criticalCount: null,
+      warningCount: null,
+      activeIssues: [],
+    };
   }
 
   // 4. Fulfillment Status
   let fulfillmentSummary = {
+    available: true,
+    error: null,
     pendingFulfillmentCount: 0,
     manualFulfillmentCount: 0,
     supplierBreakdown: {},
@@ -345,62 +425,105 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     }
   } catch (err) {
     console.error('[daily-owner-report] Error collecting fulfillment metrics:', err.message);
+    fulfillmentSummary = {
+      available: false,
+      error: 'UNAVAILABLE',
+      pendingFulfillmentCount: null,
+      manualFulfillmentCount: null,
+      supplierBreakdown: null,
+    };
   }
 
   // 5. Database & Backup Status
   let backupSummary = {
-    integrityCheck: 'unknown',
-    latestBackupFile: null,
+    available: true,
+    error: null,
+    integrityCheck: 'UNKNOWN',
+    latestBackupName: null,
     latestBackupTimestamp: null,
+    hasSha256Sidecar: false,
+    managedCount: 0,
     offsiteEnabled: false,
-    offsiteStatusDescription: 'כבוי כהלכה (Disabled)',
+    offsiteStatusDescription: 'כבוי (Disabled)',
   };
 
   try {
     const integrity = await dbGetAsync(db, `PRAGMA integrity_check;`);
     backupSummary.integrityCheck = integrity && integrity.integrity_check === 'ok' ? 'OK' : (integrity?.integrity_check || 'FAIL');
 
-    const dbPath = (db && db.filename) || process.env.DB_PATH || path.resolve(__dirname, '../ecommerce.db');
-    const resolvedDir = sqliteBackup.resolveBackupDir(dbPath, { backupDir });
+    const dbPath = (db && db.filename) || env.DB_PATH || path.resolve(__dirname, '../ecommerce.db');
+    const resolvedDir = sqliteBackup.resolveBackupDir(dbPath, { backupDir, env });
     const managedFiles = sqliteBackup.listManagedBackupFiles(resolvedDir);
+    backupSummary.managedCount = managedFiles ? managedFiles.length : 0;
+
     if (managedFiles && managedFiles.length > 0) {
-      backupSummary.latestBackupFile = managedFiles[0].filename;
-      backupSummary.latestBackupTimestamp = managedFiles[0].timestamp ? managedFiles[0].timestamp.toISOString() : null;
+      const newest = managedFiles[0]; // Real shape from sqliteBackup: { name, path, mtimeMs }
+      backupSummary.latestBackupName = newest.name;
+      backupSummary.latestBackupTimestamp = newest.mtimeMs ? new Date(newest.mtimeMs).toISOString() : null;
+      const sidecarPath = `${newest.path}.sha256`;
+      backupSummary.hasSha256Sidecar = fs.existsSync(sidecarPath);
     }
 
-    const offsiteEnv = (env.ENABLE_SQLITE_OFFSITE_BACKUP || '').trim().toLowerCase();
-    if (offsiteEnv === 'true') {
-      backupSummary.offsiteEnabled = true;
-      backupSummary.offsiteStatusDescription = 'מוגדר ופעיל (Active)';
-    }
+    // Truthful off-site check using isOffsiteBackupEnabled(env)
+    const isOffsiteOn = sqliteOffsiteBackup.isOffsiteBackupEnabled(env);
+    backupSummary.offsiteEnabled = isOffsiteOn;
+    backupSummary.offsiteStatusDescription = isOffsiteOn ? 'מוגדר (Enabled)' : 'כבוי (Disabled)';
   } catch (err) {
     console.error('[daily-owner-report] Error collecting backup summary:', err.message);
+    backupSummary.available = false;
+    backupSummary.error = 'UNAVAILABLE';
+    backupSummary.integrityCheck = 'UNAVAILABLE';
   }
 
-  // 6. Action Items Generation (2–5 items strictly based on real data)
+  // 6. Action Items Generation (Respecting metric availability)
   const actionItems = [];
-  if (fulfillmentSummary.manualFulfillmentCount > 0) {
-    actionItems.push(`📦 ישנן ${fulfillmentSummary.manualFulfillmentCount} הזמנות להגשמה ידנית הממתינות לטיפול`);
-  }
-  if (issuesSummary.criticalCount > 0) {
-    actionItems.push(`🚨 נרשמו ${issuesSummary.criticalCount} תקלות קריטיות היום — מומלץ לבדוק את לוג המערכת`);
-  }
-  if (salesSummary.paidOrdersCount > 0) {
-    actionItems.push(`💰 נרשמו ${salesSummary.paidOrdersCount} רכישות מוצלחות היום (סה״כ ₪${salesSummary.paidRevenueILS.toFixed(2)})`);
-  } else if (trafficSummary.humanSessions > 0) {
-    actionItems.push(`🔍 נרשמו ${trafficSummary.humanSessions} ביקורים ללא רכישות (יחס המרה 0.0%)`);
+
+  if (fulfillmentSummary.available) {
+    if (fulfillmentSummary.manualFulfillmentCount > 0) {
+      actionItems.push(`📦 ישנן ${fulfillmentSummary.manualFulfillmentCount} הזמנות להגשמה ידנית הממתינות לטיפול`);
+    }
   } else {
-    actionItems.push(`👥 לא נרשמה תנועת גולשים היום — מומלץ לבדוק קמפיינים ופעילות שיווקית`);
+    actionItems.push('⚠️ נתוני הגשמת הזמנות אינם זמינים כרגע');
   }
 
-  if (backupSummary.integrityCheck === 'OK') {
-    actionItems.push(`💾 שלמות מסד הנתונים תקינה (Integrity: OK)`);
+  if (issuesSummary.available) {
+    if (issuesSummary.criticalCount > 0) {
+      actionItems.push(`🚨 נרשמו ${issuesSummary.criticalCount} תקלות קריטיות היום — מומלץ לבדוק את לוג המערכת`);
+    }
   } else {
-    actionItems.push(`⚠️ בדיקת שלמות מסד הנתונים נכשלה (${backupSummary.integrityCheck})`);
+    actionItems.push('⚠️ נתוני תקלות מערכת אינם זמינים כרגע');
   }
 
-  if (actionItems.length < 2) {
-    actionItems.push(`✅ כל המערכות פועלות כסדרן ללא התרעות חריגות`);
+  if (salesSummary.available) {
+    if (salesSummary.paidOrdersCount > 0) {
+      actionItems.push(`💰 נרשמו ${salesSummary.paidOrdersCount} רכישות מוצלחות היום (סה״כ ₪${salesSummary.paidRevenueILS.toFixed(2)})`);
+    } else if (trafficSummary.available && trafficSummary.humanSessions > 0) {
+      actionItems.push(`🔍 נרשמו ${trafficSummary.humanSessions} ביקורים ללא רכישות (יחס המרה 0.0%)`);
+    }
+  } else {
+    actionItems.push('⚠️ נתוני מכירות אינם זמינים כרגע לניתוח');
+  }
+
+  if (trafficSummary.available) {
+    if (trafficSummary.humanSessions === 0 && (!salesSummary.available || salesSummary.paidOrdersCount === 0)) {
+      actionItems.push('👥 לא נרשמה תנועת גולשים היום — מומלץ לבדוק קמפיינים ופעילות שיווקית');
+    }
+  } else {
+    actionItems.push('⚠️ נתוני תנועת גולשים אינם זמינים כרגע לניתוח');
+  }
+
+  if (backupSummary.available) {
+    if (backupSummary.integrityCheck === 'OK') {
+      actionItems.push('💾 שלמות מסד הנתונים תקינה (Integrity: OK)');
+    } else {
+      actionItems.push(`⚠️ בדיקת שלמות מסד הנתונים נכשלה (${escapeHtml(backupSummary.integrityCheck)})`);
+    }
+  } else {
+    actionItems.push('⚠️ נתוני בדיקת מסד הנתונים אינם זמינים כרגע');
+  }
+
+  if (actionItems.length === 0) {
+    actionItems.push('✅ כל המערכות הזמינות פועלות כסדרן');
   }
 
   return {
@@ -415,7 +538,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
 }
 
 /**
- * Format the structured Hebrew Telegram message and operator context block.
+ * Format the structured Hebrew Telegram message and operator context block with full HTML escaping.
  */
 function buildDailyReportMessage(metrics) {
   const { dateStr, traffic, sales, issues, fulfillment, backup, actionItems } = metrics;
@@ -423,63 +546,110 @@ function buildDailyReportMessage(metrics) {
   const displayDate = `${d}/${m}/${y}`;
 
   // Traffic block
-  const deviceParts = Object.entries(traffic.deviceBreakdown).map(([k, v]) => `${k}: ${v}`).join(', ') || 'אין נתונים';
-  const topLandings = traffic.topLandingPages.length > 0
-    ? traffic.topLandingPages.map(p => `${p.path} (${p.count})`).join(', ')
-    : 'לא זמין / אין ביקורים';
-  const topRefs = traffic.topReferrers.length > 0
-    ? traffic.topReferrers.map(r => `${r.referrer} (${r.count})`).join(', ')
-    : 'Direct / ישיר';
+  let trafficLines;
+  if (traffic.available) {
+    const deviceParts = Object.entries(traffic.deviceBreakdown).map(([k, v]) => `${escapeHtml(k)}: ${v}`).join(', ') || 'אין נתונים';
+    const topLandings = traffic.topLandingPages.length > 0
+      ? traffic.topLandingPages.map(p => `${escapeHtml(p.path)} (${p.count})`).join(', ')
+      : 'לא זמין / אין ביקורים';
+    const topRefs = traffic.topReferrers.length > 0
+      ? traffic.topReferrers.map(r => `${escapeHtml(r.domain)} (${r.count})`).join(', ')
+      : 'Direct / ישיר';
 
-  // Sales block
-  const aovText = sales.aovILS !== null ? `₪${sales.aovILS.toFixed(2)}` : 'לא זמין (אין רכישות)';
-  const convText = sales.conversionRatePercent !== null ? `${sales.conversionRatePercent.toFixed(1)}%` : 'לא זמין (אין תנועה)';
-  const topProductsText = sales.topProducts.length > 0
-    ? sales.topProducts.map(p => `${p.title} (${p.quantity})`).join(', ')
-    : 'אין רכישות היום';
-
-  // Issues block
-  const issuesText = issues.totalDistinctIssues === 0
-    ? '• תקלות קריטיות: 0\n• סה״כ אירועי שגיאה: 0'
-    : `• תקלות קריטיות: ${issues.criticalCount}\n• תקלות אזהרה: ${issues.warningCount}\n• סה״כ אירועי שגיאה: ${issues.totalOccurrences}`;
-
-  // Fulfillment block
-  const manualCount = fulfillment.manualFulfillmentCount;
-  const pendingCount = fulfillment.pendingFulfillmentCount;
-
-  // Action items block
-  const actionItemsList = actionItems.map((item, idx) => `${idx + 1}. ${item}`).join('\n');
-
-  // Human Hebrew readable report
-  const humanReport = `📊 <b>JONO — סיכום יומי</b>
-תאריך: ${displayDate}
-
-👥 <b>תנועה</b>
-• סשנים של בני אדם: ${traffic.humanSessions}
+    trafficLines = `• סשנים של בני אדם: ${traffic.humanSessions}
 • מבקרים ייחודיים: ${traffic.uniqueHumanVisitors}
 • התפלגות מכשירים: ${deviceParts}
 • דפי נחיתה מובילים: ${topLandings}
-• מקורות הגעה: ${topRefs}
+• מקורות הגעה: ${topRefs}`;
+  } else {
+    trafficLines = `• סשנים של בני אדם: לא זמין כרגע
+• מבקרים ייחודיים: לא זמין כרגע
+• התפלגות מכשירים: לא זמין כרגע
+• דפי נחיתה מובילים: לא זמין כרגע
+• מקורות הגעה: לא זמין כרגע`;
+  }
+
+  // Sales block
+  let salesLines;
+  if (sales.available) {
+    const aovText = sales.aovILS !== null ? `₪${sales.aovILS.toFixed(2)}` : 'לא זמין (אין רכישות)';
+    const convText = sales.conversionRatePercent !== null ? `${sales.conversionRatePercent.toFixed(1)}%` : (traffic.available ? 'לא זמין (אין תנועה)' : 'לא זמין כרגע');
+    const topProductsText = sales.topProducts.length > 0
+      ? sales.topProducts.map(p => `${escapeHtml(p.title)} (${p.quantity})`).join(', ')
+      : 'אין רכישות היום';
+
+    salesLines = `• הזמנות ששולמו: ${sales.paidOrdersCount}
+• הכנסה ששולמה: ₪${sales.paidRevenueILS.toFixed(2)}
+• ערך הזמנה ממוצע (AOV): ${escapeHtml(aovText)}
+• יחס המרה (Conversion): ${escapeHtml(convText)}
+• פריטים שנמכרו: ${sales.itemsSoldCount}
+• מוצרים מובילים: ${topProductsText}`;
+  } else {
+    salesLines = `• הזמנות ששולמו: לא זמין כרגע
+• הכנסה ששולמה: לא זמין כרגע
+• ערך הזמנה ממוצע (AOV): לא זמין כרגע
+• יחס המרה (Conversion): לא זמין כרגע
+• פריטים שנמכרו: לא זמין כרגע
+• מוצרים מובילים: לא זמין כרגע`;
+  }
+
+  // Issues block
+  let issuesLines;
+  if (issues.available) {
+    issuesLines = issues.totalDistinctIssues === 0
+      ? '• תקלות קריטיות: 0\n• סה״כ אירועי שגיאה: 0'
+      : `• תקלות קריטיות: ${issues.criticalCount}\n• תקלות אזהרה: ${issues.warningCount}\n• סה״כ אירועי שגיאה: ${issues.totalOccurrences}`;
+  } else {
+    issuesLines = '• תקלות קריטיות: לא זמין כרגע\n• סה״כ אירועי שגיאה: לא זמין כרגע';
+  }
+
+  // Fulfillment block
+  let fulfillmentLines;
+  if (fulfillment.available) {
+    fulfillmentLines = `• פריטים ממתינים להגשמה: ${fulfillment.pendingFulfillmentCount}
+• הגשמה ידנית ממתינה: ${fulfillment.manualFulfillmentCount}`;
+  } else {
+    fulfillmentLines = `• פריטים ממתינים להגשמה: לא זמין כרגע
+• הגשמה ידנית ממתינה: לא זמין כרגע`;
+  }
+
+  // Backup block
+  let backupLines;
+  if (backup.available) {
+    const backupNameDisplay = backup.latestBackupName
+      ? `${escapeHtml(backup.latestBackupName)}${backup.hasSha256Sidecar ? ' (מאומת sha256)' : ''}`
+      : 'לא נמצא גיבוי מקומי';
+
+    backupLines = `• גיבוי מקומי אחרון: ${backupNameDisplay}
+• שלמות מסד נתונים (Integrity): ${escapeHtml(backup.integrityCheck)}
+• גיבוי מרוחק (Off-site): ${escapeHtml(backup.offsiteStatusDescription)}`;
+  } else {
+    backupLines = `• גיבוי מקומי אחרון: לא זמין כרגע
+• שלמות מסד נתונים (Integrity): לא זמין כרגע
+• גיבוי מרוחק (Off-site): לא זמין כרגע`;
+  }
+
+  // Action items block
+  const actionItemsList = actionItems.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join('\n');
+
+  // Human Hebrew readable report
+  const humanReport = `📊 <b>JONO — סיכום יומי</b>
+תאריך: ${displayDate} (חלון דיווח: מתחילת היום עד 22:00)
+
+👥 <b>תנועה</b>
+${trafficLines}
 
 💰 <b>מכירות</b>
-• הזמנות ששולמו: ${sales.paidOrdersCount}
-• הכנסה ששולמה: ₪${sales.paidRevenueILS.toFixed(2)}
-• ערך הזמנה ממוצע (AOV): ${aovText}
-• יחס המרה (Conversion): ${convText}
-• פריטים שנמכרו: ${sales.itemsSoldCount}
-• מוצרים מובילים: ${topProductsText}
+${salesLines}
 
 📦 <b>הגשמה וספקים</b>
-• פריטים ממתינים להגשמה: ${pendingCount}
-• הגשמה ידנית ממתינה: ${manualCount}
+${fulfillmentLines}
 
 ⚠️ <b>תקלות טכניות</b>
-${issuesText}
+${issuesLines}
 
 💾 <b>מערכת וגיבויים</b>
-• גיבוי מקומי אחרון: ${backup.latestBackupFile || 'לא נמצא גיבוי מקומי'}
-• שלמות מסד נתונים (Integrity): ${backup.integrityCheck}
-• גיבוי מרוחק (Off-site): ${backup.offsiteStatusDescription}
+${backupLines}
 
 🎯 <b>מה דורש תשומת לב</b>
 ${actionItemsList}`;
@@ -488,20 +658,21 @@ ${actionItemsList}`;
   const operatorFields = [
     ['Event', 'DAILY_OWNER_REPORT'],
     ['Date', dateStr],
+    ['Window', `${dateStr} 00:00 - 22:00 (Jerusalem)`],
     ['Generated-At', new Date().toISOString()],
-    ['Human-Sessions', traffic.humanSessions],
-    ['Unique-Visitors', traffic.uniqueHumanVisitors],
-    ['Paid-Orders', sales.paidOrdersCount],
-    ['Paid-Revenue', `${sales.paidRevenueILS.toFixed(2)} ILS`],
-    ['AOV', sales.aovILS !== null ? `${sales.aovILS.toFixed(2)} ILS` : undefined],
-    ['Conversion-Rate', sales.conversionRatePercent !== null ? `${sales.conversionRatePercent.toFixed(1)}%` : undefined],
-    ['Items-Sold', sales.itemsSoldCount],
-    ['Issues-Count', issues.totalDistinctIssues],
-    ['Issues-Occurrences', issues.totalOccurrences],
-    ['Pending-Fulfillment', pendingCount],
-    ['Backup-Status', backup.latestBackupFile ? `OK (${backup.latestBackupFile})` : 'NO_LOCAL_BACKUP'],
-    ['Integrity-Check', backup.integrityCheck],
-    ['Offsite-Backup', backup.offsiteEnabled ? 'ENABLED' : 'DISABLED'],
+    ['Human-Sessions', traffic.available ? traffic.humanSessions : 'UNAVAILABLE'],
+    ['Unique-Visitors', traffic.available ? traffic.uniqueHumanVisitors : 'UNAVAILABLE'],
+    ['Paid-Orders', sales.available ? sales.paidOrdersCount : 'UNAVAILABLE'],
+    ['Paid-Revenue', sales.available ? `${sales.paidRevenueILS.toFixed(2)} ILS` : 'UNAVAILABLE'],
+    ['AOV', sales.available ? (sales.aovILS !== null ? `${sales.aovILS.toFixed(2)} ILS` : undefined) : 'UNAVAILABLE'],
+    ['Conversion-Rate', sales.available ? (sales.conversionRatePercent !== null ? `${sales.conversionRatePercent.toFixed(1)}%` : undefined) : 'UNAVAILABLE'],
+    ['Items-Sold', sales.available ? sales.itemsSoldCount : 'UNAVAILABLE'],
+    ['Issues-Count', issues.available ? issues.totalDistinctIssues : 'UNAVAILABLE'],
+    ['Issues-Occurrences', issues.available ? issues.totalOccurrences : 'UNAVAILABLE'],
+    ['Pending-Fulfillment', fulfillment.available ? fulfillment.pendingFulfillmentCount : 'UNAVAILABLE'],
+    ['Backup-Status', backup.available ? (backup.latestBackupName ? `OK (${backup.latestBackupName})` : 'NO_LOCAL_BACKUP') : 'UNAVAILABLE'],
+    ['Integrity-Check', backup.available ? backup.integrityCheck : 'UNAVAILABLE'],
+    ['Offsite-Backup', backup.available ? (backup.offsiteEnabled ? 'ENABLED' : 'DISABLED') : 'UNAVAILABLE'],
   ];
 
   return ownerNotifications.buildOperatorMessage({
@@ -551,8 +722,7 @@ async function generateAndSendDailyReport({
     return { skipped: true, reason: 'already_sent', reportDate: targetDateStr, sentAt: existingRow.sent_at };
   }
 
-  // 2. Atomic claim in SQLite:
-  // Step A: Insert row in 'pending' status if not exists
+  // 2. Insert row if not exists (pending status)
   await dbRunAsync(
     db,
     `INSERT OR IGNORE INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
@@ -560,7 +730,8 @@ async function generateAndSendDailyReport({
     [targetDateStr]
   );
 
-  // Step B: Atomic CAS update claiming this attempt
+  // 3. Atomically claim execution (CAS)
+  const RETRY_COOLDOWN_SECONDS = 300; // 5 minutes retry cooldown on failure
   const claimResult = await dbRunAsync(
     db,
     `UPDATE daily_owner_reports
@@ -572,67 +743,60 @@ async function generateAndSendDailyReport({
        AND sent_at IS NULL
        AND (
          status = 'pending'
-         OR (status = 'failed' AND (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) >= 300)
-         OR (status = 'in_progress' AND (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) >= 300)
+         OR (status = 'failed' AND (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) >= ?)
          OR ? = 1
        )`,
-    [targetDateStr, force ? 1 : 0]
+    [targetDateStr, RETRY_COOLDOWN_SECONDS, force ? 1 : 0]
   );
 
   if (!claimResult || claimResult.changes === 0) {
-    console.log(`[daily-owner-report] Claim skipped for ${targetDateStr} (already sent or claimed by concurrent worker)`);
-    return { skipped: true, reason: 'already_claimed_or_sent', reportDate: targetDateStr };
+    console.log(`[daily-owner-report] Execution for ${targetDateStr} skipped: in_progress, recently failed within cooldown, or already sent.`);
+    return { skipped: true, reason: 'claim_failed_or_cooling_down', reportDate: targetDateStr };
   }
 
-  // 3. Collect real metrics and build message
-  const metrics = await getReportMetrics({ dateStr: targetDateStr, db, backupDir, env });
-  const reportMessage = buildDailyReportMessage(metrics);
+  console.log(`[daily-owner-report] Claimed daily report execution for ${targetDateStr}. Generating data...`);
 
-  // 4. Send via centralized owner-notifications layer
-  let notifyResult;
+  let metrics;
+  let message;
   try {
-    notifyResult = await ownerNotifications.notify({
-      severity: ownerNotifications.SEVERITY.INFO,
-      eventType: 'daily_owner_report',
-      dedupKey: `daily_owner_report_${targetDateStr}`,
-      message: reportMessage,
-    });
-  } catch (sendErr) {
-    console.error('[daily-owner-report] Notification send threw error:', sendErr.message);
-    notifyResult = { sent: false, reason: 'exception', error: sendErr.message };
-  }
-
-  // 5. Check genuine Telegram delivery confirmation
-  const isDelivered = Boolean(
-    notifyResult &&
-    notifyResult.sent === true &&
-    notifyResult.telegram &&
-    notifyResult.telegram.ok === true
-  );
-
-  if (isDelivered) {
-    // Marked sent ONLY after confirmed delivery
+    metrics = await getReportMetrics({ dateStr: targetDateStr, db, backupDir, env });
+    message = buildDailyReportMessage(metrics);
+  } catch (err) {
+    console.error(`[daily-owner-report] Failed to generate report metrics for ${targetDateStr}:`, err.message);
     await dbRunAsync(
       db,
-      `UPDATE daily_owner_reports
-       SET status = 'sent', sent_at = CURRENT_TIMESTAMP, payload_summary = ?
-       WHERE report_type = 'daily_summary' AND report_date = ?`,
-      [`sessions:${metrics.traffic.humanSessions}|orders:${metrics.sales.paidOrdersCount}|rev:${metrics.sales.paidRevenueILS}`, targetDateStr]
+      `UPDATE daily_owner_reports SET status = 'failed' WHERE report_type = 'daily_summary' AND report_date = ?`,
+      [targetDateStr]
     );
-    console.log(`[daily-owner-report] ✅ Successfully sent daily report for ${targetDateStr}`);
-    return { sent: true, reportDate: targetDateStr, message: reportMessage, notifyResult };
+    return { ok: false, error: err.message, reportDate: targetDateStr };
   }
 
-  // Telegram delivery failed: do NOT mark sent; mark failed so later retry can succeed
-  await dbRunAsync(
-    db,
-    `UPDATE daily_owner_reports
-     SET status = 'failed'
-     WHERE report_type = 'daily_summary' AND report_date = ? AND sent_at IS NULL`,
-    [targetDateStr]
-  );
-  console.warn(`[daily-owner-report] ⚠️ Telegram delivery failed for ${targetDateStr} (reason=${notifyResult?.reason || 'unknown'}); scheduled for retry`);
-  return { sent: false, reason: notifyResult?.reason || 'delivery_failed', reportDate: targetDateStr, notifyResult };
+  // 4. Centralized Telegram delivery via owner-notifications.js
+  const notifyResult = await ownerNotifications.notify({
+    severity: 'INFO',
+    eventType: 'daily_owner_report',
+    dedupKey: `daily_owner_report:${targetDateStr}`,
+    message,
+  });
+
+  // 5. Update DB status strictly upon confirmed Telegram delivery
+  if (notifyResult.sent) {
+    await dbRunAsync(
+      db,
+      `UPDATE daily_owner_reports SET status = 'sent', sent_at = CURRENT_TIMESTAMP WHERE report_type = 'daily_summary' AND report_date = ?`,
+      [targetDateStr]
+    );
+    console.log(`[daily-owner-report] Successfully sent daily owner report for ${targetDateStr}.`);
+    return { ok: true, sent: true, reportDate: targetDateStr, metrics, message };
+  } else {
+    await dbRunAsync(
+      db,
+      `UPDATE daily_owner_reports SET status = 'failed' WHERE report_type = 'daily_summary' AND report_date = ?`,
+      [targetDateStr]
+    );
+    console.warn(`[daily-owner-report] Telegram notification was not sent (skipped or failed) for ${targetDateStr}. Row marked failed for later retry.`);
+    return { ok: false, sent: false, reason: notifyResult.reason || 'telegram_send_failed', reportDate: targetDateStr, metrics };
+  }
 }
 
 let schedulerTimer = null;
@@ -647,36 +811,37 @@ function startDailyReportScheduler({ db = defaultDb, env = process.env, interval
   }
 
   if (schedulerTimer) {
+    console.log('[daily-owner-report] Scheduler already running.');
     return schedulerTimer;
   }
 
+  console.log('[daily-owner-report] Initializing daily owner report scheduler (target: 22:00 Europe/Jerusalem)...');
+
   const runCheck = async () => {
     try {
-      if (isEligibleForDailyReport()) {
-        await generateAndSendDailyReport({ db, env });
+      const now = new Date();
+      if (isEligibleForDailyReport(now)) {
+        await generateAndSendDailyReport({ date: now, db, env });
       }
     } catch (err) {
       console.error('[daily-owner-report] Scheduler tick error:', err.message);
     }
   };
 
-  // Immediate check on startup (for restart catch-up after 22:00)
+  // Immediate catch-up check on startup
   setImmediate(runCheck);
 
   schedulerTimer = setInterval(runCheck, intervalMs);
   if (schedulerTimer.unref) schedulerTimer.unref();
 
-  console.log('[daily-owner-report] ⏰ Daily owner report scheduler initialized (22:00 Europe/Jerusalem).');
   return schedulerTimer;
 }
 
-/**
- * Stops the scheduler timer (for tests and graceful teardown).
- */
 function stopDailyReportScheduler() {
   if (schedulerTimer) {
     clearInterval(schedulerTimer);
     schedulerTimer = null;
+    console.log('[daily-owner-report] Scheduler stopped.');
   }
 }
 
@@ -691,4 +856,6 @@ module.exports = {
   generateAndSendDailyReport,
   startDailyReportScheduler,
   stopDailyReportScheduler,
+  escapeHtml,
+  extractSafeDomain,
 };

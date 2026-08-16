@@ -1401,7 +1401,7 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     // crash/restart right after it can never strand an already-charged
     // Stripe payment behind an already-reserved, now-permanently-"duplicate"
     // webhook event id.
-    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [orderId]);
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'paid'`, [orderId]);
     if (!claim.changes) {
       return res.json({ received: true, duplicate: true, provider: 'stripe', reason: 'already_paid' });
     }
@@ -1524,7 +1524,7 @@ app.post('/api/webhooks/payplus', express.raw({ type: 'application/json' }), asy
     // crash/restart right after it can never strand an already-charged
     // PayPlus payment behind an already-reserved, now-permanently-
     // "duplicate" webhook event id.
-    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [orderId]);
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'paid'`, [orderId]);
     if (!claim.changes) {
       return res.json({ received: true, duplicate: true, provider: 'payplus', reason: 'already_paid' });
     }
@@ -3429,7 +3429,7 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     // window in which a crash can leave it half-applied, and it doubles as
     // the concurrency guard for two overlapping captures of the same order.
     const captureId = capture?.id || orderID;
-    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [localOrderId]);
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'paid'`, [localOrderId]);
     if (!claim.changes) {
       return res.json({ success: true, duplicate: true, orderId: localOrderId });
     }
