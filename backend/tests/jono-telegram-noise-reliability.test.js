@@ -374,4 +374,3 @@ test('L: underlying backup and sync jobs continue executing when Telegram API fa
     failingTelegramMock.mock.restore();
   }
 });
-
