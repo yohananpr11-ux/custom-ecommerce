@@ -20,6 +20,9 @@ const feedsRouter = require('./routes/feeds');
 const cartsRouter = require('./routes/carts');
 const marketingWebhooksRouter = require('./routes/marketing-webhooks');
 const adminReportsRouter = require('./routes/admin-reports');
+const telemetryRouter = require('./routes/telemetry');
+const ownerNotifications = require('./services/owner-notifications');
+const technicalIssues = require('./services/technical-issues');
 const { seedHardwareCatalog } = require('./seed_cj_product.cjs');
 const { detectBot, botDetectorMiddleware } = require('./middleware/botDetector');
 // Phase 3: Multi-Vendor fulfillment router
@@ -1310,6 +1313,12 @@ app.post('/api/analytics/visit', botDetectorMiddleware, express.json(), async (r
     });
   }
 });
+
+// Mounted before the blanket express.json({limit:'5mb'}) below so its own
+// narrower per-route body-size limit (routes/telemetry.js) actually takes
+// effect -- once an earlier json() middleware has parsed req.body, a later
+// one is a no-op and would silently defeat a smaller limit.
+app.use('/api/telemetry', telemetryRouter);
 
 // --- Webhooks must be before express.json() to parse raw body for Stripe ---
 app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async (req, res) => {
@@ -3237,6 +3246,20 @@ app.post('/api/paypal/create-order', async (req, res) => {
   } catch (err) {
     console.error('PayPal create-order failed:', safeProviderErrorSummary(err));
     const statusCode = isClientValidationError(err) ? 400 : 500;
+    // PR #34: only a genuine server/provider-side failure (500) counts as a
+    // customer-impacting technical issue -- ordinary client validation
+    // errors (400, e.g. an empty/invalid cart) are ordinary storefront
+    // behavior, not something the owner needs paged about.
+    if (statusCode === 500) {
+      technicalIssues.recordIssue({
+        type: 'checkout_request_failure',
+        route: req.originalUrl || req.path,
+        message: err && err.message,
+        method: req.method,
+        httpStatus: statusCode,
+        severity: ownerNotifications.SEVERITY.WARNING,
+      }).catch((issueErr) => console.error('[technical-issues] failed to record checkout_request_failure:', issueErr.message));
+    }
     return res.status(statusCode).json({ error: err.message || 'Failed to create PayPal order' });
   }
 });
@@ -3390,15 +3413,53 @@ app.post('/api/paypal/capture-order', async (req, res) => {
         await consumeLeadPromoCode(existingOrder.promoCode);
       }
 
-      const amountText = captureCurrency === 'USD'
-        ? `$${captureValue.toFixed(2)}`
-        : `₪${captureValue.toFixed(2)}`;
-
-      await sendPaymentNotification({ provider: 'PayPal', orderId: localOrderId, amountText });
+      // PR #34: single owner notification for a genuinely new paid order,
+      // through the centralized owner-notifications.js module -- replaces
+      // the previous two separate direct Telegram sends
+      // (sendPaymentNotification + telegram.notifyNewOrder), which fired
+      // back-to-back for every purchase. dedupKey is the real order id, and
+      // this whole block only ever runs once per order because it is
+      // reached only when the atomic `claim.changes` check above just
+      // performed the genuine pending->paid transition -- a PayPal retry or
+      // a second capture call for the same order returns earlier as
+      // `duplicate: true` and never reaches here.
       const paidOrder = await dbGetAsync(`SELECT customerName, totalAmount FROM orders WHERE id = ?`, [localOrderId]);
       const paidOrderItems = await dbAllAsync(`SELECT oi.*, p.title FROM order_items oi LEFT JOIN products p ON p.id = oi.productId WHERE oi.orderId = ?`, [localOrderId]);
       if (paidOrder) {
-        telegram.notifyNewOrder(localOrderId, paidOrder.customerName, paidOrder.totalAmount, paidOrderItems).catch(() => null);
+        const itemCount = paidOrderItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+        const productsList = paidOrderItems.map((item) => `${item.quantity}x ${item.title || 'Unknown item'}`).join(', ');
+        // Severity here is a label describing the event's nature in the
+        // message body, independent of the notify() call's own severity
+        // param below (which controls SEND behavior -- INFO never sends
+        // immediately in owner-notifications.js, so it must stay CRITICAL
+        // there even though a successful payment is good news, not an
+        // error).
+        const message = ownerNotifications.buildOperatorMessage({
+          icon: '💰',
+          titleHe: 'JONO — הזמנה שולמה בהצלחה',
+          summaryHe: 'התקבל תשלום מוצלח מלקוח.',
+          fields: [
+            ['Event', 'PAID_ORDER'],
+            ['Severity', 'INFO'],
+            ['Time', new Date().toISOString()],
+            ['Order-ID', localOrderId],
+            ['Payment-ID', captureId],
+            ['Amount', captureValue.toFixed(2)],
+            ['Currency', captureCurrency],
+            ['Items', itemCount],
+            ['Products', productsList],
+          ],
+        });
+        try {
+          await ownerNotifications.notify({
+            severity: ownerNotifications.SEVERITY.CRITICAL,
+            eventType: 'paid_purchase',
+            dedupKey: `paid_purchase:order:${localOrderId}`,
+            message,
+          });
+        } catch (notifyErr) {
+          console.error(`[PayPal capture] owner notification failed for order #${localOrderId} (payment already captured and marked paid, unaffected):`, notifyErr.message);
+        }
       }
     } catch (bookkeepingErr) {
       console.error(`[PayPal capture] Post-claim bookkeeping failed for order #${localOrderId} (payment already captured and marked paid, unaffected):`, bookkeepingErr.message);
@@ -3416,6 +3477,17 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     });
   } catch (err) {
     console.error('PayPal capture-order failed:', safeProviderErrorSummary(err));
+    // PR #34: structured, deduped record of a real payment/capture failure.
+    // Fire-and-forget -- must never delay or risk the error response the
+    // customer is waiting on.
+    technicalIssues.recordIssue({
+      type: 'payment_capture_failure',
+      route: req.originalUrl || req.path,
+      message: err && err.message,
+      method: req.method,
+      httpStatus: 500,
+      severity: ownerNotifications.SEVERITY.CRITICAL,
+    }).catch((issueErr) => console.error('[technical-issues] failed to record payment_capture_failure:', issueErr.message));
     return res.status(500).json({ error: 'Failed to capture PayPal order' });
   }
 });
@@ -4197,12 +4269,106 @@ if (!isProduction) {
   console.log('🧪 Development simulation router mounted at /api/test');
 }
 
+// PR #34 follow-up: only genuine customer-facing storefront/checkout/
+// payment paths are recorded as a structured technical issue below -- a
+// well-defined allowlist (prefix match), not a blocklist, so admin/
+// internal/webhook/telemetry routes are structurally excluded rather than
+// relying on remembering to exclude each one. Deliberately does NOT
+// include /api/telemetry/ itself: a telemetry-endpoint failure must never
+// be able to recursively trigger another issue record through this path.
+const CUSTOMER_FACING_PATH_PREFIXES = [
+  '/api/paypal/',
+  '/api/checkout/',
+  '/api/products',
+  '/api/coupons/',
+  '/api/promo/',
+  '/api/leads',
+  '/api/contact',
+  '/api/geolocation',
+  '/api/chat/',
+];
+
+function isCustomerFacingPath(path) {
+  const p = String(path || '');
+  return CUSTOMER_FACING_PATH_PREFIXES.some((prefix) => p.startsWith(prefix));
+}
+
+// Structured, deduped issue record for a customer-facing 5xx -- extracted
+// as its own named function (rather than inlined in the handler below) so
+// it can be exercised directly in tests without needing to force a live
+// route into an uncaught throw. Only the error's class/name is stored, not
+// its raw message, since this can be reached from arbitrary code paths
+// whose error messages are not all individually vetted the way each
+// route's own local catch blocks are. Never throws -- always resolves,
+// even on its own internal failure (recordIssue already catches its own
+// notify() errors; this is a last line of defense on top of that).
+async function recordCustomerFacing5xxIssue(err, req) {
+  const path = String(req.path || req.url || '').split('?')[0];
+  if (!isCustomerFacingPath(path)) return { recorded: false };
+
+  const sessionId = (req.body && typeof req.body === 'object') ? req.body.sessionId : undefined;
+  try {
+    const result = await technicalIssues.recordIssue({
+      type: 'backend_5xx',
+      route: path,
+      message: (err && err.name) || 'Error',
+      method: req.method,
+      httpStatus: 500,
+      sessionId,
+      severity: ownerNotifications.SEVERITY.WARNING,
+    });
+    return { recorded: true, ...result };
+  } catch (issueErr) {
+    console.error('[technical-issues] failed to record backend_5xx (response already independent):', issueErr.message);
+    return { recorded: false, error: issueErr.message };
+  }
+}
+
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Exception:', err);
-  telegram.sendMessage(`🚨 <b>Critical Server Error</b>\n\nRoute: ${req.url}\nError: ${err.message}`).catch(console.error);
+
+  const path = String(req.path || req.url || '').split('?')[0];
+
+  if (isCustomerFacingPath(path)) {
+    // Fire-and-forget: must never delay or risk this handler's own
+    // response below. recordCustomerFacing5xxIssue never throws/rejects.
+    recordCustomerFacing5xxIssue(err, req).catch(() => {});
+  } else {
+    // PR #34 follow-up: migrated off the previous direct, unconditional
+    // telegram-service send call -- this is a genuine owner/system
+    // operational alert (an unhandled exception on an admin/internal/
+    // webhook route), not interactive Telegram protocol handling, so it
+    // belongs behind owner-notifications.js like every other operational
+    // send. A short cooldown (unlike this path's old behavior, which had
+    // none at all) keeps a persistently broken internal route from
+    // flooding Telegram; occurrence_count durability is not needed here
+    // the way it is for customer-impacting issues, so this intentionally
+    // does not go through the technical_issues table.
+    const internalMessage = ownerNotifications.buildOperatorMessage({
+      icon: '🚨',
+      titleHe: 'JONO — שגיאת מערכת פנימית',
+      summaryHe: 'אירעה שגיאה לא צפויה בנתיב פנימי/ניהולי (לא לקוח).',
+      fields: [
+        ['Event', 'INTERNAL_SERVER_ERROR'],
+        ['Severity', 'CRITICAL'],
+        ['Time', new Date().toISOString()],
+        ['Route', path],
+        ['Method', req.method],
+        ['Error-Signature', (err && err.name) || 'Error'],
+      ],
+    });
+    ownerNotifications.notify({
+      severity: ownerNotifications.SEVERITY.CRITICAL,
+      eventType: 'internal_server_error',
+      dedupKey: `internal_server_error:${req.method}:${path}:${(err && err.name) || 'Error'}`,
+      cooldownMs: 5 * 60 * 1000,
+      message: internalMessage,
+    }).catch((notifyErr) => console.error('[owner-notifications] failed to send internal_server_error alert:', notifyErr.message));
+  }
+
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
 // Exported for tests only (no effect when run directly via `node index.js`).
-module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing };
+module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing, isCustomerFacingPath, recordCustomerFacing5xxIssue };

@@ -9,6 +9,52 @@
 
 const telegram = require('./telegram');
 
+// Standard operator-context message format (PR #34 follow-up): every
+// notification is meant to be useful both to the owner reading it normally
+// AND to an operator/LLM the owner pastes it into later -- a short Hebrew
+// human summary, plus a stable-field-name structured diagnostic block. See
+// buildOperatorMessage() below.
+const escapeHtml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const MAX_FIELD_VALUE_LEN = 300;
+
+function sanitizeFieldValue(value) {
+  const collapsed = String(value).replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+  const truncated = collapsed.length > MAX_FIELD_VALUE_LEN ? `${collapsed.slice(0, MAX_FIELD_VALUE_LEN)}…` : collapsed;
+  return escapeHtml(truncated);
+}
+
+/**
+ * Build a two-part operator-friendly message: a short Hebrew human summary
+ * (for the owner reading it normally) plus a stable-field-name structured
+ * diagnostic block (for pasting into a support chat / correlating against
+ * logs later). Fields whose value is undefined/null/empty are omitted
+ * entirely -- never rendered as the literal text "undefined" or "null".
+ * Every value is HTML-escaped, newline-collapsed, and length-capped, so a
+ * user-controlled string can never break Telegram's HTML parser or
+ * visually fake extra fields inside the block.
+ *
+ * @param {object} params
+ * @param {string} [params.icon] - leading emoji, defaults to a generic alert icon
+ * @param {string} params.titleHe - short Hebrew title
+ * @param {string} params.summaryHe - one-line Hebrew human summary
+ * @param {Array<[string, any]>} params.fields - ordered [label, value] pairs; falsy values are skipped
+ */
+function buildOperatorMessage({ icon = '🚨', titleHe, summaryHe, fields = [] }) {
+  const lines = [];
+  for (const [label, value] of fields) {
+    if (value === undefined || value === null || value === '') continue;
+    lines.push(`${label}: ${sanitizeFieldValue(value)}`);
+  }
+  const header = `${icon} <b>${escapeHtml(titleHe)}</b>\n${escapeHtml(summaryHe)}`;
+  return lines.length ? `${header}\n\n<pre>${lines.join('\n')}</pre>` : header;
+}
+
 const SEVERITY = Object.freeze({ CRITICAL: 'CRITICAL', WARNING: 'WARNING', INFO: 'INFO' });
 
 // No cooldown by default for CRITICAL (always immediate); 15 minutes for
@@ -111,4 +157,4 @@ function _resetForTests() {
   suppressedSinceLastSend = new Map();
 }
 
-module.exports = { notify, SEVERITY, NOTIFICATION_POLICY, _resetForTests };
+module.exports = { notify, SEVERITY, NOTIFICATION_POLICY, buildOperatorMessage, _resetForTests };

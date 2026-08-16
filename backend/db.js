@@ -195,6 +195,53 @@ db.serialize(() => {
     )
   `);
 
+  // First-party visitor/session telemetry (PR #34). One row per browser
+  // session; session_id is the idempotency key -- a reload/refresh reuses
+  // the same session_id client-side, so re-inserting it is always a no-op
+  // (see visitor-telemetry.js's INSERT OR IGNORE + changes-count check,
+  // which is also what decides whether an owner notification fires).
+  // Deliberately holds no raw IP and no fingerprinting data.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS visitor_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      visitor_id TEXT NOT NULL,
+      session_id TEXT NOT NULL UNIQUE,
+      started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      landing_path TEXT,
+      referrer TEXT,
+      source TEXT,
+      device_category TEXT,
+      ua_classification TEXT NOT NULL DEFAULT 'human',
+      is_human INTEGER NOT NULL DEFAULT 0,
+      notified INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
+  // Structured, deduped customer-impacting technical issues (PR #34).
+  // `signature` is a deterministic string built from type+route+a truncated
+  // safe message -- the UNIQUE constraint is what makes recordIssue's
+  // upsert-or-increment idempotent and is also reused verbatim as
+  // owner-notifications' dedupKey, so a repeated failure increments
+  // occurrence_count here without ever bypassing that module's own
+  // cooldown. No tokens, passwords, request bodies, or payment data are
+  // ever stored in `message` -- see technical-issues.js for sanitization.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS technical_issues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      signature TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'WARNING',
+      route TEXT,
+      message TEXT,
+      session_id TEXT,
+      order_id INTEGER,
+      first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      occurrence_count INTEGER NOT NULL DEFAULT 1
+    )
+  `);
+
   // Durable per-order-per-supplier fulfillment state — the source of truth
   // for supplier-write idempotency (create-order / send-to-production).
   // order_items.fulfillment_status remains the UI/reporting-facing summary;
@@ -327,6 +374,15 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     addColumnIfMissing('leads', 'lastEmailAttemptAt', 'TEXT'),
     addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0'),
     addColumnIfMissing('abandoned_carts', 'alerted', 'INTEGER DEFAULT 0'),
+    // technical_issues (PR #34 follow-up: durable notification/cooldown
+    // state, so a repeated issue stays suppressed across a process
+    // restart instead of relying on owner-notifications' in-memory-only
+    // cooldown Map). last_notified_at is NULL until the first successful
+    // (or attempted) notification; notified_count is separate from
+    // occurrence_count, which keeps incrementing on every sighting
+    // regardless of whether an alert was actually sent.
+    addColumnIfMissing('technical_issues', 'last_notified_at', 'DATETIME'),
+    addColumnIfMissing('technical_issues', 'notified_count', 'INTEGER NOT NULL DEFAULT 0'),
   ]);
 
   // Local/mock placeholder products (type='local') are never purged here.
@@ -346,6 +402,14 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
   db.run(`CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_supplier ON order_items(supplier_id, fulfillment_status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_supplier_fulfillments_state ON supplier_fulfillments(supplierId, state)`);
+  // PR #34: visitor telemetry + technical issues indexes.
+  // idx_visitor_sessions_session_id is implied by the UNIQUE constraint above
+  // (SQLite auto-creates a unique index for it) -- not duplicated here.
+  db.run(`CREATE INDEX IF NOT EXISTS idx_visitor_sessions_visitor_id ON visitor_sessions(visitor_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_visitor_sessions_started_at ON visitor_sessions(started_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_last_seen ON technical_issues(last_seen_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_type ON technical_issues(type)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_last_notified ON technical_issues(last_notified_at)`);
 
   // Enforces at the SQLite engine level what application code (checkout's
   // printifyId guard, the sync duplicate-detection in
