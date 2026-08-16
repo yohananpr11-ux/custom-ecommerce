@@ -10,10 +10,15 @@
  * 1. Restart-safe and duplicate-safe: uses durable SQLite table `daily_owner_reports`
  *    with a UNIQUE(report_type, report_date) constraint and atomic CAS.
  * 2. Delivery confirmation: marked 'sent' ONLY after Telegram genuinely succeeds.
- * 3. Exact Timezone: Europe/Jerusalem (dynamically resolving DST transitions).
+ * 3. Exact 24-Hour Rolling Reporting Window:
+ *    [Previous Day 22:00 Jerusalem, Current Day 22:00 Jerusalem)
+ *    Non-overlapping, full 24h coverage, no blind spot, stable cutoff on retries.
  * 4. Real data only: summarizes genuine telemetry, orders, technical issues,
  *    fulfillments, and backups; explicitly marks uncollected metrics as unavailable.
- * 5. Privacy: zero raw IP addresses, tokens, passwords, customer names, or PII.
+ * 5. Time-window paid sales: requires `orders.status = 'paid' AND orders.paid_at IS NOT NULL`
+ *    within the window. Legacy orders with NULL paid_at are never falsely backfilled
+ *    and never attributed to the date-window revenue.
+ * 6. Privacy: zero raw IP addresses, tokens, passwords, customer names, or PII.
  */
 
 const fs = require('fs');
@@ -82,6 +87,19 @@ function getJerusalemDateString(date = new Date()) {
 }
 
 /**
+ * Get the previous calendar date string 'YYYY-MM-DD' in Europe/Jerusalem.
+ */
+function getPreviousJerusalemDateString(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0) - (24 * 3600 * 1000));
+  const tz = resolveJerusalemTimezone();
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d);
+}
+
+/**
  * Get local time parts (hour, minute, second) in Europe/Jerusalem.
  */
 function getJerusalemTimeParts(date = new Date()) {
@@ -109,58 +127,65 @@ function isEligibleForDailyReport(date = new Date()) {
 }
 
 /**
- * Calculates the exact UTC interval [startUtcIso, endUtcIso) corresponding
- * to midnight-to-midnight for dateStr in Europe/Jerusalem, taking DST into account.
+ * Find the exact UTC ISO timestamp corresponding to dateStr at timeStr in Europe/Jerusalem.
+ * Dynamically resolves DST transitions (IDT UTC+3 vs IST UTC+2) without hardcoding fixed offsets.
  */
-function getJerusalemDayInterval(dateStr) {
+function getJerusalemLocalTimestampUtc(dateStr, timeStr = '22:00:00') {
   const tz = resolveJerusalemTimezone();
   const [year, month, day] = dateStr.split('-').map(Number);
+  const [targetHour, targetMin, targetSec] = timeStr.split(':').map(Number);
 
-  // Search around UTC-4h to UTC+0h for local midnight 00:00:00
-  let startMs = Date.UTC(year, month - 1, day, 0, 0, 0) - (4 * 3600 * 1000);
-  while (true) {
-    const f = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false,
-    });
-    const formatted = f.format(new Date(startMs));
-    if (formatted.startsWith(dateStr) && formatted.endsWith('00:00:00')) {
-      break;
-    }
-    startMs += 60000;
-    if (startMs > Date.UTC(year, month - 1, day, 4, 0, 0)) break;
-  }
-
-  // Next local calendar date
-  const nextDayDate = new Date(startMs + 28 * 3600 * 1000);
-  const nextDateStr = new Intl.DateTimeFormat('en-CA', {
+  let testMs = Date.UTC(year, month - 1, day, targetHour, targetMin, targetSec) - (5 * 3600 * 1000);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(nextDayDate);
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
 
-  let endMs = startMs + (23 * 3600 * 1000);
-  while (true) {
-    const f = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false,
-    });
-    const formatted = f.format(new Date(endMs));
-    if (formatted.startsWith(nextDateStr) && formatted.endsWith('00:00:00')) {
-      break;
+  const targetPrefix = `${dateStr}`;
+  const targetTime = `${String(targetHour).padStart(2, '0')}:${String(targetMin).padStart(2, '0')}:${String(targetSec).padStart(2, '0')}`;
+
+  for (let i = 0; i < 400; i++) {
+    const formatted = formatter.format(new Date(testMs));
+    if (formatted.includes(targetPrefix) && formatted.includes(targetTime)) {
+      return new Date(testMs).toISOString();
     }
-    endMs += 60000;
-    if (endMs > startMs + 30 * 3600 * 1000) break;
+    testMs += 60000;
   }
+  return new Date(Date.UTC(year, month - 1, day, targetHour - 3, targetMin, targetSec)).toISOString();
+}
+
+/**
+ * Calculates the exact 24-hour reporting window for report date dateStr:
+ * [Previous Day 22:00 Jerusalem, Current Day 22:00 Jerusalem)
+ *
+ * Guaranteed properties:
+ * - Non-overlapping across consecutive days.
+ * - Full 24-hour coverage (no 22:00-00:00 blind spot).
+ * - Fixed snapshot cutoff: retrying at 22:05 or 23:30 uses the same exact window.
+ */
+function getJerusalem24HourWindow(dateStr) {
+  const prevDateStr = getPreviousJerusalemDateString(dateStr);
+  const startUtcIso = getJerusalemLocalTimestampUtc(prevDateStr, '22:00:00');
+  const endUtcIso = getJerusalemLocalTimestampUtc(dateStr, '22:00:00');
+
+  const startMs = new Date(startUtcIso).getTime();
+  const endMs = new Date(endUtcIso).getTime();
+  const durationHours = Math.round((endMs - startMs) / (3600 * 1000));
+
+  const [py, pm, pd] = prevDateStr.split('-');
+  const [cy, cm, cd] = dateStr.split('-');
 
   return {
-    startUtcIso: new Date(startMs).toISOString(),
-    endUtcIso: new Date(endMs).toISOString(),
+    reportDateStr: dateStr,
+    prevDateStr,
+    startUtcIso,
+    endUtcIso,
+    durationHours,
+    startLocalDisplay: `${pd}/${pm} 22:00`,
+    endLocalDisplay: `${cd}/${cm} 22:00`,
+    fullLocalDisplay: `${pd}/${pm} 22:00 → ${cd}/${cm} 22:00`,
   };
 }
 
@@ -178,13 +203,14 @@ const dbRunAsync = (db, sql, params = []) => new Promise((resolve, reject) => {
 });
 
 /**
- * Collect real metrics from SQLite tables for the specified local date.
+ * Collect real metrics from SQLite tables for the exact 24-hour window.
  * Every section tracks `.available` (true on successful query, false on failure).
  * Query failures are NEVER silently reported as 0.
  */
 async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = process.env } = {}) {
   const targetDate = dateStr || getJerusalemDateString();
-  const { startUtcIso, endUtcIso } = getJerusalemDayInterval(targetDate);
+  const windowInfo = getJerusalem24HourWindow(targetDate);
+  const { startUtcIso, endUtcIso } = windowInfo;
 
   // 1. Traffic Metrics (visitor_sessions)
   let trafficSummary = {
@@ -261,7 +287,8 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
   }
 
   // 2. Sales Metrics (orders & order_items)
-  // Uses paid_at for genuine payment timestamp, falling back to createdAt for legacy orders where paid_at IS NULL.
+  // Strictly requires `status = 'paid' AND paid_at IS NOT NULL` inside the 24h window.
+  // Legacy orders with paid_at IS NULL are tracked separately and excluded from window revenue.
   let salesSummary = {
     available: true,
     error: null,
@@ -271,20 +298,19 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     conversionRatePercent: null,
     itemsSoldCount: 0,
     topProducts: [],
-    paidTimestampSource: 'paid_at (legacy fallback: createdAt)',
+    legacyPaidOrdersWithoutTimestamp: 0,
+    paidTimestampSource: 'orders.paid_at strictly',
   };
 
   try {
     const paidOrders = await dbAllAsync(
       db,
-      `SELECT id, totalAmount, expected_payment_currency, expected_payment_amount, createdAt, paid_at
+      `SELECT id, totalAmount, expected_payment_currency, expected_payment_amount, paid_at
        FROM orders
        WHERE status = 'paid'
-         AND (
-           (paid_at IS NOT NULL AND datetime(paid_at) >= datetime(?) AND datetime(paid_at) < datetime(?))
-           OR (paid_at IS NULL AND datetime(createdAt) >= datetime(?) AND datetime(createdAt) < datetime(?))
-         )`,
-      [startUtcIso, endUtcIso, startUtcIso, endUtcIso]
+         AND paid_at IS NOT NULL
+         AND datetime(paid_at) >= datetime(?) AND datetime(paid_at) < datetime(?)`,
+      [startUtcIso, endUtcIso]
     );
 
     salesSummary.paidOrdersCount = paidOrders.length;
@@ -298,7 +324,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
       salesSummary.conversionRatePercent = (salesSummary.paidOrdersCount / trafficSummary.humanSessions) * 100;
     }
 
-    // Items sold & top products
+    // Items sold & top products (strictly using paid_at within window)
     const productSales = await dbAllAsync(
       db,
       `SELECT
@@ -310,14 +336,12 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
        JOIN orders o ON oi.orderId = o.id
        LEFT JOIN products p ON oi.productId = p.id
        WHERE o.status = 'paid'
-         AND (
-           (o.paid_at IS NOT NULL AND datetime(o.paid_at) >= datetime(?) AND datetime(o.paid_at) < datetime(?))
-           OR (o.paid_at IS NULL AND datetime(o.createdAt) >= datetime(?) AND datetime(o.createdAt) < datetime(?))
-         )
+         AND o.paid_at IS NOT NULL
+         AND datetime(o.paid_at) >= datetime(?) AND datetime(o.paid_at) < datetime(?)
        GROUP BY oi.productId, p.title
        ORDER BY qty_sold DESC
        LIMIT 5`,
-      [startUtcIso, endUtcIso, startUtcIso, endUtcIso]
+      [startUtcIso, endUtcIso]
     );
 
     salesSummary.itemsSoldCount = productSales.reduce((sum, p) => sum + (Number(p.qty_sold) || 0), 0);
@@ -327,6 +351,13 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
       quantity: Number(p.qty_sold) || 0,
       sales: Number(p.total_sales) || 0,
     }));
+
+    // Count legacy paid orders with unknown payment time
+    const legacyRow = await dbGetAsync(
+      db,
+      `SELECT COUNT(*) as count FROM orders WHERE status = 'paid' AND paid_at IS NULL`
+    );
+    salesSummary.legacyPaidOrdersWithoutTimestamp = legacyRow ? Number(legacyRow.count) || 0 : 0;
   } catch (err) {
     console.error('[daily-owner-report] Error collecting sales metrics:', err.message);
     salesSummary = {
@@ -338,6 +369,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
       conversionRatePercent: null,
       itemsSoldCount: null,
       topProducts: [],
+      legacyPaidOrdersWithoutTimestamp: null,
       paidTimestampSource: null,
     };
   }
@@ -387,7 +419,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     };
   }
 
-  // 4. Fulfillment Status
+  // 4. Fulfillment Status (Current-state snapshot)
   let fulfillmentSummary = {
     available: true,
     error: null,
@@ -434,7 +466,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     };
   }
 
-  // 5. Database & Backup Status
+  // 5. Database & Backup Status (Current-state snapshot)
   let backupSummary = {
     available: true,
     error: null,
@@ -457,22 +489,23 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     backupSummary.managedCount = managedFiles ? managedFiles.length : 0;
 
     if (managedFiles && managedFiles.length > 0) {
-      const newest = managedFiles[0]; // Real shape from sqliteBackup: { name, path, mtimeMs }
+      const newest = managedFiles[0]; // Real shape: { name, path, mtimeMs }
       backupSummary.latestBackupName = newest.name;
       backupSummary.latestBackupTimestamp = newest.mtimeMs ? new Date(newest.mtimeMs).toISOString() : null;
       const sidecarPath = `${newest.path}.sha256`;
       backupSummary.hasSha256Sidecar = fs.existsSync(sidecarPath);
     }
 
-    // Truthful off-site check using isOffsiteBackupEnabled(env)
     const isOffsiteOn = sqliteOffsiteBackup.isOffsiteBackupEnabled(env);
     backupSummary.offsiteEnabled = isOffsiteOn;
     backupSummary.offsiteStatusDescription = isOffsiteOn ? 'מוגדר (Enabled)' : 'כבוי (Disabled)';
   } catch (err) {
     console.error('[daily-owner-report] Error collecting backup summary:', err.message);
-    backupSummary.available = false;
-    backupSummary.error = 'UNAVAILABLE';
-    backupSummary.integrityCheck = 'UNAVAILABLE';
+    backupSummary = {
+      available: false,
+      error: 'UNAVAILABLE',
+      integrityCheck: 'UNAVAILABLE',
+    };
   }
 
   // 6. Action Items Generation (Respecting metric availability)
@@ -488,7 +521,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
 
   if (issuesSummary.available) {
     if (issuesSummary.criticalCount > 0) {
-      actionItems.push(`🚨 נרשמו ${issuesSummary.criticalCount} תקלות קריטיות היום — מומלץ לבדוק את לוג המערכת`);
+      actionItems.push(`🚨 נרשמו ${issuesSummary.criticalCount} תקלות קריטיות בחלון זה — מומלץ לבדוק את לוג המערכת`);
     }
   } else {
     actionItems.push('⚠️ נתוני תקלות מערכת אינם זמינים כרגע');
@@ -496,7 +529,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
 
   if (salesSummary.available) {
     if (salesSummary.paidOrdersCount > 0) {
-      actionItems.push(`💰 נרשמו ${salesSummary.paidOrdersCount} רכישות מוצלחות היום (סה״כ ₪${salesSummary.paidRevenueILS.toFixed(2)})`);
+      actionItems.push(`💰 נרשמו ${salesSummary.paidOrdersCount} רכישות מוצלחות בחלון זה (סה״כ ₪${salesSummary.paidRevenueILS.toFixed(2)})`);
     } else if (trafficSummary.available && trafficSummary.humanSessions > 0) {
       actionItems.push(`🔍 נרשמו ${trafficSummary.humanSessions} ביקורים ללא רכישות (יחס המרה 0.0%)`);
     }
@@ -506,7 +539,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
 
   if (trafficSummary.available) {
     if (trafficSummary.humanSessions === 0 && (!salesSummary.available || salesSummary.paidOrdersCount === 0)) {
-      actionItems.push('👥 לא נרשמה תנועת גולשים היום — מומלץ לבדוק קמפיינים ופעילות שיווקית');
+      actionItems.push('👥 לא נרשמה תנועת גולשים בחלון זה — מומלץ לבדוק קמפיינים ופעילות שיווקית');
     }
   } else {
     actionItems.push('⚠️ נתוני תנועת גולשים אינם זמינים כרגע לניתוח');
@@ -528,6 +561,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
 
   return {
     dateStr: targetDate,
+    windowInfo,
     traffic: trafficSummary,
     sales: salesSummary,
     issues: issuesSummary,
@@ -541,9 +575,8 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
  * Format the structured Hebrew Telegram message and operator context block with full HTML escaping.
  */
 function buildDailyReportMessage(metrics) {
-  const { dateStr, traffic, sales, issues, fulfillment, backup, actionItems } = metrics;
-  const [y, m, d] = dateStr.split('-');
-  const displayDate = `${d}/${m}/${y}`;
+  const { dateStr, windowInfo, traffic, sales, issues, fulfillment, backup, actionItems } = metrics;
+  const displayWindow = windowInfo?.fullLocalDisplay || `${dateStr} 22:00`;
 
   // Traffic block
   let trafficLines;
@@ -576,14 +609,18 @@ function buildDailyReportMessage(metrics) {
     const convText = sales.conversionRatePercent !== null ? `${sales.conversionRatePercent.toFixed(1)}%` : (traffic.available ? 'לא זמין (אין תנועה)' : 'לא זמין כרגע');
     const topProductsText = sales.topProducts.length > 0
       ? sales.topProducts.map(p => `${escapeHtml(p.title)} (${p.quantity})`).join(', ')
-      : 'אין רכישות היום';
+      : 'אין רכישות בחלון זה';
+
+    const legacyNote = sales.legacyPaidOrdersWithoutTimestamp > 0
+      ? `\n• הזמנות ישנות ללא זמן תשלום מדויק: ${sales.legacyPaidOrdersWithoutTimestamp} — לא נכללו בהכנסה של חלון זה`
+      : '';
 
     salesLines = `• הזמנות ששולמו: ${sales.paidOrdersCount}
 • הכנסה ששולמה: ₪${sales.paidRevenueILS.toFixed(2)}
 • ערך הזמנה ממוצע (AOV): ${escapeHtml(aovText)}
 • יחס המרה (Conversion): ${escapeHtml(convText)}
 • פריטים שנמכרו: ${sales.itemsSoldCount}
-• מוצרים מובילים: ${topProductsText}`;
+• מוצרים מובילים: ${topProductsText}${legacyNote}`;
   } else {
     salesLines = `• הזמנות ששולמו: לא זמין כרגע
 • הכנסה ששולמה: לא זמין כרגע
@@ -603,17 +640,17 @@ function buildDailyReportMessage(metrics) {
     issuesLines = '• תקלות קריטיות: לא זמין כרגע\n• סה״כ אירועי שגיאה: לא זמין כרגע';
   }
 
-  // Fulfillment block
+  // Fulfillment block (Current-state snapshot)
   let fulfillmentLines;
   if (fulfillment.available) {
-    fulfillmentLines = `• פריטים ממתינים להגשמה: ${fulfillment.pendingFulfillmentCount}
-• הגשמה ידנית ממתינה: ${fulfillment.manualFulfillmentCount}`;
+    fulfillmentLines = `• פריטים ממתינים להגשמה (נוכחי): ${fulfillment.pendingFulfillmentCount}
+• הגשמה ידנית ממתינה (נוכחי): ${fulfillment.manualFulfillmentCount}`;
   } else {
-    fulfillmentLines = `• פריטים ממתינים להגשמה: לא זמין כרגע
-• הגשמה ידנית ממתינה: לא זמין כרגע`;
+    fulfillmentLines = `• פריטים ממתינים להגשמה (נוכחי): לא זמין כרגע
+• הגשמה ידנית ממתינה (נוכחי): לא זמין כרגע`;
   }
 
-  // Backup block
+  // Backup block (Current-state snapshot)
   let backupLines;
   if (backup.available) {
     const backupNameDisplay = backup.latestBackupName
@@ -633,22 +670,22 @@ function buildDailyReportMessage(metrics) {
   const actionItemsList = actionItems.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join('\n');
 
   // Human Hebrew readable report
-  const humanReport = `📊 <b>JONO — סיכום יומי</b>
-תאריך: ${displayDate} (חלון דיווח: מתחילת היום עד 22:00)
+  const humanReport = `📊 <b>JONO — סיכום 24 שעות</b>
+חלון: ${escapeHtml(displayWindow)}
 
 👥 <b>תנועה</b>
 ${trafficLines}
 
-💰 <b>מכירות</b>
+💰 <b>מכירות (תשלומים שאושרו בחלון)</b>
 ${salesLines}
 
-📦 <b>הגשמה וספקים</b>
+📦 <b>הגשמה וספקים (תמונת מצב נוכחית)</b>
 ${fulfillmentLines}
 
 ⚠️ <b>תקלות טכניות</b>
 ${issuesLines}
 
-💾 <b>מערכת וגיבויים</b>
+💾 <b>מערכת וגיבויים (תמונת מצב נוכחית)</b>
 ${backupLines}
 
 🎯 <b>מה דורש תשומת לב</b>
@@ -658,18 +695,24 @@ ${actionItemsList}`;
   const operatorFields = [
     ['Event', 'DAILY_OWNER_REPORT'],
     ['Date', dateStr],
-    ['Window', `${dateStr} 00:00 - 22:00 (Jerusalem)`],
+    ['Window-Start', windowInfo?.startUtcIso || 'UNKNOWN'],
+    ['Window-End', windowInfo?.endUtcIso || 'UNKNOWN'],
+    ['Window-Local-Start', windowInfo?.prevDateStr ? `${windowInfo.prevDateStr} 22:00` : 'UNKNOWN'],
+    ['Window-Local-End', `${dateStr} 22:00`],
+    ['Window-Timezone', 'Europe/Jerusalem'],
+    ['Window-Hours', windowInfo?.durationHours || 24],
     ['Generated-At', new Date().toISOString()],
     ['Human-Sessions', traffic.available ? traffic.humanSessions : 'UNAVAILABLE'],
     ['Unique-Visitors', traffic.available ? traffic.uniqueHumanVisitors : 'UNAVAILABLE'],
     ['Paid-Orders', sales.available ? sales.paidOrdersCount : 'UNAVAILABLE'],
     ['Paid-Revenue', sales.available ? `${sales.paidRevenueILS.toFixed(2)} ILS` : 'UNAVAILABLE'],
+    ['Legacy-Paid-Time-Unknown', sales.available ? sales.legacyPaidOrdersWithoutTimestamp : 'UNAVAILABLE'],
     ['AOV', sales.available ? (sales.aovILS !== null ? `${sales.aovILS.toFixed(2)} ILS` : undefined) : 'UNAVAILABLE'],
     ['Conversion-Rate', sales.available ? (sales.conversionRatePercent !== null ? `${sales.conversionRatePercent.toFixed(1)}%` : undefined) : 'UNAVAILABLE'],
     ['Items-Sold', sales.available ? sales.itemsSoldCount : 'UNAVAILABLE'],
     ['Issues-Count', issues.available ? issues.totalDistinctIssues : 'UNAVAILABLE'],
     ['Issues-Occurrences', issues.available ? issues.totalOccurrences : 'UNAVAILABLE'],
-    ['Pending-Fulfillment', fulfillment.available ? fulfillment.pendingFulfillmentCount : 'UNAVAILABLE'],
+    ['Pending-Fulfillment-Current', fulfillment.available ? fulfillment.pendingFulfillmentCount : 'UNAVAILABLE'],
     ['Backup-Status', backup.available ? (backup.latestBackupName ? `OK (${backup.latestBackupName})` : 'NO_LOCAL_BACKUP') : 'UNAVAILABLE'],
     ['Integrity-Check', backup.available ? backup.integrityCheck : 'UNAVAILABLE'],
     ['Offsite-Backup', backup.available ? (backup.offsiteEnabled ? 'ENABLED' : 'DISABLED') : 'UNAVAILABLE'],
@@ -677,8 +720,8 @@ ${actionItemsList}`;
 
   return ownerNotifications.buildOperatorMessage({
     icon: '📊',
-    titleHe: 'JONO — סיכום יומי',
-    summaryHe: `דוח ביצועים ותפעול יומי לתאריך ${displayDate}`,
+    titleHe: 'JONO — סיכום 24 שעות',
+    summaryHe: `דוח ביצועים ותפעול יומי לחלון ${displayWindow}`,
     fields: operatorFields,
   }).replace(/^📊 <b>.*?<\/b>\n.*?\n\n/s, `${humanReport}\n\n`);
 }
@@ -848,9 +891,11 @@ function stopDailyReportScheduler() {
 module.exports = {
   resolveJerusalemTimezone,
   getJerusalemDateString,
+  getPreviousJerusalemDateString,
   getJerusalemTimeParts,
   isEligibleForDailyReport,
-  getJerusalemDayInterval,
+  getJerusalemLocalTimestampUtc,
+  getJerusalem24HourWindow,
   getReportMetrics,
   buildDailyReportMessage,
   generateAndSendDailyReport,
