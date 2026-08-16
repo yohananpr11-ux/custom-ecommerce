@@ -1262,11 +1262,15 @@ app.get('/api/admin/test-printify', async (req, res) => {
   }
 });
 
-app.post('/api/admin/trigger-daily-report', async (req, res) => {
-  console.log('[TRIGGER-DAILY-REPORT] caller ip=' + (req.headers['x-forwarded-for'] || req.ip || 'unknown') + ' ua=' + (req.headers['user-agent'] || 'none') + ' at=' + new Date().toISOString());
+app.post('/api/admin/trigger-daily-report', (req, res) => {
+  console.log('[TRIGGER-DAILY-REPORT] Legacy daily report endpoint called (disabled). caller ip=' + (req.headers['x-forwarded-for'] || req.ip || 'unknown') + ' ua=' + (req.headers['user-agent'] || 'none') + ' at=' + new Date().toISOString());
   if (!requireAdminAuth(req, res)) return;
-  const result = await telegram.sendDailyReport();
-  return res.json(result);
+  return res.status(410).json({
+    ok: false,
+    disabled: true,
+    reason: 'legacy_daily_report_disabled',
+    message: 'Legacy Daily Store Intelligence has been permanently disabled.'
+  });
 });
 
 // --- Upgraded Real-Time Funnel Analytics Endpoint ---
