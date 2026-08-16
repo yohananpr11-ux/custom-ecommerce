@@ -255,26 +255,12 @@ async function runBackupCycle(options = {}) {
         const log = options.log || console.error;
         log(`[SQLite Backup] backup failed: ${backupErr && backupErr.message}`);
         try {
-            const ownerNotifications = require('./owner-notifications');
-            const operatorMsg = ownerNotifications.buildOperatorMessage({
-                icon: '🚨',
-                titleHe: 'כשל בגיבוי מסד הנתונים',
-                summaryHe: 'הגיבוי התקופתי של מסד הנתונים נכשל',
-                fields: [
-                    ['Event', 'CRITICAL_INFRA_FAILURE'],
-                    ['Severity', 'CRITICAL'],
-                    ['Time', new Date().toISOString()],
-                    ['Component', 'sqlite-backup'],
-                    ['Error', backupErr.message || 'unknown_backup_failure'],
-                    ['Action-Required', 'YES'],
-                ],
-            });
-            await ownerNotifications.notify({
-                severity: ownerNotifications.SEVERITY.CRITICAL,
-                eventType: 'critical_infra_failure',
-                dedupKey: 'sqlite_backup_failure',
-                cooldownMs: 15 * 60 * 1000,
-                message: operatorMsg,
+            const technicalIssues = require('./technical-issues');
+            await technicalIssues.recordIssue({
+                type: 'sqlite_backup_failure',
+                severity: 'CRITICAL',
+                route: 'sqlite-backup/runBackupCycle',
+                message: backupErr.message || 'unknown_backup_failure',
             });
         } catch (_) {
             // Safe no-op on notification failure

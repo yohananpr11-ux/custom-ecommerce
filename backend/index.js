@@ -1602,25 +1602,12 @@ app.all('/api/webhooks/printify', express.text({ type: '*/*' }), async (req, res
         } catch (err) {
           console.error('❌ Auto-sync failed:', err.message);
           try {
-            const operatorMsg = ownerNotifications.buildOperatorMessage({
-              icon: '⚠️',
-              titleHe: 'שגיאת סנכרון מוובהוק Printify',
-              summaryHe: `סנכרון קטלוג Printify עקב וובהוק מסוג ${type} נכשל`,
-              fields: [
-                ['Event', 'CRITICAL_INFRA_FAILURE'],
-                ['Severity', 'WARNING'],
-                ['Time', new Date().toISOString()],
-                ['Component', 'printify-webhook'],
-                ['Webhook-Event', type],
-                ['Error', err.message || 'webhook_sync_failed'],
-              ],
-            });
-            await ownerNotifications.notify({
-              severity: ownerNotifications.SEVERITY.WARNING,
-              eventType: 'critical_infra_failure',
-              dedupKey: `printify_webhook_sync_${type}`,
-              cooldownMs: 15 * 60 * 1000,
-              message: operatorMsg,
+            const technicalIssues = require('./services/technical-issues');
+            await technicalIssues.recordIssue({
+              type: 'printify_webhook_sync_failure',
+              severity: 'WARNING',
+              route: `webhooks/printify/${type}`,
+              message: err.message || 'webhook_sync_failed',
             });
           } catch (_) {
             // Safe no-op
@@ -2996,13 +2983,17 @@ app.post('/api/webhooks/resend', express.raw({type: 'application/json'}), async 
           // Mark as unsubscribed to block further recovery attempts
           await dbRunAsync(`UPDATE leads SET unsubscribed = 1 WHERE email = ?`, [email]);
           
-          let alertMsg = '';
-          if (type === 'email.bounced') {
-            alertMsg = `⚠️ <b>Email Bounced (Resend)</b>\nRecipient: <code>${email}</code>\nSubject: ${data.subject || 'N/A'}\nStatus: Marked as unsubscribed/bounced locally.`;
-          } else {
-            alertMsg = `⚠️ <b>Spam Complaint (Resend)</b>\nRecipient: <code>${email}</code>\nSubject: ${data.subject || 'N/A'}\nStatus: Marked as unsubscribed locally.`;
+          try {
+            const technicalIssues = require('./services/technical-issues');
+            await technicalIssues.recordIssue({
+              type: type === 'email.bounced' ? 'resend_email_bounced' : 'resend_spam_complaint',
+              severity: 'WARNING',
+              route: 'webhooks/resend',
+              message: `Recipient: ${email} (Subject: ${data.subject || 'N/A'})`,
+            });
+          } catch (_) {
+            // Safe no-op
           }
-          await telegram.sendMessage(alertMsg).catch(() => null);
         }
       }
     }
@@ -4178,25 +4169,12 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('⚠️ Sync failed:', err.message);
       try {
-        const operatorMsg = ownerNotifications.buildOperatorMessage({
-          icon: '⚠️',
-          titleHe: 'שגיאת סנכרון קטלוג Printify',
-          summaryHe: 'סנכרון הקטלוג מול Printify נכשל',
-          fields: [
-            ['Event', 'CRITICAL_INFRA_FAILURE'],
-            ['Severity', 'WARNING'],
-            ['Time', new Date().toISOString()],
-            ['Component', 'printify-sync'],
-            ['Source', source],
-            ['Error', err.message || 'unknown_sync_error'],
-          ],
-        });
-        await ownerNotifications.notify({
-          severity: ownerNotifications.SEVERITY.WARNING,
-          eventType: 'critical_infra_failure',
-          dedupKey: 'printify_sync_failure',
-          cooldownMs: 15 * 60 * 1000,
-          message: operatorMsg,
+        const technicalIssues = require('./services/technical-issues');
+        await technicalIssues.recordIssue({
+          type: 'printify_sync_failure',
+          severity: 'WARNING',
+          route: `printify-sync/${source}`,
+          message: err.message || 'unknown_sync_error',
         });
       } catch (_) {
         // Safe no-op

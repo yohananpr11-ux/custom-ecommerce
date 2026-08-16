@@ -147,8 +147,6 @@ async function notify({ severity, eventType, message, dedupKey, cooldownMs } = {
   }
 
   const groupedCount = suppressedSinceLastSend.get(key) || 0;
-  suppressedSinceLastSend.set(key, 0);
-  lastSentAt.set(key, Date.now());
 
   // Only add prefix icon if severity is CRITICAL or WARNING and message doesn't already start with an emoji
   const hasLeadingEmoji = /^[\p{Emoji}\u200d]+/u.test(message.trim());
@@ -158,8 +156,34 @@ async function notify({ severity, eventType, message, dedupKey, cooldownMs } = {
     ? `\n\n<i>(${groupedCount} similar alert${groupedCount === 1 ? '' : 's'} suppressed since the last notice)</i>`
     : '';
 
-  const telegramResult = await telegram.sendMessage(`${prefix}${message}${groupedSuffix}`);
-  return { sent: true, severity, eventType, dedupKey: key, timestamp, telegram: telegramResult };
+  let telegramResult;
+  try {
+    telegramResult = await telegram.sendMessage(`${prefix}${message}${groupedSuffix}`);
+  } catch (err) {
+    console.error(`[owner-notifications] Telegram send threw error:`, err.message);
+    telegramResult = { ok: false, skipped: false, reason: 'exception', error: err.message };
+  }
+
+  const isSuccess = Boolean(telegramResult && telegramResult.ok === true);
+
+  if (isSuccess) {
+    // Delivery confirmed: advance cooldown timer and reset suppression counter
+    lastSentAt.set(key, Date.now());
+    suppressedSinceLastSend.set(key, 0);
+    return { sent: true, severity, eventType, dedupKey: key, timestamp, telegram: telegramResult };
+  }
+
+  // Delivery failed (Telegram API error, unconfigured, or exception):
+  // Do NOT advance lastSentAt, do NOT reset suppressedSinceLastSend
+  return {
+    sent: false,
+    reason: telegramResult?.reason || 'delivery_failed',
+    severity,
+    eventType,
+    dedupKey: key,
+    timestamp,
+    telegram: telegramResult,
+  };
 }
 
 function _resetForTests() {

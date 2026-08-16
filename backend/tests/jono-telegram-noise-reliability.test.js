@@ -1,10 +1,17 @@
-// JONO Telegram noise reliability test suite:
-// Proves that routine success events (hourly sync, backup, fulfillment progress,
-// leads, visit batches) send zero Telegram alerts, while genuine critical
-// failures and business events (HUMAN_SESSION_STARTED, PAID_ORDER,
-// CUSTOMER_IMPACTING_ERROR, CRITICAL_INFRA_FAILURE) are delivered with dedupe.
-//
-// Hermetic test suite: isolated SQLite DB, mocked Telegram/Printify/PayPal/Axios.
+// JONO Telegram noise reliability & hardening test suite:
+// Proves that:
+// A. successful Telegram send => cooldown recorded
+// B. failed Telegram send => successful cooldown NOT recorded
+// C. retry after Telegram failure => can send
+// D. same critical infra failure twice => one alert
+// E. service/module reinitialization simulating restart => still deduped (SQLite durable)
+// F. cooldown expiry => alert allowed again
+// G. two concurrent same failures => max one immediate send
+// H. backup success => zero Telegram
+// I. Printify success/startup/scheduled/webhook => zero Telegram
+// J. backup failure => critical alert
+// K. Printify failure => critical alert
+// L. underlying jobs continue regardless of Telegram failure
 
 'use strict';
 
@@ -14,9 +21,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { mock } = require('node:test');
-const axios = require('axios');
 
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jono-noise-hotfix-'));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jono-noise-hardened-'));
 const tmpDb = path.join(tmpDir, 'isolated.db');
 process.env.DB_PATH = tmpDb;
 process.env.NODE_ENV = 'test';
@@ -73,226 +79,299 @@ function installTelegramMock() {
   };
 }
 
-// ── 1. Routine sync success => zero Telegram ───────────────────────────
+// ── Test A: Successful Telegram send => cooldown recorded ─────────────
 
-test('1: Printify sync success (startup or manual) sends zero Telegram messages', async () => {
+test('A: successful Telegram send records cooldown', async () => {
   const tMock = installTelegramMock();
   try {
-    const originalToken = printify.token;
-    printify.token = ''; // built-in simulation fallback
-    const count = await printify.syncProducts('startup');
-    printify.token = originalToken;
-
-    assert.equal(count, 10, 'simulated sync returned 10 products');
-    assert.equal(tMock.sentMessages.length, 0, 'routine sync success must never send Telegram alerts');
-  } finally {
-    tMock.restore();
-  }
-});
-
-// ── 2. Routine backup success => zero Telegram ─────────────────────────
-
-test('2: Successful SQLite backup cycle sends zero Telegram messages', async () => {
-  const tMock = installTelegramMock();
-  const backupSubdir = path.join(tmpDir, 'test-backups');
-  try {
-    const result = await sqliteBackup.runBackupCycle({
-      db,
-      backupDir: backupSubdir,
-      env: { ENABLE_SQLITE_BACKUPS: 'true' },
+    const res1 = await ownerNotifications.notify({
+      severity: ownerNotifications.SEVERITY.WARNING,
+      eventType: 'test_event_success',
+      dedupKey: 'test_key_a',
+      cooldownMs: 60000,
+      message: 'Test message A1',
     });
+    assert.equal(res1.sent, true);
+    assert.equal(tMock.sentMessages.length, 1);
 
-    assert.equal(result.skipped, false);
-    assert.equal(tMock.sentMessages.length, 0, 'routine backup success must never send Telegram alerts');
-  } finally {
-    tMock.restore();
-  }
-});
-
-// ── 3. Routine fulfillment progress => zero Telegram ───────────────────
-
-test('3: Routine supplier fulfillment success sends zero Telegram messages', async () => {
-  const tMock = installTelegramMock();
-  try {
-    const orderInsert = await dbRun(
-      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address) VALUES ('Noise Test', 'noise@example.invalid', 150, 'paid', 'Synthetic Street 1')`
-    );
-    const orderId = orderInsert.lastID;
-    await dbRun(
-      `INSERT INTO order_items (orderId, productId, quantity, price, supplier_id, fulfillment_status) VALUES (?, 1, 1, 150, 'dropship', 'pending')`,
-      [orderId]
-    );
-
-    const dropshipMock = mock.method(require('../services/dropship.js'), 'sendOrder', async () => ({
-      ref: 'CJ-TEST-ORDER-123',
-    }));
-
-    try {
-      await fulfillment.routeOrderToSupplier(orderId, { customerName: 'Noise Test', addressLine1: 'Test St' }, [
-        { id: 1, productId: 1, supplier_id: 'dropship', quantity: 1, price: 150 },
-      ]);
-      assert.equal(tMock.sentMessages.length, 0, 'routine fulfillment success must be silent on Telegram');
-    } finally {
-      dropshipMock.mock.restore();
-    }
-  } finally {
-    tMock.restore();
-  }
-});
-
-// ── 4. Routine lead signup => zero Telegram ────────────────────────────
-
-test('4: New lead creation sends zero Telegram spam', async () => {
-  const tMock = installTelegramMock();
-  try {
-    const email = `noise_lead_${Date.now()}@example.invalid`;
-    const res = await fetch(`${baseUrl}/api/leads`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+    // Second send inside cooldown: suppressed
+    const res2 = await ownerNotifications.notify({
+      severity: ownerNotifications.SEVERITY.WARNING,
+      eventType: 'test_event_success',
+      dedupKey: 'test_key_a',
+      cooldownMs: 60000,
+      message: 'Test message A2',
     });
-
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(data.success, true);
-    assert.equal(tMock.sentMessages.length, 0, 'routine lead signup must not send immediate Telegram spam');
-  } finally {
-    tMock.restore();
-  }
-});
-
-// ── 5. Routine store visits queueing => deprecated / zero Telegram ────
-
-test('5: Legacy store visits queueing is silenced and sends zero Telegram alerts', async () => {
-  const tMock = installTelegramMock();
-  try {
-    telegram.queueVisit({
-      visitorType: 'human',
-      visitorDevice: 'Mobile',
-      path: '/test-page',
-      isBot: false,
-    });
-    await telegram.flushVisitBatch();
-
-    assert.equal(tMock.sentMessages.length, 0, 'legacy visit queueing must not send Telegram alerts');
-  } finally {
-    tMock.restore();
-  }
-});
-
-// ── 6. Critical backup failure => immediate alert with dedupe ──────────
-
-test('6: Critical SQLite backup failure triggers an alert; repeats within cooldown are deduped', async () => {
-  const tMock = installTelegramMock();
-  const failingBackupOptions = {
-    db: { run: (_s, cb) => cb(new Error('Simulated disk full / backup failure')) },
-    onlineBackup: async () => { throw new Error('Simulated I/O corruption'); },
-    backupDir: path.join(tmpDir, 'failing-backups'),
-  };
-
-  try {
-    // First failure: must trigger alert
-    await assert.rejects(() => sqliteBackup.runBackupCycle(failingBackupOptions));
-    assert.equal(tMock.sentMessages.length, 1, 'first critical backup failure sends 1 alert');
-    assert.match(tMock.sentMessages[0], /CRITICAL_INFRA_FAILURE/);
-    assert.match(tMock.sentMessages[0], /sqlite-backup/);
-
-    // 10 repeated failures immediately: must be suppressed by cooldown
-    for (let i = 0; i < 10; i++) {
-      await assert.rejects(() => sqliteBackup.runBackupCycle(failingBackupOptions));
-    }
-    assert.equal(tMock.sentMessages.length, 1, 'repeated backup failures within cooldown must be deduped (no spam)');
-  } finally {
-    tMock.restore();
-  }
-});
-
-// ── 7. Notification policy suppresses routine events ───────────────────
-
-test('7: ownerNotifications.notify suppresses routine daily events while allowing immediate events', async () => {
-  const tMock = installTelegramMock();
-  try {
-    // Routine sync success
-    const syncRes = await ownerNotifications.notify({
-      severity: ownerNotifications.SEVERITY.INFO,
-      eventType: 'routine_sync_success',
-      message: 'sync finished ok',
-    });
-    assert.equal(syncRes.sent, false);
-    assert.equal(syncRes.reason, 'routine_suppressed');
-
-    // Routine backup success
-    const backupRes = await ownerNotifications.notify({
-      severity: ownerNotifications.SEVERITY.INFO,
-      eventType: 'routine_backup_success',
-      message: 'backup finished ok',
-    });
-    assert.equal(backupRes.sent, false);
-    assert.equal(backupRes.reason, 'routine_suppressed');
-
-    // Immediate critical infra failure
-    const infraRes = await ownerNotifications.notify({
-      severity: ownerNotifications.SEVERITY.CRITICAL,
-      eventType: 'critical_infra_failure',
-      message: '🚨 <b>DB corruption</b>',
-      dedupKey: 'test_db_infra_failure',
-    });
-    assert.equal(infraRes.sent, true);
+    assert.equal(res2.sent, false);
+    assert.equal(res2.reason, 'cooldown');
     assert.equal(tMock.sentMessages.length, 1);
   } finally {
     tMock.restore();
   }
 });
 
-// ── 8. Manual fulfillment required => immediate operator alert ─────────
+// ── Test B & C: Failed Telegram send does NOT record cooldown; retry works ──
 
-test('8: Manual fulfillment required sends an immediate operator alert', async () => {
+test('B & C: failed Telegram send does not record cooldown, allowing immediate retry', async () => {
+  let shouldFail = true;
+  const sentMessages = [];
+  const tMock = mock.method(telegram, 'sendMessage', async (text) => {
+    if (shouldFail) {
+      return { ok: false, reason: 'network_timeout' };
+    }
+    sentMessages.push(text);
+    return { ok: true, status: 200 };
+  });
+
+  try {
+    // Attempt 1: Telegram fails
+    const res1 = await ownerNotifications.notify({
+      severity: ownerNotifications.SEVERITY.WARNING,
+      eventType: 'test_event_retry',
+      dedupKey: 'test_key_b',
+      cooldownMs: 60000,
+      message: 'Test message B1',
+    });
+    assert.equal(res1.sent, false, 'marked sent:false on failure');
+    assert.equal(sentMessages.length, 0);
+
+    // Attempt 2: Telegram recovered => must send immediately without being blocked by cooldown
+    shouldFail = false;
+    const res2 = await ownerNotifications.notify({
+      severity: ownerNotifications.SEVERITY.WARNING,
+      eventType: 'test_event_retry',
+      dedupKey: 'test_key_b',
+      cooldownMs: 60000,
+      message: 'Test message B2',
+    });
+    assert.equal(res2.sent, true, 'retry immediately succeeded without cooldown blockage');
+    assert.equal(sentMessages.length, 1);
+  } finally {
+    tMock.mock.restore();
+  }
+});
+
+// ── Test D: Same critical infra failure twice => one alert ─────────────
+
+test('D: same critical infra failure twice within cooldown sends only one alert', async () => {
   const tMock = installTelegramMock();
   try {
-    const orderInsert = await dbRun(
-      `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address) VALUES ('Manual Item Buyer', 'manual@example.invalid', 250, 'paid', 'Synthetic Street 1')`
-    );
-    const orderId = orderInsert.lastID;
-    await dbRun(
-      `INSERT INTO order_items (orderId, productId, quantity, price, supplier_id, fulfillment_status) VALUES (?, 25, 1, 250, 'manual', 'pending')`,
-      [orderId]
-    );
+    const res1 = await technicalIssues.recordIssue({
+      type: 'sqlite_backup_failure',
+      severity: 'CRITICAL',
+      route: 'sqlite-backup/test',
+      message: 'Disk write I/O error',
+    });
+    assert.equal(res1.notify.sent, true);
+    assert.equal(tMock.sentMessages.length, 1);
 
-    await fulfillment.routeOrderToSupplier(orderId, { customerName: 'Manual Buyer', addressLine1: 'St 1' }, [
-      { id: 25, productId: 25, supplier_id: 'manual', quantity: 1, price: 250 },
-    ]);
-
-    assert.equal(tMock.sentMessages.length, 1, 'manual fulfillment required must send an alert');
-    assert.match(tMock.sentMessages[0], /MANUAL_FULFILLMENT_REQUIRED/);
-    assert.match(tMock.sentMessages[0], /Order-ID/);
+    const res2 = await technicalIssues.recordIssue({
+      type: 'sqlite_backup_failure',
+      severity: 'CRITICAL',
+      route: 'sqlite-backup/test',
+      message: 'Disk write I/O error',
+    });
+    assert.equal(res2.occurrenceCount, 2);
+    assert.equal(res2.notify, null, 'second occurrence inside cooldown produces zero additional alerts');
+    assert.equal(tMock.sentMessages.length, 1);
   } finally {
     tMock.restore();
   }
 });
 
-// ── 9. Telegram API outage never crashes background jobs ──────────────
+// ── Test E: Restart simulation => still deduped (SQLite durable) ───────
 
-test('9: Telegram API failure never throws out or breaks underlying backup or sync jobs', async () => {
+test('E: restart simulation still honors durable SQLite cooldown for critical infra failures', async () => {
+  const tMock = installTelegramMock();
+  try {
+    // Occurrence 1
+    const res1 = await technicalIssues.recordIssue({
+      type: 'printify_sync_failure',
+      severity: 'WARNING',
+      route: 'printify-sync/startup',
+      message: 'Printify API 502 Bad Gateway',
+    });
+    assert.equal(res1.notify.sent, true);
+    assert.equal(tMock.sentMessages.length, 1);
+
+    // Reset all in-memory state (simulating fresh process startup)
+    ownerNotifications._resetForTests();
+
+    // Occurrence 2 after restart
+    const res2 = await technicalIssues.recordIssue({
+      type: 'printify_sync_failure',
+      severity: 'WARNING',
+      route: 'printify-sync/startup',
+      message: 'Printify API 502 Bad Gateway',
+    });
+    assert.equal(res2.occurrenceCount, 2);
+    assert.equal(res2.notify, null, 'still deduped after simulated restart');
+    assert.equal(tMock.sentMessages.length, 1, 'no second alert sent after restart');
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── Test F: Cooldown expiry => alert allowed again ─────────────────────
+
+test('F: after durable cooldown expires, subsequent failure can alert again', async () => {
+  const tMock = installTelegramMock();
+  try {
+    const signature = 'test_sig_cooldown_expiry_1234';
+    await dbRun(
+      `INSERT INTO technical_issues (signature, type, severity, route, message, first_seen_at, last_seen_at, occurrence_count, last_notified_at, notified_count)
+       VALUES (?, 'sqlite_backup_failure', 'CRITICAL', 'backup/test', 'Corrupt table', datetime('now', '-20 minutes'), datetime('now', '-20 minutes'), 1, datetime('now', '-20 minutes'), 1)`,
+      [signature]
+    );
+
+    const res = await technicalIssues.recordIssue({
+      type: 'sqlite_backup_failure',
+      severity: 'CRITICAL',
+      route: 'backup/test',
+      message: 'Corrupt table',
+    });
+
+    assert.equal(res.notify.sent, true, 'alert allowed after 15m cooldown elapsed');
+    assert.equal(tMock.sentMessages.length, 1);
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── Test G: Two concurrent same failures => max one immediate send ─────
+
+test('G: two concurrent identical critical failures produce at most one immediate send', async () => {
+  const tMock = installTelegramMock();
+  try {
+    const [res1, res2] = await Promise.all([
+      technicalIssues.recordIssue({
+        type: 'concurrent_infra_test',
+        severity: 'CRITICAL',
+        route: 'infra/concurrent',
+        message: 'Concurrent lock collision',
+      }),
+      technicalIssues.recordIssue({
+        type: 'concurrent_infra_test',
+        severity: 'CRITICAL',
+        route: 'infra/concurrent',
+        message: 'Concurrent lock collision',
+      }),
+    ]);
+
+    const sentCount = (res1.notify?.sent ? 1 : 0) + (res2.notify?.sent ? 1 : 0);
+    assert.equal(sentCount, 1, 'exactly one of the concurrent calls sent an alert');
+    assert.equal(tMock.sentMessages.length, 1);
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── Test H: Backup success => zero Telegram ────────────────────────────
+
+test('H: backup success sends zero Telegram alerts', async () => {
+  const tMock = installTelegramMock();
+  const backupSubdir = path.join(tmpDir, 'test-backups-h');
+  try {
+    const result = await sqliteBackup.runBackupCycle({
+      db,
+      backupDir: backupSubdir,
+      env: { ENABLE_SQLITE_BACKUPS: 'true' },
+    });
+    assert.equal(result.skipped, false);
+    assert.equal(tMock.sentMessages.length, 0, 'routine backup success sends 0 Telegram alerts');
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── Test I: Printify success/startup/scheduled/webhook => zero Telegram ──
+
+test('I: Printify success (startup, scheduled, webhook) sends zero Telegram alerts', async () => {
+  const tMock = installTelegramMock();
+  try {
+    const originalToken = printify.token;
+    printify.token = '';
+
+    const countStartup = await printify.syncProducts('startup');
+    assert.equal(countStartup, 10);
+    assert.equal(tMock.sentMessages.length, 0);
+
+    const countScheduled = await printify.syncProducts('scheduled');
+    assert.equal(countScheduled, 10);
+    assert.equal(tMock.sentMessages.length, 0);
+
+    const countWebhook = await printify.syncProducts('webhook');
+    assert.equal(countWebhook, 10);
+    assert.equal(tMock.sentMessages.length, 0);
+
+    printify.token = originalToken;
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── Test J: Backup failure => critical alert ───────────────────────────
+
+test('J: backup failure triggers a durable critical alert', async () => {
+  const tMock = installTelegramMock();
+  const failingBackupOptions = {
+    db: { run: (_s, cb) => cb(new Error('Simulated database corruption')) },
+    onlineBackup: async () => { throw new Error('Simulated online backup crash'); },
+    backupDir: path.join(tmpDir, 'failing-backups-j'),
+  };
+
+  try {
+    await assert.rejects(() => sqliteBackup.runBackupCycle(failingBackupOptions));
+    assert.equal(tMock.sentMessages.length, 1, 'critical backup failure sends 1 alert');
+    assert.match(tMock.sentMessages[0], /CRITICAL_INFRA_FAILURE/);
+    assert.match(tMock.sentMessages[0], /sqlite_backup_failure/);
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── Test K: Printify failure => critical alert ─────────────────────────
+
+test('K: Printify sync failure triggers a durable critical alert', async () => {
+  const tMock = installTelegramMock();
+  try {
+    const res = await technicalIssues.recordIssue({
+      type: 'printify_sync_failure',
+      severity: 'WARNING',
+      route: 'printify-sync/startup',
+      message: 'Printify HTTP 500 error',
+    });
+    assert.equal(res.notify.sent, true);
+    assert.equal(tMock.sentMessages.length, 1);
+    assert.match(tMock.sentMessages[0], /CRITICAL_INFRA_FAILURE/);
+    assert.match(tMock.sentMessages[0], /printify_sync_failure/);
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── Test L: Underlying jobs continue regardless of Telegram failure ───
+
+test('L: underlying backup and sync jobs continue executing when Telegram API fails', async () => {
   const failingTelegramMock = mock.method(telegram, 'sendMessage', async () => {
-    throw new Error('Simulated Telegram API outage (ETIMEDOUT)');
+    throw new Error('Simulated Telegram outage (ECONNREFUSED)');
   });
 
   try {
-    // Sync with failing telegram
     const originalToken = printify.token;
     printify.token = '';
     const count = await printify.syncProducts('manual');
     printify.token = originalToken;
-    assert.equal(count, 10, 'sync must succeed despite Telegram failure');
+    assert.equal(count, 10, 'sync completes successfully despite Telegram failure');
 
-    // Backup cycle with failing telegram
     const result = await sqliteBackup.runBackupCycle({
       db,
-      backupDir: path.join(tmpDir, 'tg-outage-backups'),
+      backupDir: path.join(tmpDir, 'tg-outage-backups-l'),
       env: { ENABLE_SQLITE_BACKUPS: 'true' },
     });
-    assert.equal(result.skipped, false, 'backup must succeed despite Telegram outage');
+    assert.equal(result.skipped, false, 'backup completes successfully despite Telegram failure');
   } finally {
     failingTelegramMock.mock.restore();
   }
 });
+

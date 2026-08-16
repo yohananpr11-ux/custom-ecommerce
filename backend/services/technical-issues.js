@@ -75,16 +75,27 @@ function buildSignature({ type, route, message }) {
   return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32);
 }
 
+function isInfraType(type = '') {
+  const t = String(type).toLowerCase();
+  return t.includes('infra') || t.includes('backup') || t.includes('sync');
+}
+
 function buildIssueMessage({
   issueId, type, severity, safeRoute, safeMessage, method, httpStatus,
   sessionId, orderId, signature, occurrenceCount, firstSeenAt, lastSeenAt,
 }) {
+  const infra = isInfraType(type);
+  const titleHe = infra ? 'JONO — כשל בתשתית המערכת' : 'JONO — תקלה המשפיעה על לקוח';
+  const summaryHe = infra ? 'זוהתה תקלת תשתית הדורשת התערבות מפעיל.' : 'זוהתה תקלה טכנית שעלולה להשפיע על לקוח באתר.';
+  const eventLabel = infra ? 'CRITICAL_INFRA_FAILURE' : 'CUSTOMER_IMPACTING_ERROR';
+  const impactLabel = infra ? 'Action-Required' : 'Customer-Impact';
+
   return ownerNotifications.buildOperatorMessage({
     icon: severity === 'CRITICAL' ? '🚨' : '⚠️',
-    titleHe: 'JONO — תקלה המשפיעה על לקוח',
-    summaryHe: 'זוהתה תקלה טכנית שעלולה להשפיע על לקוח באתר.',
+    titleHe,
+    summaryHe,
     fields: [
-      ['Event', 'CUSTOMER_IMPACTING_ERROR'],
+      ['Event', eventLabel],
       ['Severity', severity],
       ['Time', new Date().toISOString()],
       ['Issue-ID', issueId],
@@ -99,7 +110,7 @@ function buildIssueMessage({
       ['Occurrences', occurrenceCount],
       ['First-Seen', firstSeenAt],
       ['Last-Seen', lastSeenAt],
-      ['Customer-Impact', 'YES'],
+      [impactLabel, 'YES'],
     ],
   });
 }
