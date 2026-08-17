@@ -255,7 +255,7 @@ test('7: repeated payment capture or webhook claim does NOT overwrite or shift e
 
 // ── 8. End-to-End Daily Report Generation and Telegram Delivery ───────
 
-test('8: generateAndSendDailyReport sends structured 24h summary and records sent_at', async () => {
+test('8: generateAndSendDailyReport sends structured daily summary and records sent_at', async () => {
   const tMock = installTelegramMock();
   const testDate = new Date('2026-08-16T19:00:00.000Z');
 
@@ -272,7 +272,7 @@ test('8: generateAndSendDailyReport sends structured 24h summary and records sen
     assert.equal(tMock.sentMessages.length, 1);
 
     const msg = tMock.sentMessages[0];
-    assert.match(msg, /JONO — סיכום 24 שעות/);
+    assert.match(msg, /JONO — סיכום יומי/);
     assert.match(msg, /חלון: 15\/08 22:00 → 16\/08 22:00/);
     assert.match(msg, /Event: DAILY_OWNER_REPORT/);
     assert.match(msg, /Window-Timezone: Europe\/Jerusalem/);
@@ -315,8 +315,7 @@ test('9: genuine zero metrics after successful query are reported as zero, not u
     },
     issues: {
       available: true,
-      totalDistinctIssues: 0,
-      totalOccurrences: 0,
+      distinctIssuesCount: 0,
       criticalCount: 0,
       warningCount: 0,
       activeIssues: [],
@@ -345,6 +344,7 @@ test('9: genuine zero metrics after successful query are reported as zero, not u
   assert.match(message, /הכנסה ששולמה: ₪0\.00/);
   assert.match(message, /פריטים שנמכרו: 0/);
   assert.match(message, /תקלות קריטיות: 0/);
+  assert.match(message, /סה״כ סוגי תקלות פעילות בחלון: 0/);
   assert.match(message, /פריטים ממתינים להגשמה \(נוכחי\): 0/);
   assert.doesNotMatch(message, /לא זמין כרגע/);
 });
@@ -382,7 +382,7 @@ test('10: failed metric queries are reported as לא זמין כרגע and never
   assert.match(message, /Human-Sessions: UNAVAILABLE/);
   assert.match(message, /Paid-Orders: UNAVAILABLE/);
   assert.match(message, /Paid-Revenue: UNAVAILABLE/);
-  assert.match(message, /Issues-Count: UNAVAILABLE/);
+  assert.match(message, /Issues-Distinct-Active: UNAVAILABLE/);
   assert.match(message, /Pending-Fulfillment-Current: UNAVAILABLE/);
   assert.match(message, /Backup-Status: UNAVAILABLE/);
 
@@ -466,8 +466,7 @@ test('13: dynamic HTML values are escaped properly and never break formatting', 
     },
     issues: {
       available: true,
-      totalDistinctIssues: 0,
-      totalOccurrences: 0,
+      distinctIssuesCount: 0,
       criticalCount: 0,
       warningCount: 0,
       activeIssues: [],
@@ -530,8 +529,7 @@ test('14: partial report builds and sends successfully when a subset of metric q
     },
     issues: {
       available: true,
-      totalDistinctIssues: 0,
-      totalOccurrences: 0,
+      distinctIssuesCount: 0,
       criticalCount: 0,
       warningCount: 0,
       activeIssues: [],
@@ -593,3 +591,168 @@ test('15: routine startup/scheduled syncs and backup cycles remain silent on Tel
     tMock.restore();
   }
 });
+
+// ── 16. Database Readiness & paid_at Startup Migration ─────────────────
+
+test('16: schema readiness promise ensures paid_at column exists before app readiness', async () => {
+  assert.ok(db.readyPromise instanceof Promise, 'db.readyPromise is exposed');
+  await db.readyPromise;
+
+  const tableInfo = await dbAll(`PRAGMA table_info(orders)`);
+  const hasPaidAt = tableInfo.some(col => col.name === 'paid_at');
+  assert.equal(hasPaidAt, true, 'orders.paid_at column is confirmed present in schema');
+
+  // Verify that an order insert and paid transition with paid_at succeeds without SQL column error
+  const orderRes = await dbRun(
+    `INSERT INTO orders (customerName, customerEmail, totalAmount, status, address, createdAt)
+     VALUES ('Startup Migration Test', 'startup@test.invalid', 99.00, 'pending', 'St Readiness', '2026-08-17 10:00:00')`
+  );
+  const orderId = orderRes.lastID;
+
+  await dbRun(
+    `UPDATE orders SET status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [orderId]
+  );
+  const row = await dbGet(`SELECT status, paid_at FROM orders WHERE id = ?`, [orderId]);
+  assert.equal(row.status, 'paid');
+  assert.ok(row.paid_at, 'paid_at was successfully updated without schema error');
+});
+
+// ── 17. Distributed Crash Recovery & Delivery Phases ──────────────────
+
+test('17: crash before delivery_started reclaims stale lease; crash after delivery_started transitions to delivery_unknown', async () => {
+  const tMock = installTelegramMock();
+  const testDateStr = '2026-08-28';
+
+  try {
+    // 17A: Crash BEFORE delivery_started (status = 'in_progress' with stale timestamp)
+    await dbRun(
+      `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+       VALUES ('daily_summary', ?, 'in_progress', 1, datetime('now', '-10 minutes'))`,
+      [testDateStr]
+    );
+
+    // Stale in_progress lease (>5m) should be safely reclaimed and sent
+    const resA = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDateStr,
+      force: true,
+      db,
+    });
+    assert.equal(resA.ok, true, 'Stale in_progress lease reclaimed safely');
+    assert.equal(resA.sent, true);
+
+    const rowA = await dbGet(`SELECT status, sent_at FROM daily_owner_reports WHERE report_date = ?`, [testDateStr]);
+    assert.equal(rowA.status, 'sent');
+    assert.ok(rowA.sent_at);
+
+    // 17B: Ambiguous crash AFTER delivery_started (status = 'delivery_started' with stale timestamp and sent_at IS NULL)
+    const testDateB = '2026-08-29';
+    await dbRun(
+      `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+       VALUES ('daily_summary', ?, 'delivery_started', 1, datetime('now', '-10 minutes'))`,
+      [testDateB]
+    );
+
+    const resB = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDateB,
+      force: true,
+      db,
+    });
+    assert.equal(resB.skipped, true);
+    assert.equal(resB.reason, 'ambiguous_delivery_detected', 'Ambiguous delivery detected; not blindly resent');
+
+    const rowB = await dbGet(`SELECT status, sent_at FROM daily_owner_reports WHERE report_date = ?`, [testDateB]);
+    assert.equal(rowB.status, 'delivery_unknown', 'Row transitioned to delivery_unknown for manual review');
+    assert.equal(rowB.sent_at, null);
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 18. After-Midnight Catch-Up & Downtime Recovery ───────────────────
+
+test('18: downtime over midnight catch-up generates previous day report with original fixed 22:00 cutoff', async () => {
+  const tMock = installTelegramMock();
+  const yesterdayStr = '2026-08-30';
+
+  try {
+    // Yesterday's report is unsent in DB
+    const res = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: yesterdayStr,
+      force: true,
+      db,
+    });
+
+    assert.equal(res.ok, true);
+    assert.equal(res.sent, true);
+    assert.equal(res.reportDate, yesterdayStr);
+
+    const windowInfo = res.metrics.windowInfo;
+    assert.equal(windowInfo.reportDateStr, yesterdayStr);
+    assert.equal(windowInfo.prevDateStr, '2026-08-29');
+    assert.equal(windowInfo.durationHours, 24, 'Fixed 24h window ending at 22:00 yesterday');
+
+    // Duplicate check: running again for the same date returns already_sent
+    const dupRes = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: yesterdayStr,
+      force: true,
+      db,
+    });
+    assert.equal(dupRes.skipped, true);
+    assert.equal(dupRes.reason, 'already_sent');
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 19. DST Spring and Autumn Actual Window Hours ─────────────────────
+
+test('19: DST spring and autumn transition windows calculate truthful elapsed hours without gaps', () => {
+  // Israel DST transitions (e.g. 2026 Spring is late March, Autumn is late October)
+  // Spring transition: clock jumps forward 1 hour -> 22:00 to 22:00 duration is 23 hours in UTC
+  const springWindow = dailyOwnerReport.getJerusalem24HourWindow('2026-03-27');
+  assert.equal(springWindow.durationHours, 23, 'Spring DST transition day window is 23 hours');
+
+  // Autumn transition: clock jumps backward 1 hour -> 22:00 to 22:00 duration is 25 hours in UTC
+  const autumnWindow = dailyOwnerReport.getJerusalem24HourWindow('2026-10-25');
+  assert.equal(autumnWindow.durationHours, 25, 'Autumn DST transition day window is 25 hours');
+
+  // Consecutive day continuity check
+  const beforeSpring = dailyOwnerReport.getJerusalem24HourWindow('2026-03-26');
+  assert.equal(beforeSpring.endUtcIso, springWindow.startUtcIso, 'No gap before spring transition');
+
+  const afterSpring = dailyOwnerReport.getJerusalem24HourWindow('2026-03-28');
+  assert.equal(springWindow.endUtcIso, afterSpring.startUtcIso, 'No gap after spring transition');
+});
+
+// ── 20. Technical Issues Truthful Counts ──────────────────────────────
+
+test('20: technical issues report distinct active issues and do not mislabel cumulative occurrence_count as daily-window occurrences', async () => {
+  const issueDateStr = '2026-08-31';
+  // Window: 2026-08-30 22:00 IDT (19:00 UTC) to 2026-08-31 22:00 IDT (19:00 UTC)
+
+  await dbRun(
+    `INSERT INTO technical_issues (signature, type, severity, route, message, first_seen_at, last_seen_at, occurrence_count)
+     VALUES ('ISSUE:SIG1', 'PRINTIFY_API_ERROR', 'CRITICAL', '/api/printify', 'Rate limit exceeded', '2026-08-31 10:00:00', '2026-08-31 12:00:00', 42)`
+  );
+
+  await dbRun(
+    `INSERT INTO technical_issues (signature, type, severity, route, message, first_seen_at, last_seen_at, occurrence_count)
+     VALUES ('ISSUE:SIG2', 'PAYPAL_WARN', 'WARNING', '/api/paypal', 'Slow response', '2026-08-31 11:00:00', '2026-08-31 11:30:00', 5)`
+  );
+
+  const metrics = await dailyOwnerReport.getReportMetrics({ dateStr: issueDateStr, db });
+  assert.equal(metrics.issues.distinctIssuesCount, 2, 'Two distinct issues observed in window');
+  assert.equal(metrics.issues.criticalCount, 1);
+  assert.equal(metrics.issues.warningCount, 1);
+
+  const message = dailyOwnerReport.buildDailyReportMessage(metrics);
+  assert.match(message, /תקלות קריטיות: 1/);
+  assert.match(message, /תקלות אזהרה: 1/);
+  assert.match(message, /סה״כ סוגי תקלות פעילות בחלון: 2/);
+  assert.doesNotMatch(message, /סה״כ אירועי שגיאה: 47/, 'Lifetime occurrences (47) are not mislabeled as daily window error events');
+  assert.match(message, /Issues-Distinct-Active: 2/);
+  assert.match(message, /Issues-Critical: 1/);
+  assert.match(message, /Issues-Warning: 1/);
+});
+

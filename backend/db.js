@@ -291,10 +291,11 @@ db.serialize(() => {
 });
 
 // Helper to safely add column if not exists — returns a Promise
-const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Promise((resolve) => {
+const addColumnIfMissing = (tableName, columnName, columnDefinition, { critical = false } = {}) => new Promise((resolve, reject) => {
   db.all(`PRAGMA table_info(${tableName})`, (err, columns) => {
     if (err) {
       console.error(`Error fetching table info for ${tableName}:`, err.message);
+      if (critical) return reject(err);
       return resolve();
     }
     const hasColumn = columns && columns.some(c => c.name === columnName);
@@ -303,6 +304,7 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`, (alterErr) => {
       if (alterErr && !/duplicate column name/i.test(alterErr.message)) {
         console.error(`Error adding column ${columnName} to ${tableName}:`, alterErr.message);
+        if (critical) return reject(alterErr);
       } else {
         console.log(`Successfully added column ${columnName} to ${tableName}`);
       }
@@ -312,7 +314,15 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
 });
 
 // Run all column migrations, then create indexes (which depend on the new columns)
-(async () => {
+const readyPromise = (async () => {
+  // Ensure initial table schemas exist before running column migrations
+  await new Promise((resolve, reject) => {
+    db.run('PRAGMA user_version', (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+
   await Promise.all([
     // products
     addColumnIfMissing('products', 'backImageUrl', 'TEXT'),
@@ -374,7 +384,7 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
     // fail closed at capture time rather than being silently trusted).
     addColumnIfMissing('orders', 'expected_payment_currency', 'TEXT'),
     addColumnIfMissing('orders', 'expected_payment_amount', 'REAL'),
-    addColumnIfMissing('orders', 'paid_at', 'DATETIME'),
+    addColumnIfMissing('orders', 'paid_at', 'DATETIME', { critical: true }),
     // design_jobs
     addColumnIfMissing('design_jobs', 'lastError', 'TEXT'),
     // product_variants
@@ -438,16 +448,6 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
   // index -- printifyId IS NULL or blank/whitespace-only is explicitly
   // exempted, so any number of un-synced local rows remain unaffected; only
   // a genuine non-empty duplicate is rejected.
-  //
-  // CREATE UNIQUE INDEX scans existing data and FAILS if a duplicate
-  // already exists at the moment this first runs (e.g. against a database
-  // that still has an unrepaired duplicate). Explicit callback, not a bare
-  // fire-and-forget db.run like the indexes above: this must never crash
-  // the whole process over a data-hygiene issue -- taking the entire store
-  // offline would be a worse outcome than temporarily missing one integrity
-  // constraint -- but it must also never fail silently. Same
-  // log-don't-crash convention as this whole migration block's own
-  // top-level .catch() below.
   db.run(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_printifyId_unique
        ON products(printifyId)
@@ -460,9 +460,14 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition) => new Prom
       }
     }
   );
-})().catch((err) => {
+})();
+
+readyPromise.catch((err) => {
   console.error('Schema migration block failed:', err.message);
 });
 
+db.readyPromise = readyPromise;
 module.exports = db;
 module.exports.dbPath = dbPath;
+module.exports.readyPromise = readyPromise;
+

@@ -4075,11 +4075,20 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
 // hermetic verification runs that must make zero outbound network calls.
 const backgroundJobsDisabled = process.env.DISABLE_BACKGROUND_JOBS === 'true';
 if (require.main === module) {
-if (!backgroundJobsDisabled) pricingEngine.start();
+  (async () => {
+    try {
+      await db.readyPromise;
+      console.log('✅ SQLite schema and migrations ready.');
+    } catch (err) {
+      console.error('❌ FATAL: Database initialization / migration failed:', err.message);
+      process.exit(1);
+    }
 
-app.listen(PORT, () => {
-  console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
-  console.log(`APP_RUNTIME_NODE_VERSION=${process.version}`);
+    if (!backgroundJobsDisabled) pricingEngine.start();
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
+      console.log(`APP_RUNTIME_NODE_VERSION=${process.version}`);
 
   if (backgroundJobsDisabled) {
     console.log('⏭️ DISABLE_BACKGROUND_JOBS=true — skipping auto-sync, catalog seeding, and all cron registrations.');
@@ -4334,6 +4343,10 @@ app.listen(PORT, () => {
   // ---- DAILY OWNER REPORT: Daily at 22:00 Europe/Jerusalem (PR #36) ----
   const dailyOwnerReport = require('./services/daily-owner-report');
   dailyOwnerReport.startDailyReportScheduler({ db });
+  });
+})().catch((fatalErr) => {
+  console.error('Fatal startup error:', fatalErr);
+  process.exit(1);
 });
 }
 
@@ -4448,4 +4461,4 @@ app.use((err, req, res, next) => {
 });
 
 // Exported for tests only (no effect when run directly via `node index.js`).
-module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing, isCustomerFacingPath, recordCustomerFacing5xxIssue };
+module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing, isCustomerFacingPath, recordCustomerFacing5xxIssue, readyPromise: db.readyPromise };

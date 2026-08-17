@@ -10,15 +10,18 @@
  * 1. Restart-safe and duplicate-safe: uses durable SQLite table `daily_owner_reports`
  *    with a UNIQUE(report_type, report_date) constraint and atomic CAS.
  * 2. Delivery confirmation: marked 'sent' ONLY after Telegram genuinely succeeds.
- * 3. Exact 24-Hour Rolling Reporting Window:
+ * 3. Exact Rolling Reporting Window:
  *    [Previous Day 22:00 Jerusalem, Current Day 22:00 Jerusalem)
- *    Non-overlapping, full 24h coverage, no blind spot, stable cutoff on retries.
+ *    Non-overlapping, full coverage, no blind spot, stable cutoff on retries.
  * 4. Real data only: summarizes genuine telemetry, orders, technical issues,
  *    fulfillments, and backups; explicitly marks uncollected metrics as unavailable.
  * 5. Time-window paid sales: requires `orders.status = 'paid' AND orders.paid_at IS NOT NULL`
  *    within the window. Legacy orders with NULL paid_at are never falsely backfilled
  *    and never attributed to the date-window revenue.
  * 6. Privacy: zero raw IP addresses, tokens, passwords, customer names, or PII.
+ * 7. Crash recovery & unambiguous delivery: detects crashes before vs after delivery_started,
+ *    never blindly resends ambiguous deliveries, and reclaims stale in_progress leases safely.
+ * 8. After-midnight catch-up: automatically catches up yesterday's report if service was offline at 22:00.
  */
 
 const fs = require('fs');
@@ -129,13 +132,14 @@ function isEligibleForDailyReport(date = new Date()) {
 /**
  * Find the exact UTC ISO timestamp corresponding to dateStr at timeStr in Europe/Jerusalem.
  * Dynamically resolves DST transitions (IDT UTC+3 vs IST UTC+2) without hardcoding fixed offsets.
+ * Throws if the boundary cannot be resolved faithfully.
  */
 function getJerusalemLocalTimestampUtc(dateStr, timeStr = '22:00:00') {
   const tz = resolveJerusalemTimezone();
   const [year, month, day] = dateStr.split('-').map(Number);
   const [targetHour, targetMin, targetSec] = timeStr.split(':').map(Number);
 
-  let testMs = Date.UTC(year, month - 1, day, targetHour, targetMin, targetSec) - (5 * 3600 * 1000);
+  let testMs = Date.UTC(year, month - 1, day, targetHour, targetMin, targetSec) - (6 * 3600 * 1000);
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -146,24 +150,26 @@ function getJerusalemLocalTimestampUtc(dateStr, timeStr = '22:00:00') {
   const targetPrefix = `${dateStr}`;
   const targetTime = `${String(targetHour).padStart(2, '0')}:${String(targetMin).padStart(2, '0')}:${String(targetSec).padStart(2, '0')}`;
 
-  for (let i = 0; i < 400; i++) {
+  for (let i = 0; i < 480; i++) {
     const formatted = formatter.format(new Date(testMs));
     if (formatted.includes(targetPrefix) && formatted.includes(targetTime)) {
       return new Date(testMs).toISOString();
     }
     testMs += 60000;
   }
-  return new Date(Date.UTC(year, month - 1, day, targetHour - 3, targetMin, targetSec)).toISOString();
+
+  throw new Error(`Failed to resolve Jerusalem local timestamp boundary for ${dateStr} ${timeStr}`);
 }
 
 /**
- * Calculates the exact 24-hour reporting window for report date dateStr:
+ * Calculates the exact reporting window for report date dateStr:
  * [Previous Day 22:00 Jerusalem, Current Day 22:00 Jerusalem)
  *
  * Guaranteed properties:
  * - Non-overlapping across consecutive days.
- * - Full 24-hour coverage (no 22:00-00:00 blind spot).
+ * - Full coverage (no 22:00-00:00 blind spot).
  * - Fixed snapshot cutoff: retrying at 22:05 or 23:30 uses the same exact window.
+ * - Actual durationHours computed dynamically (24 for normal days, 23 or 25 on DST transition days).
  */
 function getJerusalem24HourWindow(dateStr) {
   const prevDateStr = getPreviousJerusalemDateString(dateStr);
@@ -203,7 +209,7 @@ const dbRunAsync = (db, sql, params = []) => new Promise((resolve, reject) => {
 });
 
 /**
- * Collect real metrics from SQLite tables for the exact 24-hour window.
+ * Collect real metrics from SQLite tables for the exact window.
  * Every section tracks `.available` (true on successful query, false on failure).
  * Query failures are NEVER silently reported as 0.
  */
@@ -287,7 +293,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
   }
 
   // 2. Sales Metrics (orders & order_items)
-  // Strictly requires `status = 'paid' AND paid_at IS NOT NULL` inside the 24h window.
+  // Strictly requires `status = 'paid' AND paid_at IS NOT NULL` inside the window.
   // Legacy orders with paid_at IS NULL are tracked separately and excluded from window revenue.
   let salesSummary = {
     available: true,
@@ -375,11 +381,12 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
   }
 
   // 3. Technical & Customer Issues (technical_issues)
+  // Truthfully reports distinct issues observed/touched in this window.
+  // Lifetime occurrence counts are NOT mislabeled as window-specific error events.
   let issuesSummary = {
     available: true,
     error: null,
-    totalDistinctIssues: 0,
-    totalOccurrences: 0,
+    distinctIssuesCount: 0,
     criticalCount: 0,
     warningCount: 0,
     activeIssues: [],
@@ -392,27 +399,25 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
        FROM technical_issues
        WHERE (datetime(last_seen_at) >= datetime(?) AND datetime(last_seen_at) < datetime(?))
           OR (datetime(first_seen_at) >= datetime(?) AND datetime(first_seen_at) < datetime(?))
-       ORDER BY occurrence_count DESC`,
+       ORDER BY last_seen_at DESC`,
       [startUtcIso, endUtcIso, startUtcIso, endUtcIso]
     );
 
-    issuesSummary.totalDistinctIssues = issues.length;
-    issuesSummary.totalOccurrences = issues.reduce((sum, i) => sum + (Number(i.occurrence_count) || 1), 0);
+    issuesSummary.distinctIssuesCount = issues.length;
     issuesSummary.criticalCount = issues.filter(i => i.severity === 'CRITICAL').length;
     issuesSummary.warningCount = issues.filter(i => i.severity === 'WARNING').length;
     issuesSummary.activeIssues = issues.slice(0, 3).map(i => ({
       type: i.type,
       severity: i.severity,
-      occurrences: i.occurrence_count,
       route: i.route,
+      cumulativeOccurrences: i.occurrence_count,
     }));
   } catch (err) {
     console.error('[daily-owner-report] Error collecting technical issues:', err.message);
     issuesSummary = {
       available: false,
       error: 'UNAVAILABLE',
-      totalDistinctIssues: null,
-      totalOccurrences: null,
+      distinctIssuesCount: null,
       criticalCount: null,
       warningCount: null,
       activeIssues: [],
@@ -630,14 +635,14 @@ function buildDailyReportMessage(metrics) {
 • מוצרים מובילים: לא זמין כרגע`;
   }
 
-  // Issues block
+  // Issues block (truthful distinct issues count)
   let issuesLines;
   if (issues.available) {
-    issuesLines = issues.totalDistinctIssues === 0
-      ? '• תקלות קריטיות: 0\n• סה״כ אירועי שגיאה: 0'
-      : `• תקלות קריטיות: ${issues.criticalCount}\n• תקלות אזהרה: ${issues.warningCount}\n• סה״כ אירועי שגיאה: ${issues.totalOccurrences}`;
+    issuesLines = issues.distinctIssuesCount === 0
+      ? '• תקלות קריטיות: 0\n• סה״כ סוגי תקלות פעילות בחלון: 0'
+      : `• תקלות קריטיות: ${issues.criticalCount}\n• תקלות אזהרה: ${issues.warningCount}\n• סה״כ סוגי תקלות פעילות בחלון: ${issues.distinctIssuesCount}`;
   } else {
-    issuesLines = '• תקלות קריטיות: לא זמין כרגע\n• סה״כ אירועי שגיאה: לא זמין כרגע';
+    issuesLines = '• תקלות קריטיות: לא זמין כרגע\n• סה״כ סוגי תקלות פעילות בחלון: לא זמין כרגע';
   }
 
   // Fulfillment block (Current-state snapshot)
@@ -670,7 +675,7 @@ function buildDailyReportMessage(metrics) {
   const actionItemsList = actionItems.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join('\n');
 
   // Human Hebrew readable report
-  const humanReport = `📊 <b>JONO — סיכום 24 שעות</b>
+  const humanReport = `📊 <b>JONO — סיכום יומי</b>
 חלון: ${escapeHtml(displayWindow)}
 
 👥 <b>תנועה</b>
@@ -700,7 +705,7 @@ ${actionItemsList}`;
     ['Window-Local-Start', windowInfo?.prevDateStr ? `${windowInfo.prevDateStr} 22:00` : 'UNKNOWN'],
     ['Window-Local-End', `${dateStr} 22:00`],
     ['Window-Timezone', 'Europe/Jerusalem'],
-    ['Window-Hours', windowInfo?.durationHours || 24],
+    ['Window-Hours', windowInfo?.durationHours !== undefined ? windowInfo.durationHours : 'UNKNOWN'],
     ['Generated-At', new Date().toISOString()],
     ['Human-Sessions', traffic.available ? traffic.humanSessions : 'UNAVAILABLE'],
     ['Unique-Visitors', traffic.available ? traffic.uniqueHumanVisitors : 'UNAVAILABLE'],
@@ -710,8 +715,9 @@ ${actionItemsList}`;
     ['AOV', sales.available ? (sales.aovILS !== null ? `${sales.aovILS.toFixed(2)} ILS` : undefined) : 'UNAVAILABLE'],
     ['Conversion-Rate', sales.available ? (sales.conversionRatePercent !== null ? `${sales.conversionRatePercent.toFixed(1)}%` : undefined) : 'UNAVAILABLE'],
     ['Items-Sold', sales.available ? sales.itemsSoldCount : 'UNAVAILABLE'],
-    ['Issues-Count', issues.available ? issues.totalDistinctIssues : 'UNAVAILABLE'],
-    ['Issues-Occurrences', issues.available ? issues.totalOccurrences : 'UNAVAILABLE'],
+    ['Issues-Distinct-Active', issues.available ? issues.distinctIssuesCount : 'UNAVAILABLE'],
+    ['Issues-Critical', issues.available ? issues.criticalCount : 'UNAVAILABLE'],
+    ['Issues-Warning', issues.available ? issues.warningCount : 'UNAVAILABLE'],
     ['Pending-Fulfillment-Current', fulfillment.available ? fulfillment.pendingFulfillmentCount : 'UNAVAILABLE'],
     ['Backup-Status', backup.available ? (backup.latestBackupName ? `OK (${backup.latestBackupName})` : 'NO_LOCAL_BACKUP') : 'UNAVAILABLE'],
     ['Integrity-Check', backup.available ? backup.integrityCheck : 'UNAVAILABLE'],
@@ -720,19 +726,20 @@ ${actionItemsList}`;
 
   return ownerNotifications.buildOperatorMessage({
     icon: '📊',
-    titleHe: 'JONO — סיכום 24 שעות',
+    titleHe: 'JONO — סיכום יומי',
     summaryHe: `דוח ביצועים ותפעול יומי לחלון ${displayWindow}`,
     fields: operatorFields,
   }).replace(/^📊 <b>.*?<\/b>\n.*?\n\n/s, `${humanReport}\n\n`);
 }
 
 /**
- * Generate and deliver the daily report for dateStr, ensuring atomic restart-safe dedupe.
+ * Generate and deliver the daily report for dateStr, ensuring atomic restart-safe dedupe
+ * and distributed crash recovery across delivery phases.
  *
  * @param {object} options
  * @param {Date} [options.date] - target date (defaults to current local date)
  * @param {string} [options.dateStr] - explicit 'YYYY-MM-DD'
- * @param {boolean} [options.force] - bypass eligibility check (for tests/manual trigger)
+ * @param {boolean} [options.force] - bypass eligibility check (for tests/catch-up/manual trigger)
  * @param {sqlite3.Database} [options.db]
  * @param {string} [options.backupDir]
  * @param {object} [options.env]
@@ -753,7 +760,7 @@ async function generateAndSendDailyReport({
     return { skipped: true, reason: 'not_eligible_yet', reportDate: targetDateStr };
   }
 
-  // 1. Check if report for today was already successfully sent
+  // 1. Check existing state
   const existingRow = await dbGetAsync(
     db,
     `SELECT id, status, attempt_count, last_attempt_at, sent_at FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
@@ -765,6 +772,34 @@ async function generateAndSendDailyReport({
     return { skipped: true, reason: 'already_sent', reportDate: targetDateStr, sentAt: existingRow.sent_at };
   }
 
+  if (existingRow && existingRow.status === 'delivery_unknown') {
+    console.warn(`[daily-owner-report] Report for ${targetDateStr} has status='delivery_unknown' (ambiguous crash after Telegram send started). Manual review required -- not blindly resending.`);
+    return { skipped: true, reason: 'delivery_unknown_manual_review_required', reportDate: targetDateStr };
+  }
+
+  const STALE_LEASE_SECONDS = 300; // 5 minutes lease timeout
+
+  // If previous attempt crashed after delivery_started, outcome is ambiguous
+  if (existingRow && existingRow.status === 'delivery_started') {
+    // Check if the lease has expired
+    const isStale = await dbGetAsync(
+      db,
+      `SELECT (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) as elapsedSec
+       FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
+      [targetDateStr]
+    );
+
+    if (isStale && Number(isStale.elapsedSec) >= STALE_LEASE_SECONDS) {
+      console.warn(`[daily-owner-report] Detected ambiguous delivery crash for ${targetDateStr}: status was delivery_started with expired lease (${isStale.elapsedSec}s elapsed). Marking delivery_unknown.`);
+      await dbRunAsync(
+        db,
+        `UPDATE daily_owner_reports SET status = 'delivery_unknown' WHERE report_type = 'daily_summary' AND report_date = ?`,
+        [targetDateStr]
+      );
+      return { skipped: true, reason: 'ambiguous_delivery_detected', reportDate: targetDateStr };
+    }
+  }
+
   // 2. Insert row if not exists (pending status)
   await dbRunAsync(
     db,
@@ -774,6 +809,7 @@ async function generateAndSendDailyReport({
   );
 
   // 3. Atomically claim execution (CAS)
+  // Reclaims pending, failed (after cooldown), or stale in_progress (crashed before delivery_started)
   const RETRY_COOLDOWN_SECONDS = 300; // 5 minutes retry cooldown on failure
   const claimResult = await dbRunAsync(
     db,
@@ -787,9 +823,10 @@ async function generateAndSendDailyReport({
        AND (
          status = 'pending'
          OR (status = 'failed' AND (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) >= ?)
+         OR (status = 'in_progress' AND (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) >= ?)
          OR ? = 1
        )`,
-    [targetDateStr, RETRY_COOLDOWN_SECONDS, force ? 1 : 0]
+    [targetDateStr, RETRY_COOLDOWN_SECONDS, STALE_LEASE_SECONDS, force ? 1 : 0]
   );
 
   if (!claimResult || claimResult.changes === 0) {
@@ -814,7 +851,17 @@ async function generateAndSendDailyReport({
     return { ok: false, error: err.message, reportDate: targetDateStr };
   }
 
-  // 4. Centralized Telegram delivery via owner-notifications.js
+  // 4. Mark delivery_started right before external Telegram call
+  await dbRunAsync(
+    db,
+    `UPDATE daily_owner_reports
+     SET status = 'delivery_started',
+         last_attempt_at = CURRENT_TIMESTAMP
+     WHERE report_type = 'daily_summary' AND report_date = ? AND status = 'in_progress'`,
+    [targetDateStr]
+  );
+
+  // 5. Centralized Telegram delivery via owner-notifications.js
   const notifyResult = await ownerNotifications.notify({
     severity: 'INFO',
     eventType: 'daily_owner_report',
@@ -822,7 +869,7 @@ async function generateAndSendDailyReport({
     message,
   });
 
-  // 5. Update DB status strictly upon confirmed Telegram delivery
+  // 6. Update DB status strictly upon confirmed Telegram delivery
   if (notifyResult.sent) {
     await dbRunAsync(
       db,
@@ -846,6 +893,7 @@ let schedulerTimer = null;
 
 /**
  * Starts the daily report periodic scheduler (runs every 60 seconds).
+ * Includes both 22:00 daily scheduling and after-midnight catch-up for previous day.
  */
 function startDailyReportScheduler({ db = defaultDb, env = process.env, intervalMs = 60 * 1000 } = {}) {
   if (env.DISABLE_BACKGROUND_JOBS === 'true' || env.NODE_ENV === 'test') {
@@ -863,8 +911,24 @@ function startDailyReportScheduler({ db = defaultDb, env = process.env, interval
   const runCheck = async () => {
     try {
       const now = new Date();
-      if (isEligibleForDailyReport(now)) {
-        await generateAndSendDailyReport({ date: now, db, env });
+      const currentDateStr = getJerusalemDateString(now);
+      const { hour } = getJerusalemTimeParts(now);
+
+      if (hour >= 22) {
+        // Current day is eligible for today's report
+        await generateAndSendDailyReport({ date: now, dateStr: currentDateStr, db, env });
+      } else {
+        // Before 22:00 local time: check whether yesterday's report was missed and is eligible for catch-up
+        const prevDateStr = getPreviousJerusalemDateString(currentDateStr);
+        const prevRow = await dbGetAsync(
+          db,
+          `SELECT id, status, sent_at FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
+          [prevDateStr]
+        );
+        if (!prevRow || (!prevRow.sent_at && prevRow.status !== 'sent' && prevRow.status !== 'delivery_unknown')) {
+          console.log(`[daily-owner-report] Catching up missed report for previous date: ${prevDateStr}`);
+          await generateAndSendDailyReport({ dateStr: prevDateStr, force: true, db, env });
+        }
       }
     } catch (err) {
       console.error('[daily-owner-report] Scheduler tick error:', err.message);
@@ -904,3 +968,4 @@ module.exports = {
   escapeHtml,
   extractSafeDomain,
 };
+

@@ -58,6 +58,7 @@
 
   const { app } = require('../index.js');
   const db = require('../db.js');
+  await db.readyPromise;
 
   const dbGet = (sql, params = []) => new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => { if (err) reject(err); else resolve(row); });
