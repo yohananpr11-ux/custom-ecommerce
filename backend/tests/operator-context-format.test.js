@@ -186,7 +186,7 @@ test('A: the human-session message contains the required structured operator-con
     assert.match(msg, /Visitor-ID: \S+/);
     assert.match(msg, /Device: \S+/);
     assert.match(msg, /Landing-Page: \/shop/);
-    assert.match(msg, /Referrer-Domain: www\.google\.com/);
+    assert.match(msg, /Referrer-Domain: (www\.)?google\.com/);
     assert.match(msg, /Human-Classification: human/);
     assert.doesNotMatch(msg, /\bundefined\b|\bnull\b/);
   } finally {

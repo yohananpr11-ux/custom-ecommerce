@@ -427,7 +427,7 @@ test('11: backup reporting correctly parses { name, path, mtimeMs } and checks s
 
 test('12: visitor referrers are reduced to safe hostnames only without leaking paths, queries, or PII', () => {
   assert.equal(dailyOwnerReport.extractSafeDomain('https://instagram.com/stories/user123?utm_source=ig&token=SECRET_123'), 'instagram.com');
-  assert.equal(dailyOwnerReport.extractSafeDomain('https://www.google.com/search?q=sensitive+user+query&hl=iw'), 'www.google.com');
+  assert.equal(dailyOwnerReport.extractSafeDomain('https://www.google.com/search?q=sensitive+user+query&hl=iw'), 'google.com');
   assert.equal(dailyOwnerReport.extractSafeDomain('https://facebook.com/groups/feed/'), 'facebook.com');
   assert.equal(dailyOwnerReport.extractSafeDomain('direct'), 'Direct / ישיר');
   assert.equal(dailyOwnerReport.extractSafeDomain(null), 'Direct / ישיר');

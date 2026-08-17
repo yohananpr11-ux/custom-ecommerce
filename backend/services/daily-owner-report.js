@@ -30,6 +30,7 @@ const defaultDb = require('../db');
 const ownerNotifications = require('./owner-notifications');
 const sqliteBackup = require('./sqlite-backup');
 const sqliteOffsiteBackup = require('./sqlite-offsite-backup');
+const visitorTelemetry = require('./visitor-telemetry');
 
 /**
  * HTML-escape any dynamic user- or DB-derived string before inserting into Telegram HTML messages.
@@ -49,16 +50,8 @@ function escapeHtml(val) {
  */
 function extractSafeDomain(referrer) {
   if (!referrer || typeof referrer !== 'string') return 'Direct / ישיר';
-  const trimmed = referrer.trim();
-  if (!trimmed || trimmed.toLowerCase() === 'direct') return 'Direct / ישיר';
-  try {
-    const url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-    if (url.hostname) return url.hostname;
-  } catch (_) {
-    // fallback to regex extraction
-  }
-  const clean = trimmed.split('?')[0].split('#')[0].replace(/^[a-zA-Z0-9+.-]+:\/\//, '').split('/')[0];
-  return clean.slice(0, 50) || 'Direct / ישיר';
+  const resolved = visitorTelemetry.extractReferrerDomain(referrer);
+  return visitorTelemetry.formatSourceDisplay(resolved);
 }
 
 // Dynamically resolve valid IANA Jerusalem timezone across all OS/ICU environments
@@ -268,15 +261,16 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
       .slice(0, 3)
       .map(([landingPath, count]) => ({ path: landingPath, count }));
 
-    // Top referrers (safe domain only)
-    const referrerCounts = {};
+    // Top traffic sources (canonical source attribution)
+    const sourceCounts = {};
     for (const r of humanRows) {
-      const domain = extractSafeDomain(r.referrer);
-      referrerCounts[domain] = (referrerCounts[domain] || 0) + 1;
+      const canonicalSource = visitorTelemetry.resolveSessionSource({ source: r.source, referrer: r.referrer });
+      const displaySource = visitorTelemetry.formatSourceDisplay(canonicalSource);
+      sourceCounts[displaySource] = (sourceCounts[displaySource] || 0) + 1;
     }
-    trafficSummary.topReferrers = Object.entries(referrerCounts)
+    trafficSummary.topReferrers = Object.entries(sourceCounts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
+      .slice(0, 5)
       .map(([domain, count]) => ({ domain, count }));
   } catch (err) {
     console.error('[daily-owner-report] Error collecting traffic metrics:', err.message);
@@ -513,7 +507,7 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     };
   }
 
-  // 6. Action Items Generation (Respecting metric availability)
+  // 6. Action Items Generation (Only genuine actionable conditions)
   const actionItems = [];
 
   if (fulfillmentSummary.available) {
@@ -528,40 +522,41 @@ async function getReportMetrics({ dateStr, db = defaultDb, backupDir, env = proc
     if (issuesSummary.criticalCount > 0) {
       actionItems.push(`🚨 נרשמו ${issuesSummary.criticalCount} תקלות קריטיות בחלון זה — מומלץ לבדוק את לוג המערכת`);
     }
+    if (issuesSummary.warningCount >= 5) {
+      actionItems.push(`⚠️ נרשמו ${issuesSummary.warningCount} אזהרות מערכת בחלון זה`);
+    }
   } else {
     actionItems.push('⚠️ נתוני תקלות מערכת אינם זמינים כרגע');
   }
 
-  if (salesSummary.available) {
-    if (salesSummary.paidOrdersCount > 0) {
-      actionItems.push(`💰 נרשמו ${salesSummary.paidOrdersCount} רכישות מוצלחות בחלון זה (סה״כ ₪${salesSummary.paidRevenueILS.toFixed(2)})`);
-    } else if (trafficSummary.available && trafficSummary.humanSessions > 0) {
-      actionItems.push(`🔍 נרשמו ${trafficSummary.humanSessions} ביקורים ללא רכישות (יחס המרה 0.0%)`);
-    }
-  } else {
+  if (!salesSummary.available) {
     actionItems.push('⚠️ נתוני מכירות אינם זמינים כרגע לניתוח');
   }
 
-  if (trafficSummary.available) {
-    if (trafficSummary.humanSessions === 0 && (!salesSummary.available || salesSummary.paidOrdersCount === 0)) {
-      actionItems.push('👥 לא נרשמה תנועת גולשים בחלון זה — מומלץ לבדוק קמפיינים ופעילות שיווקית');
-    }
-  } else {
+  if (!trafficSummary.available) {
     actionItems.push('⚠️ נתוני תנועת גולשים אינם זמינים כרגע לניתוח');
   }
 
   if (backupSummary.available) {
-    if (backupSummary.integrityCheck === 'OK') {
-      actionItems.push('💾 שלמות מסד הנתונים תקינה (Integrity: OK)');
-    } else {
-      actionItems.push(`⚠️ בדיקת שלמות מסד הנתונים נכשלה (${escapeHtml(backupSummary.integrityCheck)})`);
+    if (backupSummary.integrityCheck !== 'OK') {
+      actionItems.push(`🚨 בדיקת שלמות מסד הנתונים נכשלה (${escapeHtml(backupSummary.integrityCheck)})`);
+    }
+    if (backupSummary.managedCount === 0) {
+      actionItems.push('⚠️ לא נמצאו קובצי גיבוי מקומיים תקינים');
     }
   } else {
     actionItems.push('⚠️ נתוני בדיקת מסד הנתונים אינם זמינים כרגע');
   }
 
+  // Meaningful traffic threshold for 0% conversion warning (conservative threshold: 50+ human sessions)
+  if (trafficSummary.available && salesSummary.available) {
+    if (trafficSummary.humanSessions >= 50 && salesSummary.paidOrdersCount === 0) {
+      actionItems.push(`🔍 תנועה משמעותית ללא רכישות (${trafficSummary.humanSessions} ביקורים, יחס המרה 0.0%) — מומלץ לבדוק את משפך הרכישה`);
+    }
+  }
+
   if (actionItems.length === 0) {
-    actionItems.push('✅ כל המערכות הזמינות פועלות כסדרן');
+    actionItems.push('• אין כרגע פעולה דחופה שנדרשת.');
   }
 
   return {
@@ -672,7 +667,9 @@ function buildDailyReportMessage(metrics) {
   }
 
   // Action items block
-  const actionItemsList = actionItems.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join('\n');
+  const actionItemsList = actionItems.length === 1 && actionItems[0].startsWith('•')
+    ? actionItems[0]
+    : actionItems.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join('\n');
 
   // Human Hebrew readable report
   const humanReport = `📊 <b>JONO — סיכום יומי</b>

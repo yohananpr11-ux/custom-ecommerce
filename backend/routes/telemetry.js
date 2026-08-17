@@ -14,13 +14,7 @@ const technicalIssues = require('../services/technical-issues');
 const ownerNotifications = require('../services/owner-notifications');
 
 function referrerDomain(referrer) {
-  if (!referrer) return undefined;
-  try {
-    const host = new URL(referrer).hostname;
-    return host || undefined;
-  } catch {
-    return undefined;
-  }
+  return visitorTelemetry.extractReferrerDomain(referrer) || undefined;
 }
 
 // Short, non-identifying prefix of an opaque id -- enough to eyeball/

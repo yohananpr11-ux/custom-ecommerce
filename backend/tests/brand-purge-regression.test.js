@@ -24,6 +24,11 @@ test('Repository Brand Integrity: Zero active legacy brand strings in tracked fi
   const violations = [];
 
   for (const relativePath of trackedFiles) {
+    // Skip this test file itself (which defines the search pattern)
+    if (relativePath.replace(/\\/g, '/') === 'backend/tests/brand-purge-regression.test.js') {
+      continue;
+    }
+
     // Skip binary files and git metadata
     if (/\.(png|jpg|jpeg|gif|webp|ico|sqlite|db|ttf|woff|woff2|eot|lock)$/i.test(relativePath)) {
       continue;
