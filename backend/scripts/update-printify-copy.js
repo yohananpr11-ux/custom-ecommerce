@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────────
-//  update-printify-copy.js  — Drip Street copy sync
+//  update-printify-copy.js  — JONO copy sync
 //
 //  Reads product-copy-updates.json, matches each entry by ID (or title),
 //  and PUTs the new title + description to Printify.

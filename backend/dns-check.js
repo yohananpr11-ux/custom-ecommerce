@@ -4,8 +4,8 @@ const resolver = new Resolver();
 resolver.setServers(['8.8.8.8', '1.1.1.1']);
 
 async function checkDNS() {
-  const domain = 'dripstreetshop.com';
-  const subDomain = 'send.dripstreetshop.com';
+  const domain = 'shopjono.com';
+  const subDomain = 'send.shopjono.com';
   
   console.log(`🔍 Starting DNS Diagnostics for ${domain} using Public DNS resolvers...\n`);
 
@@ -27,7 +27,7 @@ async function checkDNS() {
     console.log(`❌ Failed to resolve TXT/SPF records for ${domain}: ${err.message}`);
   }
 
-  // 3. Check DKIM on resend._domainkey.dripstreetshop.com
+  // 3. Check DKIM on root
   try {
     const dkimRoot = `resend._domainkey.${domain}`;
     const txtRecords = await resolver.resolveTxt(dkimRoot);
@@ -37,7 +37,7 @@ async function checkDNS() {
     console.log(`❌ Failed to resolve DKIM record for resend._domainkey.${domain}: ${err.message}`);
   }
 
-  // 4. Check DKIM on resend._domainkey.send.dripstreetshop.com
+  // 4. Check DKIM on subdomain
   try {
     const dkimSub = `resend._domainkey.${subDomain}`;
     const txtRecords = await resolver.resolveTxt(dkimSub);

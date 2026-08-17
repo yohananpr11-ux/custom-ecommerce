@@ -3,8 +3,8 @@ const db = require('../db');
 const telegram = require('./telegram');
 
 const SYSTEM_INSTRUCTION = `
-You are "Meni", the AI customer assistant of "Drip Street", a premium streetwear brand.
-Answer questions about Drip Street's products, policies, sizing, and shipping in a friendly, cool, and premium tone.
+You are "Meni", the AI customer assistant of "JONO", a premium streetwear brand.
+Answer questions about JONO's products, policies, sizing, and shipping in a friendly, cool, and premium tone.
 Keep your answers brief and concise (1-3 sentences max).
 Answer in English only.
 
@@ -61,7 +61,7 @@ class MeniChatService {
     }
 
     // Smart rule-based fallback engine (English-only)
-    let reply = "Hi! I'm Meni, Drip Street's AI assistant. I can help with sizing, shipping, and returns. For anything advanced, ask to speak with a human support rep.";
+    let reply = "Hi! I'm Meni, JONO's AI assistant. I can help with sizing, shipping, and returns. For anything advanced, ask to speak with a human support rep.";
     if (lower.includes('size') || lower.includes('sizing')) {
       reply = "Sizing guide:\n- Basic Tee (Gildan Softstyle): true to size.\n- Premium Tee (Bella+Canvas): slightly slim fit, we recommend sizing up for a boxy streetwear look.\n- Hoodies: comfortable regular fit.";
     } else if (lower.includes('shipping') || lower.includes('delivery')) {

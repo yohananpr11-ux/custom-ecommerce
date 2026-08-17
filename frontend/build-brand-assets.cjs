@@ -1,7 +1,7 @@
 /**
  * build-brand-assets.cjs
  * ──────────────────────
- * Drip Street brand asset pipeline.
+ * JONO brand asset pipeline.
  * Source: public/brand/drip-mark.png
  *
  * Outputs (all written to public/brand/generated/):
@@ -75,7 +75,7 @@ async function ogImage() {
 }
 
 async function main() {
-  console.log('\n[Drip Street] Building brand assets from drip-mark.png …\n');
+  console.log('\n[JONO] Building brand assets from drip-mark.png …\n');
 
   await Promise.all([
     icon(16,  'favicon-16.png'),

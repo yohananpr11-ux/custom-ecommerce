@@ -50,7 +50,7 @@ if (!baseUrl) {
   console.error('Missing base URL. Provide --baseUrl=http://localhost:PORT (never a production URL).');
   process.exit(1);
 }
-if (/dripstreetshop\.com|onrender\.com|vercel\.app/i.test(baseUrl)) {
+if (/shopjono\.com|dripstreetshop\.com|onrender\.com|vercel\.app/i.test(baseUrl)) {
   console.error('Refusing to run: baseUrl looks like a production/hosted URL. Use a local instance only.');
   process.exit(1);
 }

@@ -29,7 +29,7 @@ module.exports = function (processPaidOrderFulfillment) {
   // Triggers a complete paid checkout sequence for dropshipped jewelry end-to-end
   router.post('/simulate-dropship-fulfillment', async (req, res) => {
     try {
-      const mockEmail = req.body.email || 'customer-jewel@dripstreetshop.com';
+      const mockEmail = req.body.email || 'customer-jewel@shopjono.com';
       const mockName = req.body.name || 'John Doe';
       const mockPhone = req.body.phone || '555-0199';
       const mockAddress = req.body.address || '100 Broadway';

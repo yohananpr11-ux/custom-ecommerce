@@ -40,8 +40,8 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://custom-ecommerce
 const MARKETING_ABANDONED_INTAKE_URL = `${API_BASE}/api/marketing/intake/abandoned-cart`;
 const MARKETING_WELCOME_INTAKE_URL = `${API_BASE}/api/marketing/intake/welcome-flow`;
 const ABANDONED_CART_TIMEOUT_MS = Number(import.meta.env.VITE_ABANDONED_CART_DELAY_MS || (12 * 60 * 1000));
-const ABANDONED_CART_FINGERPRINT_KEY = 'drip_street_abandoned_cart_fingerprint_v1';
-const CHECKOUT_COMPLETED_KEY = 'drip_street_checkout_completed_v1';
+const ABANDONED_CART_FINGERPRINT_KEY = 'jono_abandoned_cart_fingerprint_v1';
+const CHECKOUT_COMPLETED_KEY = 'jono_checkout_completed_v1';
 const SHIPPING_COST = 29.90;
 const FREE_SHIPPING_THRESHOLD = 299;
 // Temporary, strictly scoped shipping exemption for exactly ONE hidden
@@ -968,8 +968,8 @@ function CartUpsellRail({ items, onQuickAdd, curSym, displayVal }) {
 
 // ─── LeadCapturePopup ────────────────────────────────────────────────────────
 function LeadCapturePopup({ t, currentPath }) {
-  const STORAGE_KEY = 'drip_street_lead_dismissed_at';
-  const SESSION_KEY = 'drip_street_lead_popup_seen_session';
+  const STORAGE_KEY = 'jono_lead_dismissed_at';
+  const SESSION_KEY = 'jono_lead_popup_seen_session';
   const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const [visible, setVisible] = useState(false);
   const [email, setEmail] = useState('');
@@ -982,10 +982,10 @@ function LeadCapturePopup({ t, currentPath }) {
   useEffect(() => {
     if (currentPath !== '/') return undefined;
 
-    if (sessionStorage.getItem(SESSION_KEY) === '1') return undefined;
-    if (localStorage.getItem('drip_street_lead_code')) return undefined;
+    if (sessionStorage.getItem(SESSION_KEY) === '1' || sessionStorage.getItem('drip_street_lead_popup_seen_session') === '1') return undefined;
+    if (localStorage.getItem('jono_lead_code') || localStorage.getItem('drip_street_lead_code')) return undefined;
 
-    const dismissedAt = Number(localStorage.getItem(STORAGE_KEY) || 0);
+    const dismissedAt = Number(localStorage.getItem(STORAGE_KEY) || localStorage.getItem('drip_street_lead_dismissed_at') || 0);
     if (dismissedAt && (Date.now() - dismissedAt) < DISMISS_TTL_MS) {
       return undefined;
     }
@@ -1070,8 +1070,8 @@ function LeadCapturePopup({ t, currentPath }) {
         if (!promoCode) throw new Error(GLOBAL_ERROR_TOAST_HE);
 
         localStorage.setItem(STORAGE_KEY, '1');
-        localStorage.setItem('drip_street_lead_email', normalizedEmail);
-        localStorage.setItem('drip_street_lead_code', promoCode);
+        localStorage.setItem('jono_lead_email', normalizedEmail);
+        localStorage.setItem('jono_lead_code', promoCode);
 
         setGeneratedCode(promoCode);
         setSubmitted(true);
@@ -1649,9 +1649,9 @@ function ProductDetailPage({ productId, accessToken, addToCart, goToCheckout, sh
         <meta name="twitter:image" content={absoluteImageUrl} />
         <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>
       </Helmet>
-      {/* Header removed — the MainApp's sticky storefront-header (with drip-mark
+      {/* Header removed — the MainApp's sticky storefront-header (with jono-logo
          lockup, search, and cart) is already visible on this route. Rendering
-         a second header here caused a visible duplicate "DRIP STREET" bar. */}
+         a second header here caused a visible duplicate header bar. */}
       <div className="container pdp-container">
         <div style={{ width: '100%', marginBottom: '12px' }}>
           <BackButton />
@@ -1928,7 +1928,7 @@ function MainApp() {
   const [isLoading, setIsLoading] = useState(true)
   const [cart, setCart] = useState(() => {
     try {
-      const saved = localStorage.getItem('drip_street_cart');
+      const saved = localStorage.getItem('jono_cart') || localStorage.getItem('drip_street_cart');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -1973,7 +1973,7 @@ function MainApp() {
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
-  const [locale, setLocale] = useState(() => localStorage.getItem('drip_street_locale') || 'en');
+  const [locale, setLocale] = useState(() => localStorage.getItem('jono_locale') || localStorage.getItem('drip_street_locale') || 'en');
   const [currency, setCurrency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
   const [isHeaderScrolled, setIsHeaderScrolled] = useState(false)
@@ -1981,7 +1981,7 @@ function MainApp() {
   const toggleLocale = () => {
     const nextLocale = locale === 'he' ? 'en' : 'he';
     setLocale(nextLocale);
-    localStorage.setItem('drip_street_locale', nextLocale);
+    localStorage.setItem('jono_locale', nextLocale);
   };
 
   // Glass header deepens after first scroll
@@ -2013,7 +2013,7 @@ function MainApp() {
           setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
         }
         // Set locale dynamically on first visit if no manual choice is stored
-        if (data && (data.locale === 'he' || data.locale === 'en') && !localStorage.getItem('drip_street_locale')) {
+        if (data && (data.locale === 'he' || data.locale === 'en') && !localStorage.getItem('jono_locale') && !localStorage.getItem('drip_street_locale')) {
           setLocale(data.locale);
         }
       })
@@ -2030,7 +2030,7 @@ function MainApp() {
         setShippingCountry(cc);
         setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
         // Fallback locale dynamic set if no manual override
-        if (!localStorage.getItem('drip_street_locale')) {
+        if (!localStorage.getItem('jono_locale') && !localStorage.getItem('drip_street_locale')) {
           setLocale(cc === 'IL' ? 'he' : 'en');
         }
       })
@@ -2040,10 +2040,10 @@ function MainApp() {
   const [isWidgetChatOpen, setIsWidgetChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([]);
   const [chatSessionId] = useState(() => {
-    let sid = localStorage.getItem('drip_street_chat_session');
+    let sid = localStorage.getItem('jono_chat_session') || localStorage.getItem('drip_street_chat_session');
     if (!sid) {
       sid = 'session_' + Math.random().toString(36).substring(2, 15);
-      localStorage.setItem('drip_street_chat_session', sid);
+      localStorage.setItem('jono_chat_session', sid);
     }
     return sid;
   });
@@ -2359,8 +2359,8 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
-    const visitKey = 'drip_street_visit_notified';
-    if (!sessionStorage.getItem(visitKey)) {
+    const visitKey = 'jono_visit_notified';
+    if (!sessionStorage.getItem(visitKey) && !sessionStorage.getItem('drip_street_visit_notified')) {
       fetch(`${API_BASE}/api/analytics/visit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2534,7 +2534,7 @@ function MainApp() {
       // simply has no token and checkout correctly rejects it, same as any
       // other missing-token attempt.
       const persistable = cart.map(({ accessToken, ...item }) => item);
-      localStorage.setItem('drip_street_cart', JSON.stringify(persistable))
+      localStorage.setItem('jono_cart', JSON.stringify(persistable));
     } catch (e) {
       console.error('Failed to save cart:', e)
     }
@@ -3086,7 +3086,7 @@ function MainApp() {
         // Capture the order snapshot BEFORE clearing the cart so the
         // Purchase pixel event on /success can report real value.
         try {
-          sessionStorage.setItem('drip_street_pending_order', JSON.stringify({
+          sessionStorage.setItem('jono_pending_order', JSON.stringify({
             orderId: data.orderID,
             amount: Number(Number(cartTotal || 0).toFixed(2)),
             currency,
@@ -3096,6 +3096,7 @@ function MainApp() {
             itemCount: cart.length,
           }));
         } catch { /* sessionStorage unavailable in private mode */ }
+        localStorage.removeItem('jono_cart');
         localStorage.removeItem('drip_street_cart');
         setCart([]);
         showToast(locale === 'he' ? 'התשלום בוצע בהצלחה! 🎉' : 'Payment Successful! 🎉');
@@ -3133,10 +3134,10 @@ function MainApp() {
   const generateOrderId = () => {
     try {
       if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        return `DS-${crypto.randomUUID().split('-')[0].toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+        return `JN-${crypto.randomUUID().split('-')[0].toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
       }
     } catch { /* ignore */ }
-    return `DS-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+    return `JN-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
   };
 
   const submitCheckout = async (e) => {
@@ -3167,6 +3168,7 @@ function MainApp() {
       });
       const data = await response.json();
       if (data.success && data.paymentUrl) {
+        localStorage.removeItem('jono_cart');
         localStorage.removeItem('drip_street_cart');
         window.location.assign(data.paymentUrl);
       } else {
@@ -3449,7 +3451,7 @@ function MainApp() {
     if (location.pathname !== '/success') return;
     let snapshot = null;
     try {
-      const raw = sessionStorage.getItem('drip_street_pending_order');
+      const raw = sessionStorage.getItem('jono_pending_order') || sessionStorage.getItem('drip_street_pending_order');
       if (raw) snapshot = JSON.parse(raw);
     } catch { /* sessionStorage unavailable */ }
 
@@ -3461,7 +3463,10 @@ function MainApp() {
 
     // Single-fire guard: clear the snapshot so a refresh of /success doesn't
     // double-count the same purchase.
-    try { sessionStorage.removeItem('drip_street_pending_order'); } catch { /* noop */ }
+    try {
+      sessionStorage.removeItem('jono_pending_order');
+      sessionStorage.removeItem('drip_street_pending_order');
+    } catch { /* noop */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 

@@ -212,7 +212,7 @@ function validatePrerender() {
 
 function run() {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║         Drip Street — SEO Build-Time Validation             ║');
+  console.log('║            JONO — SEO Build-Time Validation                  ║');
   console.log('╚══════════════════════════════════════════════════════════════╝');
 
   validateIndexHtml(read(files.indexHtml));

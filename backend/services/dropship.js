@@ -129,7 +129,7 @@ async function getLogisticName(token, fromCountry, toCountry, products) {
 /**
  * Send a group of order items to the CJ Dropshipping API.
  *
- * @param {number}   orderId              Internal Drip Street order ID
+ * @param {number}   orderId              Internal JONO order ID
  * @param {object}   shippingDestination  { firstName, lastName, customerName, customerEmail, phone, addressLine1, addressLine2, city, region, postalCode, country }
  * @param {Array}    items                order_items rows (supplier_id='dropship')
  * @returns {Promise<{ref: string}>}      Supplier order reference

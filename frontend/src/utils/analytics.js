@@ -309,7 +309,7 @@ export function trackPurchase(info) {
 // --- Manny Funnel Tracking ---
 function notifyManny(eventType, payload) {
   let visitor_id = 'unknown';
-  try { visitor_id = localStorage.getItem('drip_street_session_id') || 'unknown'; } catch(e) {}
+  try { visitor_id = localStorage.getItem('jono_session_id') || localStorage.getItem('jono_visitor_id') || localStorage.getItem('drip_street_session_id') || 'unknown'; } catch(e) {}
   
   fetch('/api/analytics/event', {
     method: 'POST',

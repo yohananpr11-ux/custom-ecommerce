@@ -24,7 +24,7 @@ const esc = (v) => String(v == null ? '' : v)
 const getAbsoluteUrl = (url) => {
   if (!url) return '';
   if (url.startsWith('http')) return url;
-  return `https://dripstreetshop.com${url.startsWith('/') ? '' : '/'}${url}`;
+  return `https://shopjono.com${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
 /**
@@ -41,9 +41,9 @@ router.get('/google', async (req, res) => {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
     xml += `<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">\n`;
     xml += `  <channel>\n`;
-    xml += `    <title>Drip Street Shop</title>\n`;
-    xml += `    <link>https://dripstreetshop.com</link>\n`;
-    xml += `    <description>Premium minimalist streetwear built for confidence. oversized tees, summer tanks, and high-quality basics.</description>\n`;
+    xml += `    <title>JONO</title>\n`;
+    xml += `    <link>https://shopjono.com</link>\n`;
+    xml += `    <description>Premium minimalist streetwear built for confidence. Heavyweight graphic tees and stainless steel jewelry.</description>\n`;
 
     // 2. Query variants for each product and build items
     for (const product of products) {
@@ -52,7 +52,7 @@ router.get('/google', async (req, res) => {
         [product.id]
       );
 
-      const link = `https://dripstreetshop.com/product/${product.id}`;
+      const link = `https://shopjono.com/product/${product.id}`;
 
       if (variants && variants.length > 0) {
         // Expose each enabled variant as a distinct feed item grouped by item_group_id
@@ -80,7 +80,7 @@ router.get('/google', async (req, res) => {
           xml += `      <g:price>${price.toFixed(2)} ILS</g:price>\n`;
           if (variant.color) xml += `      <g:color>${esc(variant.color)}</g:color>\n`;
           if (variant.size) xml += `      <g:size>${esc(variant.size)}</g:size>\n`;
-          xml += `      <g:brand>Drip Street</g:brand>\n`;
+          xml += `      <g:brand>JONO</g:brand>\n`;
           xml += `      <g:google_product_category>1604</g:google_product_category>\n`;
           xml += `      <g:age_group>adult</g:age_group>\n`;
           xml += `      <g:gender>unisex</g:gender>\n`;
@@ -98,7 +98,7 @@ router.get('/google', async (req, res) => {
         xml += `      <g:condition>new</g:condition>\n`;
         xml += `      <g:availability>in stock</g:availability>\n`;
         xml += `      <g:price>${Number(product.price).toFixed(2)} ILS</g:price>\n`;
-        xml += `      <g:brand>Drip Street</g:brand>\n`;
+        xml += `      <g:brand>JONO</g:brand>\n`;
         xml += `      <g:google_product_category>1604</g:google_product_category>\n`;
         xml += `      <g:age_group>adult</g:age_group>\n`;
         xml += `      <g:gender>unisex</g:gender>\n`;

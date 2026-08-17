@@ -924,7 +924,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
   const emailItems = items.map((item) => ({
-    title: item.title || 'Drip Street Item',
+    title: item.title || 'JONO Item',
     color: item.selectedColor || null,
     size: item.selectedSize || null,
     quantity: item.quantity,
@@ -1685,7 +1685,7 @@ const lookupCountryFromIp = async (ip) => {
     ? `https://ipapi.co/${encodeURIComponent(ip)}/country/?key=${encodeURIComponent(apiKey)}`
     : `https://ipapi.co/${encodeURIComponent(ip)}/country/`;
   try {
-    const resp = await axios.get(url, { timeout: 3000, validateStatus: () => true, headers: { 'User-Agent': 'dripstreetshop/1.0' } });
+    const resp = await axios.get(url, { timeout: 3000, validateStatus: () => true, headers: { 'User-Agent': 'shopjono/1.0' } });
     const country = String(resp.data || '').trim().toUpperCase();
     if (/^[A-Z]{2}$/.test(country)) {
       GEO_CACHE.set(ip, { country, expiresAt: Date.now() + GEO_CACHE_TTL_MS });
@@ -2323,7 +2323,7 @@ app.post('/api/admin/design/:jobId/publish', async (req, res) => {
        VALUES (?, ?, ?, ?, 999, 'printify', ?)`,
       [
         job.title,
-        `${job.title} — Drip Street drop. Premium minimal streetwear.`,
+        `${job.title} — JONO drop. Premium minimal streetwear.`,
         job.priceILS,
         job.mockupUrl,
         job.printifyProductId,
@@ -2345,7 +2345,7 @@ app.post('/api/admin/design/:jobId/publish', async (req, res) => {
       success: true,
       jobId,
       productId: productInsert.lastID,
-      publicUrl: `https://dripstreetshop.com/product/${productInsert.lastID}`,
+      publicUrl: `https://shopjono.com/product/${productInsert.lastID}`,
     });
   } catch (err) {
     const upstream = err.response?.data || err.message;
@@ -2363,7 +2363,7 @@ app.post('/api/admin/design/:jobId/publish', async (req, res) => {
 // Used by MENI's Telegram flow when Groq suggests 3 names and the human
 // picks one before publishing. Only touches our local design_jobs row —
 // the storefront product name on publish reads from this column, so the
-// chosen title propagates to dripstreetshop.com. We deliberately do NOT
+// chosen title propagates to shopjono.com. We deliberately do NOT
 // sync the new title back to Printify (their dashboard product name is
 // invisible to customers and is not worth a second API round trip).
 app.patch('/api/admin/design/:jobId/title', express.json(), async (req, res) => {
@@ -2533,7 +2533,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>DRIP STREET | SUBSCRIPTION</title>
+      <title>JONO | SUBSCRIPTION</title>
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -2752,7 +2752,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
       <div class="bg-glow-1"></div>
       <div class="bg-glow-2"></div>
       <div class="container">
-        <div class="logo">DRIP STREET</div>
+        <div class="logo">JONO</div>
         <div class="icon-wrapper">
           <div id="status-icon" class="icon ${statusClass}">
             ${statusClass === 'success' ? '✓' : statusClass === 'warning' ? '?' : '⚠'}
@@ -2768,7 +2768,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
           ` : '')}
           <a href="https://www.shopjono.com" class="btn btn-secondary">Return to Store</a>
         </div>
-        <div class="footer-brand">&copy; 2026 DRIP STREET SHP</div>
+        <div class="footer-brand">&copy; 2026 JONO</div>
       </div>
 
       <script>
@@ -3238,7 +3238,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
             currency_code: requestedCurrency,
             value: amount,
           },
-          description: `Drip Street order #${orderId}`,
+          description: `JONO order #${orderId}`,
         },
       ],
       application_context: {
@@ -3563,7 +3563,7 @@ app.post('/api/checkout/stripe', async (req, res) => {
       line_items: [{
         price_data: {
           currency: 'ils',
-          product_data: { name: `Drip Street bundle order #${orderId}` },
+          product_data: { name: `JONO bundle order #${orderId}` },
           unit_amount: stripeAmountAgorot,
         },
         quantity: 1,
@@ -3949,7 +3949,7 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
           const emailItems = items.map((item) => ({
-            title: item.title || 'Drip Street Item',
+            title: item.title || 'JONO Item',
             color: item.selectedColor || null,
             size: item.selectedSize || null,
             quantity: item.quantity,
@@ -4199,7 +4199,7 @@ if (require.main === module) {
       {
         id: 16, // Canonical ID — must match frontend routes (/product/16)
         title: 'Six-sided Grinding Cuban Link Chain | Premium Jewelry',
-        description: 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the Drip Street jewelry line.',
+        description: 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the JONO jewelry line.',
         price: 149.00,
         priceUSD: 39.90,
         imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',

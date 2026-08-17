@@ -16,7 +16,7 @@ function normalizeSegment(value, fallback) {
 function buildMockupPublicId(productSlug, view) {
   const safeSlug = normalizeSegment(productSlug, 'untitled-product');
   const safeView = normalizeSegment(view, 'front');
-  return `dripstreet/mockups/${safeSlug}/${safeView}`;
+  return `jono/mockups/${safeSlug}/${safeView}`;
 }
 
 function serializeContext(context = {}) {
@@ -69,7 +69,7 @@ class CloudinaryUploader {
     this.cloudinaryUrl = options.cloudinaryUrl || process.env.CLOUDINARY_URL || '';
     this.defaultTags = Array.isArray(options.defaultTags)
       ? options.defaultTags.filter(Boolean)
-      : ['dripstreet', 'custom-mockup'];
+      : ['jono', 'custom-mockup'];
 
     if (this.cloudinaryUrl) {
       process.env.CLOUDINARY_URL = this.cloudinaryUrl;
