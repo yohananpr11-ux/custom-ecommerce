@@ -89,7 +89,7 @@ module.exports = function (processPaidOrderFulfillment) {
       console.log(`[Simulation] Mock order items for order #${orderId} inserted.`);
 
       // Now update status to paid (to trigger fulfillment flow)
-      await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
+      await dbRunAsync(`UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ?`, [orderId]);
 
       console.log(`[Simulation] Executing processPaidOrderFulfillment for order #${orderId}...`);
       // Run the full checkout-to-fulfillment pipeline!

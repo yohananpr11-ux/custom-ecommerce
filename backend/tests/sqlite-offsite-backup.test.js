@@ -24,6 +24,8 @@ const { PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlite-offsite-backup-test-'));
 const tmpDb = path.join(tmpDir, 'isolated.db');
 process.env.DB_PATH = tmpDb;
+process.env.NODE_ENV = 'test';
+process.env.DISABLE_BACKGROUND_JOBS = 'true';
 
 const sqliteBackup = require('../services/sqlite-backup');
 const offsite = require('../services/sqlite-offsite-backup');
@@ -782,9 +784,10 @@ test('startScheduler threads its resolved env and injected off-site test depende
   // so a fixed small number of microtask ticks isn't reliable -- poll for
   // the effect instead, bounded so a genuine regression still fails fast.
   const deadline = Date.now() + 5000;
-  while (client.calls.length === 0 && Date.now() < deadline) {
+  while (client.calls.length < 2 && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+  await new Promise((resolve) => setTimeout(resolve, 50));
 
   assert.ok(
     client.calls.some((c) => c instanceof PutObjectCommand),

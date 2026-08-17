@@ -87,6 +87,7 @@ const NOTIFICATION_POLICY = Object.freeze({
     'critical_infra_failure',
     'manual_fulfillment_required',
     'internal_server_error',
+    'daily_owner_report',
   ]),
   DAILY: Object.freeze([
     'routine_sync_success',
@@ -161,7 +162,7 @@ async function notify({ severity, eventType, message, dedupKey, cooldownMs } = {
     telegramResult = await telegram.sendMessage(`${prefix}${message}${groupedSuffix}`);
   } catch (err) {
     console.error(`[owner-notifications] Telegram send threw error:`, err.message);
-    telegramResult = { ok: false, skipped: false, reason: 'exception', error: err.message };
+    telegramResult = { ok: false, skipped: false, reason: 'exception', error: err.message, deliveryAmbiguous: !err.response };
   }
 
   const isSuccess = Boolean(telegramResult && telegramResult.ok === true);

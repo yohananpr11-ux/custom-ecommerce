@@ -111,14 +111,14 @@ class TelegramService {
     // fixed-shape, non-PII summary (byte length only) is ever logged.
     if (!this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN') {
       console.warn(`⚠️ Telegram token not configured. Skipping message (length=${String(text || '').length}).`);
-      return { ok: false, skipped: true, reason: 'token_not_configured' };
+      return { ok: false, skipped: true, reason: 'token_not_configured', deliveryAmbiguous: false };
     }
 
     const resolvedChatId = await this.ensureChatId();
 
     if (!resolvedChatId) {
       console.warn(`⚠️ Telegram chat id not configured. Skipping message (length=${String(text || '').length}).`);
-      return { ok: false, skipped: true, reason: 'chat_id_not_configured' };
+      return { ok: false, skipped: true, reason: 'chat_id_not_configured', deliveryAmbiguous: false };
     }
 
     try {
@@ -126,9 +126,9 @@ class TelegramService {
         chat_id: resolvedChatId,
         text: text,
         parse_mode: 'HTML'
-      });
+      }, { timeout: 15000 });
       console.log('✅ Telegram alert sent.');
-      return { ok: true, status: response.status };
+      return { ok: true, status: response.status, deliveryAmbiguous: false };
     } catch (error) {
       // Only a coarse, safe status/error-code summary is ever logged --
       // never the raw response body, which is not guaranteed to be free of
@@ -137,7 +137,10 @@ class TelegramService {
       const telegramErrorCode = error.response && error.response.data && error.response.data.error_code;
       const details = status ? `HTTP_${status}${telegramErrorCode ? ` (telegram_error_code=${telegramErrorCode})` : ''}` : (error.code || 'UNKNOWN_ERROR');
       console.error('❌ Failed to send Telegram alert:', details);
-      return { ok: false, skipped: false, reason: 'telegram_api_error', details };
+      // Transport failure with NO HTTP response from Telegram (e.g. timeout, ECONNRESET, network loss after request transmitted)
+      // makes delivery ambiguous (Telegram server may have processed the request even though the client never received the response).
+      const deliveryAmbiguous = !error.response;
+      return { ok: false, skipped: false, reason: 'telegram_api_error', details, deliveryAmbiguous };
     }
   }
 

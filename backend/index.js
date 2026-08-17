@@ -1405,7 +1405,7 @@ app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async 
     // crash/restart right after it can never strand an already-charged
     // Stripe payment behind an already-reserved, now-permanently-"duplicate"
     // webhook event id.
-    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [orderId]);
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'paid'`, [orderId]);
     if (!claim.changes) {
       return res.json({ received: true, duplicate: true, provider: 'stripe', reason: 'already_paid' });
     }
@@ -1528,7 +1528,7 @@ app.post('/api/webhooks/payplus', express.raw({ type: 'application/json' }), asy
     // crash/restart right after it can never strand an already-charged
     // PayPlus payment behind an already-reserved, now-permanently-
     // "duplicate" webhook event id.
-    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [orderId]);
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'paid'`, [orderId]);
     if (!claim.changes) {
       return res.json({ received: true, duplicate: true, provider: 'payplus', reason: 'already_paid' });
     }
@@ -3328,16 +3328,10 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     // call of its own. A missing/legacy order (paypal_order_id not yet
     // populated) or any normal order (which can never reach this status)
     // simply falls through to the existing capture flow unchanged.
-    // Startup-race guard: on a freshly (re)started process, this query can
-    // in principle run before db.js's migration Promise.all has finished
-    // adding this column -- index.js does not currently await that promise
-    // before app.listen(). Treated as "no match" (falls through to the
-    // existing, unmodified capture flow) rather than a hard 500: a real
-    // customer's legitimate capture succeeding is strictly more important
-    // than this specific safeguard being active during the brief startup
-    // window before migrations finish. This is a pre-existing startup
-    // ordering gap (shared by every migration-added column), not something
-    // newly introduced here -- out of scope to fix broadly in this change.
+    // Schema readiness: db.readyPromise is awaited before app.listen() starts
+    // accepting traffic, ensuring orders.paypal_order_id is present. A try/catch
+    // is preserved here for defense-in-depth so unexpected SQL lookup failures fall
+    // through to the standard capture flow rather than returning an unhandled 500.
     let preCaptureOrder = null;
     try {
       preCaptureOrder = await dbGetAsync(`SELECT id, status FROM orders WHERE paypal_order_id = ?`, [orderID]);
@@ -3433,7 +3427,7 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     // window in which a crash can leave it half-applied, and it doubles as
     // the concurrency guard for two overlapping captures of the same order.
     const captureId = capture?.id || orderID;
-    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid' WHERE id = ? AND status != 'paid'`, [localOrderId]);
+    const claim = await dbRunAsync(`UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'paid'`, [localOrderId]);
     if (!claim.changes) {
       return res.json({ success: true, duplicate: true, orderId: localOrderId });
     }
@@ -4075,11 +4069,20 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
 // hermetic verification runs that must make zero outbound network calls.
 const backgroundJobsDisabled = process.env.DISABLE_BACKGROUND_JOBS === 'true';
 if (require.main === module) {
-if (!backgroundJobsDisabled) pricingEngine.start();
+  (async () => {
+    try {
+      await db.readyPromise;
+      console.log('✅ SQLite schema and migrations ready.');
+    } catch (err) {
+      console.error('❌ FATAL: Database initialization / migration failed:', err.message);
+      process.exit(1);
+    }
 
-app.listen(PORT, () => {
-  console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
-  console.log(`APP_RUNTIME_NODE_VERSION=${process.version}`);
+    if (!backgroundJobsDisabled) pricingEngine.start();
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Headless E-commerce Backend running on http://localhost:${PORT}`);
+      console.log(`APP_RUNTIME_NODE_VERSION=${process.version}`);
 
   if (backgroundJobsDisabled) {
     console.log('⏭️ DISABLE_BACKGROUND_JOBS=true — skipping auto-sync, catalog seeding, and all cron registrations.');
@@ -4330,6 +4333,14 @@ app.listen(PORT, () => {
   if (sqliteBackup.startScheduler()) {
     console.log('✅ SQLite backup scheduler started');
   }
+
+  // ---- DAILY OWNER REPORT: Daily at 22:00 Europe/Jerusalem (PR #36) ----
+  const dailyOwnerReport = require('./services/daily-owner-report');
+  dailyOwnerReport.startDailyReportScheduler({ db });
+  });
+})().catch((fatalErr) => {
+  console.error('Fatal startup error:', fatalErr);
+  process.exit(1);
 });
 }
 
@@ -4444,4 +4455,4 @@ app.use((err, req, res, next) => {
 });
 
 // Exported for tests only (no effect when run directly via `node index.js`).
-module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing, isCustomerFacingPath, recordCustomerFacing5xxIssue };
+module.exports = { app, validatePaypalCaptureAgainstExpectation, processPaidOrderFulfillment, calculateOrderPricing, isCustomerFacingPath, recordCustomerFacing5xxIssue, readyPromise: db.readyPromise };
