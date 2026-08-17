@@ -1,8 +1,8 @@
-# DRIP STREET Architecture & Technical Audit Report
+# Legacy Architecture & Technical Audit Report
 
 ## 1. Live Environment & Tech Stack
 
-**Production domain:** https://dripstreetshop.com
+**Legacy domain:** https://legacy-domain.example
 
 **Deployment architecture:**
 - **Frontend:** Vercel
@@ -241,7 +241,7 @@ The storefront implements runtime SEO adjustments tied to locale.
   - `document.documentElement.dir`
 
 **Base homepage metadata:**
-- English title: `DRIP STREET | Minimalist Streetwear`
+- English title: `Legacy Brand | Minimalist Streetwear`
 - English description: `Premium minimal streetwear built for confidence. Shop oversized tees, summer tanks, and high-quality basics. Worldwide shipping.`
 - Hebrew versions are also defined in the translation table
 

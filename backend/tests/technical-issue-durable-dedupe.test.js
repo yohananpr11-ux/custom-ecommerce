@@ -28,6 +28,7 @@ process.env.PAYPAL_CLIENT_ID = 'test-paypal-client-id-durable';
 process.env.PAYPAL_CLIENT_SECRET = 'test-paypal-client-secret-durable';
 process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
+process.env.JONO_ADMIN_SECRET = 'test-admin-secret-durable';
 process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-durable';
 
 // require index.js (not strictly needed here, but keeps this file's DB

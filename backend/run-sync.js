@@ -22,11 +22,11 @@
 //
 // Usage:
 //   SYNC_BACKEND_URL=https://custom-ecommerce-qp30.onrender.com \
-//   DRIP_ADMIN_SECRET=*** \
+//   JONO_ADMIN_SECRET=*** \
 //     node run-sync.js
 //
 // Hard safety properties, all enforced below, not just documented:
-//   - SYNC_BACKEND_URL and DRIP_ADMIN_SECRET must both be set explicitly --
+//   - SYNC_BACKEND_URL and JONO_ADMIN_SECRET must both be set explicitly --
 //     there is no fallback to any default host, so a missing env var can
 //     never silently target the wrong environment;
 //   - performs exactly one POST, never retries, never loops;
@@ -54,9 +54,9 @@ if (!backendBaseUrl) {
   fail('SYNC_BACKEND_URL must be set explicitly (e.g. https://custom-ecommerce-qp30.onrender.com). Refusing to guess a target.');
 }
 
-const adminSecret = process.env.DRIP_ADMIN_SECRET;
+const adminSecret = process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET;
 if (!adminSecret) {
-  fail('DRIP_ADMIN_SECRET must be set explicitly. Refusing to call an unauthenticated request.');
+  fail('JONO_ADMIN_SECRET must be set explicitly. Refusing to call an unauthenticated request.');
 }
 
 let syncUrl;

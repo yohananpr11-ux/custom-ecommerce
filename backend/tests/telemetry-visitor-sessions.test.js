@@ -24,6 +24,7 @@ process.env.PAYPAL_CLIENT_ID = 'test-paypal-client-id-telemetry';
 process.env.PAYPAL_CLIENT_SECRET = 'test-paypal-client-secret-telemetry';
 process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
+process.env.JONO_ADMIN_SECRET = 'test-admin-secret-telemetry';
 process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-telemetry';
 
 const { app } = require('../index.js');

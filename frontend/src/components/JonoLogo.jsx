@@ -1,8 +1,6 @@
 /**
- * JonoLogo — cursive signature wordmark + bird mark, adapted from the
- * approved JOAKIM brand assets (integration/joakim-phase-1) with the
- * name changed to Jono. No image file dependency; renders consistently
- * in all environments.
+ * JonoLogo — cursive signature wordmark + bird mark for JONO brand.
+ * No image file dependency; renders consistently in all environments.
  */
 const SIZES = {
   large:     { fontSize: '52px', gap: '10px', birdSize: 18 },

@@ -357,7 +357,7 @@ a,
 }
 
 /* Clean transparent nav overlaid on the homepage hero — matches the
-   approved JOAKIM reference. Search/cart aren't gone, they're one
+   approved JONO reference. Search/cart aren't gone, they're one
    scroll away: the regular glassmorphic .header takes over the moment
    isHeaderScrolled flips true. */
 .header-hero-transparent {

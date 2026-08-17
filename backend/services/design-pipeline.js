@@ -139,12 +139,12 @@ const uploadImageFromUrl = async (filename, sourceUrl) => {
   return res.data;
 };
 
-// JOAKIM neck label asset: 750x750 300 DPI DTF transparent background monogram.
+// JONO neck label asset: 750x750 300 DPI DTF transparent background monogram.
 // Asset ID in Printify library: 6a72e86f376cb40ed1f472c2.
 const PRINTIFY_NECK_LABEL_IMAGE_ID = env('PRINTIFY_NECK_LABEL_IMAGE_ID', '6a72e86f376cb40ed1f472c2');
 const NECK_LABEL_SOURCE_URL = env(
   'NECK_LABEL_SOURCE_URL',
-  'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/jono-logo-transparent.png'
+  'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/main/frontend/public/jono-logo-transparent.png'
 );
 let neckLabelImageIdCache = null;
 

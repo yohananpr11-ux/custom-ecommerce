@@ -290,10 +290,6 @@ const CORS_ALLOWED_ORIGINS = Array.from(new Set([
   // JONO domain — exact-match strings only, no wildcard.
   'https://shopjono.com',
   'https://www.shopjono.com',
-  'https://shopjoakim.com',
-  'https://www.shopjoakim.com',
-  'https://dripstreetshop.com',
-  'https://www.dripstreetshop.com',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:4173',
@@ -1722,7 +1718,7 @@ app.get('/api/geolocation', async (req, res) => {
 
 // Get all products (list view - includes backImageUrl for hover effect and USD prices)
 app.get('/api/products', (req, res) => {
-  db.all("SELECT id, title, description, price, priceUSD, imageUrl, backImageUrl, stock, type FROM products", [], (err, rows) => {
+  db.all("SELECT id, title, description, price, priceUSD, imageUrl, backImageUrl, stock, type FROM products WHERE COALESCE(is_hidden, 0) = 0", [], (err, rows) => {
     if (err) {
       res.status(500).json({ error: err.message });
       return;
@@ -1744,8 +1740,8 @@ app.get('/api/products', (req, res) => {
 // Get active product IDs for sitemap/prerender pipelines.
 app.get('/api/products/active-ids', async (req, res) => {
   try {
-    const allProducts = await dbAllAsync('SELECT id, type FROM products');
-    const hasPrintifyProducts = allProducts.some((row) => row.type === 'printify');
+    const allProducts = await dbAllAsync('SELECT id, type, is_hidden FROM products');
+    const hasPrintifyProducts = allProducts.some((row) => row.type === 'printify' && !row.is_hidden);
     const visibilityFilter = hasPrintifyProducts
       ? "AND (p.type = 'printify' OR p.type = 'dropship')"
       : '';
@@ -1755,6 +1751,7 @@ app.get('/api/products/active-ids', async (req, res) => {
        FROM products p
        LEFT JOIN product_variants pv ON pv.productId = p.id
        WHERE COALESCE(p.stock, 0) > 0
+         AND COALESCE(p.is_hidden, 0) = 0
          ${visibilityFilter}
          AND (
            pv.id IS NULL
@@ -1873,6 +1870,10 @@ app.get('/api/products/:id', (req, res) => {
       // grant access even accidentally). The token's own transport-of-record
       // to the browser is a URL FRAGMENT (#access=...), which browsers never
       // send to any server at all -- see ProductDetailRoute in App.jsx.
+      if (row.is_hidden === 1 && row.supplier_id !== 'manual') {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+
       if (row.supplier_id === 'manual') {
         const headerToken = req.get('x-access-token');
         const providedToken = typeof headerToken === 'string' ? headerToken : '';
@@ -2060,10 +2061,10 @@ const timingSafeEqualStr = (a, b) => {
 
 app.post('/api/admin/set-coupon', (req, res) => {
   // Auth: shared secret header. The endpoint mutates the public storefront state,
-  // so it must never be reachable without DRIP_ADMIN_SECRET configured.
-  const expected = process.env.DRIP_ADMIN_SECRET;
+  // so it must never be reachable without JONO_ADMIN_SECRET configured.
+  const expected = process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET;
   if (!expected) {
-    return res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+    return res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
   }
   const provided = req.get('X-Admin-Secret') || '';
   if (!timingSafeEqualStr(provided, expected)) {
@@ -2080,39 +2081,53 @@ app.post('/api/admin/set-coupon', (req, res) => {
   }
   setCouponCallTimestamps.push(now);
 
-  const { code, discount_pct, duration_hours } = req.body;
-  if (!code || !discount_pct) {
-    currentActiveCoupon = null; // Clear coupon if empty
-    console.log(`[coupon] cleared by admin at ${new Date(now).toISOString()}`);
-    return res.json({ success: true, message: 'Coupon cleared.' });
+  const { couponCode, discountPercent } = req.body || {};
+  if (!couponCode || typeof couponCode !== 'string') {
+    return res.status(400).json({ error: 'couponCode string required' });
+  }
+  if (typeof discountPercent !== 'number' || discountPercent <= 0 || discountPercent > 100) {
+    return res.status(400).json({ error: 'discountPercent must be a number between 1 and 100' });
   }
 
-  currentActiveCoupon = { code, discount_pct };
-  console.log(`[coupon] set ${code} ${discount_pct}% for ${duration_hours || 0}h at ${new Date(now).toISOString()}`);
-
-  // Clear coupon after duration
-  if (duration_hours) {
-    setTimeout(() => {
-      if (currentActiveCoupon && currentActiveCoupon.code === code) {
-        currentActiveCoupon = null;
-        console.log(`Coupon ${code} expired.`);
+  // Idempotent: upsert into leads table as a promo code with special email prefix
+  const promoEmail = `promo-${couponCode.toLowerCase()}@system.internal`;
+  db.run(
+    `INSERT INTO leads (email, promo_code, is_used)
+     VALUES (?, ?, 0)
+     ON CONFLICT(email) DO UPDATE SET promo_code = excluded.promo_code, is_used = 0`,
+    [promoEmail, couponCode.toUpperCase()],
+    (err) => {
+      if (err) {
+        // Fallback: try inserting without conflict clause if table has no UNIQUE(email) constraint
+        db.run(
+          `INSERT OR REPLACE INTO leads (email, promo_code, is_used) VALUES (?, ?, 0)`,
+          [promoEmail, couponCode.toUpperCase()],
+          (err2) => {
+            if (err2) {
+              console.error('Failed to set coupon:', err2.message);
+              return res.status(500).json({ error: 'Failed to set coupon' });
+            }
+            res.json({ success: true, couponCode: couponCode.toUpperCase(), discountPercent });
+          }
+        );
+        return;
       }
-    }, duration_hours * 60 * 60 * 1000);
-  }
-
-  res.json({ success: true, message: `Coupon ${code} set to ${discount_pct}% off.` });
+      res.json({ success: true, couponCode: couponCode.toUpperCase(), discountPercent });
+    }
+  );
 });
 
-// Admin Refresh Prices — force-run the pricing engine to re-apply targetPricesILS
-// to all products in the DB. Use this after changing targetPricesILS in pricing.js
-// to push the new prices live without waiting for an extreme FX swing.
+// Manual Price Refresh Endpoint
+// ═══════════════════════════════════════════════════════════════════════════
+// Forces a recalculation of all product prices from supplier costs (Printify
+// and CJ Dropship) using the formula: (cogsUSD * USD_ILS_RATE * 1.6 + 50) * 1.18.
 //
 // Auth: same X-Admin-Secret shared header as set-coupon.
 // Usage: curl -X POST https://.../api/admin/refresh-prices -H "X-Admin-Secret: <secret>"
 app.post('/api/admin/refresh-prices', async (req, res) => {
-  const expected = process.env.DRIP_ADMIN_SECRET;
+  const expected = process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET;
   if (!expected) {
-    return res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+    return res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
   }
   const provided = req.get('X-Admin-Secret') || '';
   if (!timingSafeEqualStr(provided, expected)) {
@@ -2150,7 +2165,7 @@ app.post('/api/admin/refresh-prices', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // Flow:
-//   1. MENI_CORE (Telegram bot) POSTs an image to /api/admin/design/create-draft
+//   1. Telegram bot POSTs an image to /api/admin/design/create-draft
 //      → backend uploads to Printify, creates draft, polls until mockup ready,
 //        stores a row in design_jobs, returns { jobId, mockupUrl, ... }.
 //   2. Bot sends the mockup to the human via Telegram with [✅ Publish] / [❌ Reject].
@@ -2160,16 +2175,16 @@ app.post('/api/admin/refresh-prices', async (req, res) => {
 //   4. On rejection: POST /api/admin/design/:jobId/reject
 //      → backend asks Printify to delete the draft, marks job as rejected.
 //
-// Auth: same DRIP_ADMIN_SECRET header as the other admin endpoints.
+// Auth: same JONO_ADMIN_SECRET header as the other admin endpoints.
 
 // Tee draft requests carry ~5–10MB of base64 image. Apply a generous limit
 // just for this one route so the global 100kb json parser isn't an issue.
 const designJsonParser = express.json({ limit: '15mb' });
 
 const requireAdminAuth = (req, res) => {
-  const expected = process.env.DRIP_ADMIN_SECRET;
+  const expected = process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET;
   if (!expected) {
-    res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+    res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
     return false;
   }
   const provided = req.get('X-Admin-Secret') || '';

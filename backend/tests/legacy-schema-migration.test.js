@@ -268,7 +268,7 @@ test('legacy database upgrade: first initialization creates supplier_fulfillment
   assert.ok('updatedAt' in columnMap);
 
   // UNIQUE(orderId, supplierId) enforced.
-  await run(verifyConn, `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, state) VALUES (1, 'printify', 'joakim-order-1-printify-v1', 'pending')`);
+  await run(verifyConn, `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, state) VALUES (1, 'printify', 'jono-order-1-printify-v1', 'pending')`);
   await assert.rejects(
     () => run(verifyConn, `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, state) VALUES (1, 'printify', 'a-different-external-id', 'pending')`),
     /UNIQUE constraint failed/

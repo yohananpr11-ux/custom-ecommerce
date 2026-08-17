@@ -27,6 +27,7 @@ process.env.PAYPAL_CLIENT_ID = 'test-paypal-client-id-format';
 process.env.PAYPAL_CLIENT_SECRET = 'test-paypal-client-secret-format';
 process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
+process.env.JONO_ADMIN_SECRET = 'test-admin-secret-format';
 process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-format';
 
 const { app, recordCustomerFacing5xxIssue } = require('../index.js');

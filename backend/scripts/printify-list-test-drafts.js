@@ -30,7 +30,7 @@ const TOKEN = process.env.PRINTIFY_API_TOKEN;
 // these phrases is treated as a real product and ignored.
 const TEST_TITLE_PATTERNS = [
   /^SMOKE TEST\b/i,
-  /^(?:DRIP STREET|JONO) DROP\b/i,
+  /^JONO DROP\b/i,
 ];
 
 if (!TOKEN || TOKEN.startsWith('YOUR_')) {

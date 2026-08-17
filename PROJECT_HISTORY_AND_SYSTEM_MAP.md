@@ -28,18 +28,18 @@ The store is live at **https://www.shopjono.com** as of 2026-08-07.
 ### All Branches (36 total)
 ```
 main (current production)
-backup/joakim-wip-2026-08-02       ← WIP snapshot before rebrand, DO NOT MERGE
+backup/legacy-wip-2026-08-02       ← WIP snapshot before rebrand, DO NOT MERGE
 backup-before-i18n-removal
 english-only-release
 feat/approved-pricing-and-dolev-prep      ← PR #19 (merged)
-feat/cors-shopjoakim-domain               ← PR #13 (merged)
+feat/cors-shoplegacy-domain               ← PR #13 (merged)
 feat/fabric-upgrade-11-to-1717-plus-5-cvc ← PR #18 (merged)
 feat/full-store-ready-live                ← PR #20 (merged)
-feat/joakim-storefront-rebrand            ← PR #16 (merged)
+feat/legacy-storefront-rebrand            ← PR #16 (merged)
 feat/mani-v2-jewelry-fabric-audit         ← PR #17 (merged)
 feat/paypal-standard-card-button          ← PR #12 (merged)
 feature/antigravity-ui-redesign
-fix/joakim-neck-label-final-5c            ← PR #15 (merged)
+fix/legacy-neck-label-final-5c            ← PR #15 (merged)
 fix/paid-order-e2e-readiness
 fix/paypal-silent-cancel-observability    ← PR #11 (merged)
 fix/phase-9-mobile-responsiveness
@@ -49,13 +49,13 @@ fix/safe-manual-payment-test-product
 fix/shipping-exempt-manual-test-product-25
 fix/startup-safety-observability
 hotfix/shop-down-timeout                  ← PR #21 (merged) — fixed ERR_CONNECTION_TIMED_OUT
-integration/joakim-phase-1                ← Brand assets (JOAKIM logos, neck label)
-integration/joakim-phase-2-brand-shell    ← Metadata, footer
-integration/joakim-phase-3a-storefront    ← Full storefront rebrand
-integration/joakim-phase-3b-customer-channels
-integration/joakim-phase-3c-backend-copy
-integration/joakim-phase-4b-favicon
-refactor/rebrand-joakim-to-jono           ← PR #22 (merged) — JOAKIM→JONO
+integration/legacy-phase-1                ← Brand assets (legacy brand logos, neck label)
+integration/legacy-phase-2-brand-shell    ← Metadata, footer
+integration/legacy-phase-3a-storefront    ← Full storefront rebrand
+integration/legacy-phase-3b-customer-channels
+integration/legacy-phase-3c-backend-copy
+integration/legacy-phase-4b-favicon
+refactor/rebrand-legacy-to-jono           ← PR #22 (merged) — legacy brand→JONO
 security/remove-hardcoded-printify-token  ← PR #14 (merged) — CRITICAL security fix
 stabilize/payments-p0
 stabilize/payments-p0-clean
@@ -63,21 +63,21 @@ test/neck-label-draft-5b
 feat/automation/printify-pipeline
 ```
 
-### ⚠️ CRITICAL NOTE: integration/joakim-phase-1 branch
+### ⚠️ CRITICAL NOTE: integration/legacy-phase-1 branch
 The neck label source URL in design-pipeline.js points to a raw file in this branch:
-`https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/jono-logo-transparent.png`
+`https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/legacy-phase-1/frontend/public/jono-logo-transparent.png`
 **This URL returns HTTP 404** — the file doesn't exist there by that name.
 This means Printify neck label uploads WILL FAIL unless NECK_LABEL_SOURCE_URL env var is set on Render.
 
 ---
 
-## 2. FULL TIMELINE — DRIP STREET → JOAKIM → JONO
+## 2. FULL TIMELINE — legacy brand → legacy brand → JONO
 
 ```
 DATE        COMMIT(s)     EVENT
 ──────────────────────────────────────────────────────────────────
-~2025 Q4    early         DRIP STREET launched: Gildan blanks, Bella+Canvas 3001 standard
-                          Domain: dripstreetshop.com
+~2025 Q4    early         legacy brand launched: Gildan blanks, Bella+Canvas 3001 standard
+                          Domain: legacy-domain.example
                           Brand: "D" metallic logo (logo-new.png still exists in repo)
                           Products: Softstyle tees ₪89.90, Bella ₪119.90, Hoodies ₪159.90
 
@@ -87,7 +87,7 @@ DATE        COMMIT(s)     EVENT
                           Phase 12: Logo rembg (metallic D, logo-new.png)
                           PR #11: PayPal silent cancel observability
                           PR #12: PayPal Standard card button
-                          PR #13: CORS for shopjoakim.com
+                          PR #13: CORS for legacy-domain.example
 
 2026 Q2     PR #14        SECURITY: Removed hardcoded Printify token from run-sync.js
             6ef4d7b       Critical fix — token was in git history
@@ -95,10 +95,10 @@ DATE        COMMIT(s)     EVENT
             PR #15        Neck label fix — inner_neck asset 6a72e86f376cb40ed1f472c2
             6a05f90
 
-            PR #16        REBRAND 1: DRIP STREET → JOAKIM
-            31585b7       Reason: Legal issues with DRIP STREET name
-                          Domain: shopjoakim.com (added to CORS)
-                          Design: kept D logo, added JOAKIM text
+            PR #16        REBRAND 1: legacy brand → legacy brand
+            31585b7       Reason: Legal issues with legacy brand name
+                          Domain: legacy-domain.example (added to CORS)
+                          Design: kept D logo, added legacy brand text
 
             PR #17        Mani V2: Real-time Telegram intelligence + bot detection + daily report
             004ec41       Added: botDetector.js, daily cron 23:00, visit alerts
@@ -117,7 +117,7 @@ DATE        COMMIT(s)     EVENT
 2026-08     hotfix/PR #21 ERR_CONNECTION_TIMED_OUT — Namecheap DNS pointed to parking IP
                           Fixed: DNS A @ 216.198.79.1, CNAME www → vercel-dns
 
-2026-08-07  PR #22        REBRAND 2: JOAKIM → JONO
+2026-08-07  PR #22        REBRAND 2: legacy brand → JONO
             8a1b38e       Reason: Brand pivot. Yohanan=John=JONO. Freedom/landscape vibe.
                           Domain: shopjono.com (already purchased)
                           21 products renamed, all SEO updated
@@ -175,7 +175,7 @@ DATE        COMMIT(s)     EVENT
 │     Logo: JonoLogo.jsx (text)     │       │     • PAYPAL_CLIENT_ID (secret)      │
 │     Hero: /hero.png background    │       │     • PAYPAL_CLIENT_SECRET (secret)  │
 └─────────────────┬─────────────────┘       │     • CJ_API_KEY (secret)            │
-                  │ fetch API calls          │     • DRIP_ADMIN_SECRET (secret)     │
+                  │ fetch API calls          │     • JONO_ADMIN_SECRET (secret)     │
                   │ CORS allowed             │     • STRIPE_SECRET_KEY (secret)     │
                   ▼                          └──────────────┬───────────────────────┘
          User's Browser                                     │ API calls
@@ -213,7 +213,7 @@ DATE        COMMIT(s)     EVENT
 | Current Blueprints | 706 (CC 1717), 3013 (CVC 3001CVC), 180 (Gildan 18500) |
 | Default Provider | 99 (Printify Choice) |
 | Neck label asset ID | 6a72e86f376cb40ed1f472c2 |
-| Neck label URL | **BROKEN** — points to integration/joakim-phase-1 branch (404) |
+| Neck label URL | **BROKEN** — points to integration/legacy-phase-1 branch (404) |
 | Webhook | /api/webhooks/printify on Render |
 
 **Products 1-11 (Heavyweight Tees — Blueprint 706 CC 1717):**
@@ -317,7 +317,7 @@ custom-ecommerce/
 │   ├── vercel.json                   ← SPA rewrite (/* → /index.html)
 │   ├── public/
 │   │   ├── hero.png                  ← Hero background image (13KB)
-│   │   ├── logo-new.png              ← OLD Drip Street "D" logo (276KB) — still exists, not used
+│   │   ├── logo-new.png              ← OLD legacy brand "D" logo (276KB) — still exists, not used
 │   │   ├── jono-approved-full-logo.png ← Copy of shirt-black-white-logo.png (417KB) ⚠️ wrong file
 │   │   ├── jono-favicon.png          ← Copy of apple-touch-icon.png (3.6KB) ✅
 │   │   ├── jono-og.png               ← Copy of android-chrome-512x512.png (11KB) ✅
@@ -359,7 +359,7 @@ custom-ecommerce/
 ├── docs/                             ← Untracked — not in git
 ├── render.yaml                       ← Render deployment config
 ├── MANI_V2_PROOF.md                  ← Untracked — pricing proof doc
-├── REPORT_JOAKIM_DESIGN_AUDIT.md     ← Untracked — design audit
+├── REPORT_legacy brand_DESIGN_AUDIT.md     ← Untracked — design audit
 └── PROJECT_HISTORY_AND_SYSTEM_MAP.md ← This file
 ```
 
@@ -475,7 +475,7 @@ All secrets are in Render environment variables (never in git):
 - CJ_API_KEY
 - STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET
 - PAYPLUS_API_KEY / PAYPLUS_SECRET_KEY
-- DRIP_ADMIN_SECRET (admin endpoints auth)
+- JONO_ADMIN_SECRET (admin endpoints auth)
 - RESEND_API_KEY
 - CLOUDINARY_URL
 
@@ -487,10 +487,10 @@ All secrets are in Render environment variables (never in git):
 https://custom-ecommerce-seven.vercel.app
 https://shopjono.com
 https://www.shopjono.com
-https://shopjoakim.com        (kept for transition)
-https://www.shopjoakim.com    (kept for transition)
-https://dripstreetshop.com    (kept for transition)
-https://www.dripstreetshop.com(kept for transition)
+https://legacy-domain.example        (kept for transition)
+https://www.legacy-domain.example    (kept for transition)
+https://legacy-domain.example    (kept for transition)
+https://www.legacy-domain.example(kept for transition)
 + CORS_ALLOWED_ORIGINS env var (runtime override)
 ```
 
@@ -517,8 +517,8 @@ This is placeholder logic (not a real leaked token) but worth cleaning up.
 | www.shopjono.com | ✅ Valid Production | Primary |
 | shopjono.com | ✅ Valid 308→www | Redirect |
 | custom-ecommerce-seven.vercel.app | ✅ Production | Backup URL |
-| dripstreetshop.com | ⚠️ DNS Change Recommended | Should be removed |
-| www.dripstreetshop.com | ⚠️ DNS Change Recommended | Should be removed |
+| legacy-domain.example | ⚠️ DNS Change Recommended | Should be removed |
+| www.legacy-domain.example | ⚠️ DNS Change Recommended | Should be removed |
 
 ### Namecheap DNS (shopjono.com)
 ```
@@ -544,11 +544,11 @@ They are NOT part of the production codebase. They sit in the working directory 
 | File | Purpose |
 |------|---------|
 | `check-lines.js` | Dev tool: prints specific line ranges of App.jsx for inspection |
-| `validate-drip-street.cjs` | Phase 3 validation: checks /api/products returns 17+ products |
+| `validate-jono.cjs` | Phase 3 validation: checks /api/products returns 17+ products |
 | `search-coupon-handling.js` | Audit: searches coupon handling code |
 | `search-frontend.js` | Audit: searches frontend code patterns |
 | `search-paypal-create.js` | Audit: searches PayPal create order code |
-| `docs/` folder | Contains Drip-Street-Store-Audit-Report.md (pre-rebrand audit) |
+| `docs/` folder | Contains LEGACY_STORE_AUDIT_REPORT.md (pre-rebrand audit) |
 
 **These must never be staged or committed.** They are safe to delete after use.
 
@@ -576,11 +576,11 @@ They are NOT part of the production codebase. They sit in the working directory 
 | Neck label URL 404 (GitHub branch path broken) | HIGH | Set NECK_LABEL_SOURCE_URL env on Render to main branch raw URL |
 | jono-approved-full-logo.png is shirt image, not a logo | MEDIUM | Now replaced with JonoLogo.jsx (text), file still exists but unused for logo |
 | 5 CVC products (12-16) unknown if live in Printify | MEDIUM | Need PRINTIFY_API_TOKEN in env to verify/create |
-| "dripstreetshop.com" still in Vercel (legal risk) | HIGH | Remove via Vercel dashboard: Settings → Domains |
+| "legacy-domain.example" still in Vercel (legal risk) | HIGH | Remove via Vercel dashboard: Settings → Domains |
 | Render FREE plan → RAM 97% → crashes | MEDIUM | Upgrade to Starter ($7/mo) or optimize crons |
 | Heartbeat "זוהתה התערבות מחשב" = 2 Render instances | MEDIUM | Add SINGLE_INSTANCE_LOCK or upgrade plan |
-| meni.js still has "Drip Street" in SYSTEM_INSTRUCTION | LOW | Update meni.js AI persona to JONO |
-| index.js line 2166: publicUrl still uses dripstreetshop.com | LOW | Update to shopjono.com |
+| meni.js still has "legacy brand" in SYSTEM_INSTRUCTION | LOW | Update meni.js AI persona to JONO |
+| index.js line 2166: publicUrl still uses legacy-domain.example | LOW | Update to shopjono.com |
 
 ---
 
@@ -622,22 +622,22 @@ They are NOT part of the production codebase. They sit in the working directory 
 
 ## 13. WHAT OWNER MEANS BY "GO BACKWARDS"
 
-The JOAKIM→JONO rebrand (PR #22) introduced a regression chain:
+The legacy brand→JONO rebrand (PR #22) introduced a regression chain:
 1. PR #22 renamed logo file references but missed the `src=` JSX attributes
 2. commit 7fade0b created jono-*.png assets as WRONG copies (shirt image as logo)
 3. commit 54e682d replaced D logo with shirt image → broken/wrong image in header
 4. commit 888714f FIXED all of this: replaced image with text logo (JonoLogo.jsx)
 
 **Key insight:** The store NEVER had a proper JONO logo file.
-`logo-new.png` = the Drip Street metallic "D" logo (276KB) — this is the only real logo file.
+`logo-new.png` = the legacy brand metallic "D" logo (276KB) — this is the only real logo file.
 A new JONO logo (PNG/SVG) would need to be created and provided by the owner.
 
 ---
 
 ## 14. RECOMMENDATIONS (PRIORITY ORDER)
 
-1. **URGENT: Remove dripstreetshop.com from Vercel** (legal risk)
-   → Vercel Dashboard → Settings → Domains → Remove dripstreetshop.com + www
+1. **URGENT: Remove legacy-domain.example from Vercel** (legal risk)
+   → Vercel Dashboard → Settings → Domains → Remove legacy-domain.example + www
    
 2. **HIGH: Fix NECK_LABEL_SOURCE_URL on Render**
    → Set env var: `NECK_LABEL_SOURCE_URL=https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/main/frontend/public/jono-favicon.png`
@@ -657,11 +657,11 @@ A new JONO logo (PNG/SVG) would need to be created and provided by the owner.
    → Starter: $7/month → dedicated instance, no sleep, stable
 
 6. **LOW: Fix meni.js SYSTEM_INSTRUCTION**
-   → Still says "Drip Street" in AI persona
+   → Still says "legacy brand" in AI persona
    → Update to JONO brand voice
 
-7. **LOW: Fix remaining dripstreetshop.com in index.js**
-   → Line 2166: `publicUrl: 'https://dripstreetshop.com/product/${id}'`
+7. **LOW: Fix remaining legacy-domain.example in index.js**
+   → Line 2166: `publicUrl: 'https://legacy-domain.example/product/${id}'`
    → Update to shopjono.com
 
 ---

@@ -6,7 +6,7 @@ const API_BASE_URL = process.env.API_BASE_URL || process.env.RENDER_EXTERNAL_URL
 class EmailService {
   constructor() {
     this.resend = null;
-    this.fromEmail = process.env.FROM_EMAIL || 'JONO <hello@shopjono.com>';
+    this.fromEmail = process.env.FROM_EMAIL || 'JONO <onboarding@resend.dev>';
     this.logoUrl = process.env.BRAND_LOGO_URL || null;
     this.init();
   }
@@ -99,7 +99,7 @@ class EmailService {
     const sig = this.generateUnsubscribeSignature(email);
     const unsubscribeUrl = `${API_BASE_URL}/api/unsubscribe?email=${encodeURIComponent(email)}&sig=${sig}`;
     
-    const text = `Welcome to the Club!\n\nThanks for joining our exclusive streetwear circle. As a member of JONO, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.\n\nYour Unique Promo Code: ${promoCode}\n10% OFF YOUR FIRST ORDER\n\nShop The Collection: https://shopjono.com\n\nNeed help? Contact us at support@shopjono.com\n\nTo unsubscribe from our newsletter, visit:\n${unsubscribeUrl}\n\n© 2026 JONO. All rights reserved.`;
+    const text = `Welcome to the Club!\n\nThanks for joining our exclusive streetwear circle. As a member of JONO, you will be first in line to receive seasonal drops, exclusive pricing details, and collection restocks.\n\nYour Unique Promo Code: ${promoCode}\n10% OFF YOUR FIRST ORDER\n\nShop The Collection: https://shopjono.com\n\nNeed help? Contact us via our support page: https://shopjono.com/contact\n\nTo unsubscribe from our newsletter, visit:\n${unsubscribeUrl}\n\n© 2026 JONO. All rights reserved.`;
 
     const html = `
       <!DOCTYPE html>
@@ -149,13 +149,13 @@ class EmailService {
           <tr>
             <td style="padding: 30px 40px; background-color: #0a0a0a; border-top: 1px solid #222222; text-align: center;">
               <p style="margin: 0 0 10px 0; font-size: 12px; color: #666666;">
-                Need help? Contact us at <a href="mailto:support@shopjono.com" style="color: #888888; text-decoration: underline;">support@shopjono.com</a>
+                Need help? <a href="https://shopjono.com/contact" target="_blank" style="color: #888888; text-decoration: underline;">Contact Customer Support</a>
               </p>
               <p style="margin: 0; font-size: 11px; color: #444444; text-transform: uppercase; letter-spacing: 0.05em;">
                 &copy; 2026 JONO. All rights reserved.
               </p>
               <p style="margin: 10px 0 0 0; font-size: 10px; color: #444444;">
-                You are receiving this because you signed up for the JONO newsletter. 
+                You are receiving this because you signed up for the JONO newsletter.
                 <a href="${unsubscribeUrl}" target="_blank" style="color: #666666; text-decoration: underline; margin-left: 5px;">Unsubscribe</a>
               </p>
             </td>

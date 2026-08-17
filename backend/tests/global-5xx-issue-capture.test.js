@@ -33,6 +33,7 @@ process.env.PAYPAL_CLIENT_ID = 'test-paypal-client-id-5xx';
 process.env.PAYPAL_CLIENT_SECRET = 'test-paypal-client-secret-5xx';
 process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
+process.env.JONO_ADMIN_SECRET = 'test-admin-secret-5xx';
 process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-5xx';
 
 const { app, isCustomerFacingPath, recordCustomerFacing5xxIssue } = require('../index.js');

@@ -27,6 +27,7 @@ process.env.PAYPAL_CLIENT_SECRET = 'test-paypal-client-secret-notif';
 process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
 process.env.RESEND_API_KEY = '';
+process.env.JONO_ADMIN_SECRET = 'test-admin-secret-notif-e2e';
 process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-notif-e2e';
 
 const { app, processPaidOrderFulfillment } = require('../index.js');
@@ -291,7 +292,7 @@ test('a fulfillment-routing failure skips the immediate confirmation email, but 
   // confirmation email anyway.
   const res = await fetch(`${baseUrl}/api/admin/retry-emails`, {
     method: 'POST',
-    headers: { 'X-Admin-Secret': process.env.DRIP_ADMIN_SECRET, 'Content-Type': 'application/json' },
+    headers: { 'X-Admin-Secret': process.env.JONO_ADMIN_SECRET, 'Content-Type': 'application/json' },
     body: JSON.stringify({ force: true }),
   });
   assert.equal(res.status, 200, 'the retry-recovery admin route must exist and succeed');
@@ -322,7 +323,7 @@ test('email retry recovery succeeds on a later attempt for an order whose first 
   // real force=true semantics, exercising the actual production code path.
   const res = await fetch(`${baseUrl}/api/admin/retry-emails`, {
     method: 'POST',
-    headers: { 'X-Admin-Secret': process.env.DRIP_ADMIN_SECRET, 'Content-Type': 'application/json' },
+    headers: { 'X-Admin-Secret': process.env.JONO_ADMIN_SECRET, 'Content-Type': 'application/json' },
     body: JSON.stringify({ force: true }),
   }).catch(() => null);
 

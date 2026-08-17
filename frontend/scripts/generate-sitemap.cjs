@@ -132,7 +132,7 @@ function fetchProductIdsFromDb() {
         return resolve(null);
       }
 
-      db.all('SELECT id FROM products ORDER BY id ASC', [], (queryErr, rows) => {
+      db.all('SELECT id FROM products WHERE COALESCE(is_hidden, 0) = 0 ORDER BY id ASC', [], (queryErr, rows) => {
         db.close();
         if (queryErr) {
           console.warn(`[sitemap] SQLite query failed (${queryErr.message}); will try API fallback.`);

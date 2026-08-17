@@ -330,6 +330,7 @@ const readyPromise = new Promise((resolveReady, rejectReady) => {
             addColumnIfMissing('products', 'careInstructions', 'TEXT'),
             addColumnIfMissing('products', 'deliveryInfo', 'TEXT'),
             addColumnIfMissing('products', 'priceUSD', 'REAL'),
+            addColumnIfMissing('products', 'is_hidden', 'INTEGER DEFAULT 0'),
             // Phase 3: Multi-Vendor — supplier routing
             addColumnIfMissing('products', 'supplier_id', "TEXT NOT NULL DEFAULT 'printify'"),
             // Direct-access token gate for hidden (type='local', supplier_id='manual')
@@ -452,7 +453,42 @@ const readyPromise = new Promise((resolveReady, rejectReady) => {
                     `Printify printifyId uniqueness index not active: duplicate printifyId values already exist in products, so this database-level protection could not be enabled. index not active -- run the global duplicate scan (SELECT printifyId, COUNT(*) AS c, GROUP_CONCAT(id) FROM products WHERE printifyId IS NOT NULL AND TRIM(printifyId) != '' GROUP BY printifyId HAVING c > 1) and resolve every duplicate, then restart. Underlying error: ${err.message}`
                   );
                 }
-                resolveReady();
+
+                // Data migration: Product copy sanitization & soft-launch catalog cleanup
+                db.serialize(() => {
+                  // 1. Hide products 17, 18, 19, 20, 21 from customer-facing storefront for soft-launch
+                  db.run(`UPDATE products SET is_hidden = 1 WHERE id IN (17, 18, 19, 20, 21)`);
+
+                  // 2. Product 16: Ensure truthful JONO copy
+                  db.run(
+                    `UPDATE products
+                     SET description = 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the JONO jewelry line.'
+                     WHERE id = 16`
+                  );
+
+                  // 3. Products 22, 23, 24: Ensure truthful JONO copy
+                  db.run(
+                    `UPDATE products
+                     SET description = 'JONO Premium Street Hoodie Drop. Heavyweight cotton fleece with tailored silhouette.'
+                     WHERE id = 22`
+                  );
+                  db.run(
+                    `UPDATE products
+                     SET description = 'JONO Premium Street Hoodie Drop v2. Heavyweight cotton fleece with tailored silhouette.'
+                     WHERE id = 23`
+                  );
+                  db.run(
+                    `UPDATE products
+                     SET description = 'JONO Premium Street Hoodie Drop v3. Heavyweight cotton fleece with tailored silhouette.'
+                     WHERE id = 24`,
+                    (migErr) => {
+                      if (migErr) {
+                        console.error('Product copy sanitization migration error:', migErr.message);
+                      }
+                      resolveReady();
+                    }
+                  );
+                });
               }
             );
           });

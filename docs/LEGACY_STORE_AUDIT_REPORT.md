@@ -1,4 +1,4 @@
-# Drip Street — Store Audit & Status Report
+# Legacy Store — Audit & Status Report
 **Date:** 2026-06-07  
 **Session:** Image rectification + Color picker + Full store audit  
 **Backend:** http://localhost:4000 | **Frontend:** http://localhost:5173
@@ -154,7 +154,7 @@ curl https://custom-ecommerce-qp30.onrender.com/api/products/19 | jq '.colors'
 - [ ] ID 20 homepage: single stud image (not collage, not rainbow)
 - [ ] ID 21 homepage: hover transitions from dark gray to white sparkle
 - [ ] ID 12 removed from catalog
-- [ ] All CJ image URLs return 200 (run `node validate-drip-street.cjs`)
+- [ ] All CJ image URLs return 200 (run `node validate-jono.cjs`)
 
 ---
 

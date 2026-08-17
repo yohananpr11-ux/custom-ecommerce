@@ -1006,7 +1006,7 @@ test('stale fulfillment lease: a genuinely stale (crashed) lease is safely recla
   // crash mid-reconciliation in a previous process.
   await dbRun(
     `INSERT INTO supplier_fulfillments (orderId, supplierId, externalId, state, updatedAt) VALUES (?, 'printify', ?, 'reconciling', datetime('now', '-10 minutes'))`,
-    [order.id, `joakim-order-${order.id}-printify-v1`]
+    [order.id, `jono-order-${order.id}-printify-v1`]
   );
 
   const printifyMock = installPrintifySuccessMocks();

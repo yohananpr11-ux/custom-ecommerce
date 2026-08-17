@@ -12,7 +12,7 @@ const timingSafeEqualStr = (a, b) => {
 };
 
 const requireAdminSecret = (req, res, next) => {
-  const expected = String(process.env.DRIP_ADMIN_SECRET || '').trim();
+  const expected = String(process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET || '').trim();
   const provided = String(req.get('X-Admin-Secret') || '').trim();
 
   if (!expected || !timingSafeEqualStr(provided, expected)) {
