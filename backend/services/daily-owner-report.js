@@ -969,6 +969,45 @@ async function generateAndSendDailyReport({
 let schedulerTimer = null;
 
 /**
+ * Performs one scheduler evaluation tick.
+ * - At/after 22:00 local time: triggers current day's report.
+ * - Before 22:00 local time:
+ *   1. Records durable pending marker for current date (proves scheduler was active today).
+ *   2. Catches up missed report for previous date ONLY if a row for it already exists in DB.
+ *      If no previous record exists (e.g. first deployment), does NOT backfill historical dates.
+ */
+async function evaluateDailyReportSchedulerTick({ now = new Date(), db = defaultDb, env = process.env } = {}) {
+  const currentDateStr = getJerusalemDateString(now);
+  const { hour } = getJerusalemTimeParts(now);
+
+  if (hour >= 22) {
+    // Current day is eligible for today's report
+    return await generateAndSendDailyReport({ date: now, dateStr: currentDateStr, db, env });
+  } else {
+    // 1. Mark current day's report as pending (evidence that scheduler was active before 22:00)
+    await dbRunAsync(
+      db,
+      `INSERT OR IGNORE INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+       VALUES ('daily_summary', ?, 'pending', 0, NULL)`,
+      [currentDateStr]
+    );
+
+    // 2. Catch up missed report for previous date ONLY if a row for it already exists in DB
+    const prevDateStr = getPreviousJerusalemDateString(currentDateStr);
+    const prevRow = await dbGetAsync(
+      db,
+      `SELECT id, status, sent_at FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
+      [prevDateStr]
+    );
+    if (prevRow && !prevRow.sent_at && prevRow.status !== 'sent' && prevRow.status !== 'delivery_unknown') {
+      console.log(`[daily-owner-report] Catching up missed report for previous scheduled date: ${prevDateStr}`);
+      return await generateAndSendDailyReport({ dateStr: prevDateStr, force: true, db, env });
+    }
+    return { skipped: true, reason: prevRow ? 'previous_already_handled' : 'previous_never_scheduled', currentDate: currentDateStr };
+  }
+}
+
+/**
  * Starts the daily report periodic scheduler (runs every 60 seconds).
  * Includes both 22:00 daily scheduling and after-midnight catch-up for previous day.
  */
@@ -987,26 +1026,7 @@ function startDailyReportScheduler({ db = defaultDb, env = process.env, interval
 
   const runCheck = async () => {
     try {
-      const now = new Date();
-      const currentDateStr = getJerusalemDateString(now);
-      const { hour } = getJerusalemTimeParts(now);
-
-      if (hour >= 22) {
-        // Current day is eligible for today's report
-        await generateAndSendDailyReport({ date: now, dateStr: currentDateStr, db, env });
-      } else {
-        // Before 22:00 local time: check whether yesterday's report was missed and is eligible for catch-up
-        const prevDateStr = getPreviousJerusalemDateString(currentDateStr);
-        const prevRow = await dbGetAsync(
-          db,
-          `SELECT id, status, sent_at FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
-          [prevDateStr]
-        );
-        if (!prevRow || (!prevRow.sent_at && prevRow.status !== 'sent' && prevRow.status !== 'delivery_unknown')) {
-          console.log(`[daily-owner-report] Catching up missed report for previous date: ${prevDateStr}`);
-          await generateAndSendDailyReport({ dateStr: prevDateStr, force: true, db, env });
-        }
-      }
+      await evaluateDailyReportSchedulerTick({ now: new Date(), db, env });
     } catch (err) {
       console.error('[daily-owner-report] Scheduler tick error:', err.message);
     }
@@ -1040,6 +1060,7 @@ module.exports = {
   getReportMetrics,
   buildDailyReportMessage,
   generateAndSendDailyReport,
+  evaluateDailyReportSchedulerTick,
   startDailyReportScheduler,
   stopDailyReportScheduler,
   escapeHtml,

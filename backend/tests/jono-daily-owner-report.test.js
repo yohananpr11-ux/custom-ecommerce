@@ -1034,3 +1034,186 @@ test('27: force catch-up bypasses time eligibility only, never bypassing in_prog
   assert.equal(resC.skipped, true);
   assert.equal(resC.reason, 'already_sent');
 });
+
+// ── 28. First-Ever Deployment Before 22:00 (Scenario A) ───────────────
+
+test('28: first-ever startup before 22:00 does not backfill yesterday and creates today pending marker', async () => {
+  const tMock = installTelegramMock();
+  // 08:00 IDT (05:00 UTC) on 2026-11-02 (Israel standard time is UTC+2, so 08:00 IST is 06:00 UTC)
+  // Let's use a clear UTC time corresponding to 08:00 in Jerusalem:
+  // In Nov, Israel is in IST (UTC+2) -> 08:00 IST is 06:00 UTC
+  const tickTime = new Date('2026-11-02T06:00:00Z');
+
+  try {
+    const res = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: tickTime, db });
+    assert.equal(res.skipped, true);
+    assert.equal(res.reason, 'previous_never_scheduled', 'Unscheduled historical date is NOT backfilled');
+    assert.equal(tMock.sentMessages.length, 0, 'Zero Telegram messages sent on first deploy');
+
+    const todayMarker = await dbGet(`SELECT status, attempt_count FROM daily_owner_reports WHERE report_date = '2026-11-02'`);
+    assert.ok(todayMarker, 'Durable pending marker for current date created');
+    assert.equal(todayMarker.status, 'pending');
+    assert.equal(todayMarker.attempt_count, 0);
+
+    const yesterdayMarker = await dbGet(`SELECT * FROM daily_owner_reports WHERE report_date = '2026-11-01'`);
+    assert.equal(yesterdayMarker, undefined, 'Yesterday was never scheduled and remains absent');
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 29. Pending Marker Idempotency Across Repeated Ticks (Scenario B) ─
+
+test('29: today pending marker is created only once across repeated scheduler ticks', async () => {
+  const tickTime = new Date('2026-11-02T07:00:00Z');
+
+  const res1 = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: tickTime, db });
+  assert.equal(res1.skipped, true);
+
+  const res2 = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: tickTime, db });
+  assert.equal(res2.skipped, true);
+
+  const rows = await dbAll(`SELECT * FROM daily_owner_reports WHERE report_date = '2026-11-02'`);
+  assert.equal(rows.length, 1, 'Exactly one row for today');
+  assert.equal(rows[0].status, 'pending');
+});
+
+// ── 30. Active Pending Marker + Downtime Across Midnight (Scenario C) ─
+
+test('30: active pending marker before 22:00 caught up after midnight restart', async () => {
+  const tMock = installTelegramMock();
+  const day1Date = '2026-11-05';
+  const day2Date = '2026-11-06';
+
+  try {
+    // 1. Day 1 at 18:00 IST (16:00 UTC) -> pending marker created
+    const day1Time = new Date('2026-11-05T16:00:00Z');
+    const tick1 = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: day1Time, db });
+    assert.equal(tick1.skipped, true);
+    assert.equal(tMock.sentMessages.length, 0, 'No sends during afternoon check');
+
+    const marker1 = await dbGet(`SELECT status FROM daily_owner_reports WHERE report_date = ?`, [day1Date]);
+    assert.equal(marker1.status, 'pending');
+
+    // 2. Service was down during 22:00 on Day 1.
+    // 3. Next day restart at 07:00 IST (05:00 UTC) on Day 2:
+    const day2MorningTime = new Date('2026-11-06T05:00:00Z');
+    const catchupRes = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: day2MorningTime, db });
+
+    assert.equal(catchupRes.ok, true, 'Missed scheduled report caught up successfully');
+    assert.equal(catchupRes.sent, true);
+    assert.equal(catchupRes.reportDate, day1Date, 'Caught up report is for Day 1');
+    assert.equal(tMock.sentMessages.length, 1, 'Exactly 1 catch-up Telegram message sent');
+
+    const day1Row = await dbGet(`SELECT status, sent_at FROM daily_owner_reports WHERE report_date = ?`, [day1Date]);
+    assert.equal(day1Row.status, 'sent');
+    assert.ok(day1Row.sent_at);
+
+    // Day 2 pending marker created
+    const day2Marker = await dbGet(`SELECT status FROM daily_owner_reports WHERE report_date = ?`, [day2Date]);
+    assert.equal(day2Marker.status, 'pending');
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 31. First-Ever Startup After Midnight (Scenario D) ────────────────
+
+test('31: first-ever startup after midnight with no previous marker does not backfill historical catch-up', async () => {
+  const tMock = installTelegramMock();
+  // 03:00 IST (01:00 UTC) on 2026-11-10
+  const tickTime = new Date('2026-11-10T01:00:00Z');
+
+  try {
+    const res = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: tickTime, db });
+    assert.equal(res.skipped, true);
+    assert.equal(res.reason, 'previous_never_scheduled');
+    assert.equal(tMock.sentMessages.length, 0);
+
+    const prevMarker = await dbGet(`SELECT * FROM daily_owner_reports WHERE report_date = '2026-11-09'`);
+    assert.equal(prevMarker, undefined, 'Previous date was never scheduled and remains absent');
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 32. First-Ever Startup at 23:00 (Scenario E) ──────────────────────
+
+test('32: first-ever startup at 23:00 sends eligible current-day report only and no older reports', async () => {
+  const tMock = installTelegramMock();
+  // 23:00 IST (21:00 UTC) on 2026-11-12
+  const tickTime = new Date('2026-11-12T21:00:00Z');
+
+  try {
+    const res = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: tickTime, db });
+    assert.equal(res.ok, true);
+    assert.equal(res.sent, true);
+    assert.equal(res.reportDate, '2026-11-12');
+    assert.equal(tMock.sentMessages.length, 1, 'Only current-day report sent');
+
+    const olderRow = await dbGet(`SELECT * FROM daily_owner_reports WHERE report_date = '2026-11-11'`);
+    assert.equal(olderRow, undefined, 'No older report created or backfilled');
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 33. Scheduler Tick with Previous Sent or Delivery Unknown (F & G) ──
+
+test('33: scheduler tick does not retry when previous day is sent or delivery_unknown', async () => {
+  const tMock = installTelegramMock();
+
+  try {
+    // 33A: Previous day is already sent
+    await dbRun(
+      `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at, sent_at)
+       VALUES ('daily_summary', '2026-11-15', 'sent', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+    );
+    const tickTime1 = new Date('2026-11-16T06:00:00Z');
+    const res1 = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: tickTime1, db });
+    assert.equal(res1.skipped, true);
+    assert.equal(res1.reason, 'previous_already_handled');
+    assert.equal(tMock.sentMessages.length, 0);
+
+    // 33B: Previous day is delivery_unknown
+    await dbRun(
+      `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+       VALUES ('daily_summary', '2026-11-18', 'delivery_unknown', 1, CURRENT_TIMESTAMP)`
+    );
+    const tickTime2 = new Date('2026-11-19T06:00:00Z');
+    const res2 = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: tickTime2, db });
+    assert.equal(res2.skipped, true);
+    assert.equal(res2.reason, 'previous_already_handled');
+    assert.equal(tMock.sentMessages.length, 0);
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 34. Scheduler Tick with Previous Failed (Scenario H) ───────────────
+
+test('34: scheduler tick retries previous failed report after cooldown', async () => {
+  const tMock = installTelegramMock();
+
+  try {
+    // Previous day failed > 10 minutes ago
+    await dbRun(
+      `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+       VALUES ('daily_summary', '2026-11-21', 'failed', 1, datetime('now', '-10 minutes'))`
+    );
+
+    const tickTime = new Date('2026-11-22T06:00:00Z');
+    const res = await dailyOwnerReport.evaluateDailyReportSchedulerTick({ now: tickTime, db });
+    assert.equal(res.ok, true);
+    assert.equal(res.sent, true);
+    assert.equal(res.reportDate, '2026-11-21');
+    assert.equal(tMock.sentMessages.length, 1);
+
+    const row = await dbGet(`SELECT status, attempt_count, sent_at FROM daily_owner_reports WHERE report_date = '2026-11-21'`);
+    assert.equal(row.status, 'sent');
+    assert.equal(row.attempt_count, 2);
+    assert.ok(row.sent_at);
+  } finally {
+    tMock.restore();
+  }
+});
