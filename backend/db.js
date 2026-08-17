@@ -313,154 +313,157 @@ const addColumnIfMissing = (tableName, columnName, columnDefinition, { critical 
   });
 });
 
-// Run all column migrations, then create indexes (which depend on the new columns)
-const readyPromise = (async () => {
-  // Ensure initial table schemas exist before running column migrations
-  await new Promise((resolve, reject) => {
-    db.run('PRAGMA user_version', (err) => {
-      if (err) reject(err);
-      else resolve();
+// Initialize tables and run all column migrations and index creations in strict sequence
+const readyPromise = new Promise((resolveReady, rejectReady) => {
+  db.serialize(() => {
+    db.run('PRAGMA user_version', (pragmaErr) => {
+      if (pragmaErr) return rejectReady(pragmaErr);
+
+      (async () => {
+        try {
+          await Promise.all([
+            // products
+            addColumnIfMissing('products', 'backImageUrl', 'TEXT'),
+            addColumnIfMissing('products', 'images', 'TEXT'),
+            addColumnIfMissing('products', 'printifyId', 'TEXT'),
+            addColumnIfMissing('products', 'fabric', 'TEXT'),
+            addColumnIfMissing('products', 'careInstructions', 'TEXT'),
+            addColumnIfMissing('products', 'deliveryInfo', 'TEXT'),
+            addColumnIfMissing('products', 'priceUSD', 'REAL'),
+            // Phase 3: Multi-Vendor — supplier routing
+            addColumnIfMissing('products', 'supplier_id', "TEXT NOT NULL DEFAULT 'printify'"),
+            // Direct-access token gate for hidden (type='local', supplier_id='manual')
+            // products — see GET /api/products/:id. NULL for every ordinary product;
+            // only ever set by scripts/manual-payment-test-product.js.
+            addColumnIfMissing('products', 'access_token_hash', 'TEXT'),
+            addColumnIfMissing('products', 'access_token_expires_at', 'DATETIME'),
+            // Manual-supplier stock reservation lease -- see reserveManualProductStock
+            // in index.js. Deliberately lives on the product row itself, not on any
+            // orders/order_items row, so a reservation can always be reclaimed even
+            // if the process crashes before an order row for it ever exists (between
+            // resolveValidatedOrderItems reserving stock and createPendingOrder's own
+            // orders INSERT). NULL for every ordinary product and whenever no manual
+            // product currently has an outstanding reservation.
+            addColumnIfMissing('products', 'stock_reservation_qty', 'INTEGER'),
+            addColumnIfMissing('products', 'stock_reservation_expires_at', 'DATETIME'),
+            // orders
+            // Populated at /api/paypal/create-order time with the real PayPal order
+            // id. Used only by capture-order's pre-capture reservation check for
+            // manual-supplier orders (see the matching comment there) -- looking a
+            // client-supplied PayPal orderID up against this column lets that check
+            // find the local order and re-verify its status BEFORE ever calling
+            // PayPal's real capture endpoint, instead of only after (when a real
+            // charge has already happened). Harmless/unused for every other order.
+            addColumnIfMissing('orders', 'paypal_order_id', 'TEXT'),
+            addColumnIfMissing('orders', 'promoCode', 'TEXT'),
+            addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0'),
+            addColumnIfMissing('orders', 'emailSent', 'INTEGER DEFAULT 0'),
+            addColumnIfMissing('orders', 'emailAttempts', 'INTEGER DEFAULT 0'),
+            addColumnIfMissing('orders', 'lastEmailAttemptAt', 'TEXT'),
+            addColumnIfMissing('orders', 'firstName', 'TEXT'),
+            addColumnIfMissing('orders', 'lastName', 'TEXT'),
+            addColumnIfMissing('orders', 'phone', 'TEXT'),
+            addColumnIfMissing('orders', 'addressLine1', 'TEXT'),
+            addColumnIfMissing('orders', 'addressLine2', 'TEXT'),
+            addColumnIfMissing('orders', 'city', 'TEXT'),
+            addColumnIfMissing('orders', 'region', 'TEXT'),
+            addColumnIfMissing('orders', 'postalCode', 'TEXT'),
+            addColumnIfMissing('orders', 'country', 'TEXT'),
+            // Backfill columns that CREATE TABLE declares but legacy DBs were created without
+            // (locale/currency added for i18n checkout; shippingCost added for transparency).
+            addColumnIfMissing('orders', 'shippingCost', 'REAL DEFAULT 0'),
+            addColumnIfMissing('orders', 'locale', "TEXT DEFAULT 'he'"),
+            addColumnIfMissing('orders', 'currency', "TEXT DEFAULT 'ILS'"),
+            // Immutable expected-payment snapshot, set once at PayPal order-creation
+            // time and never recomputed — capture-time verification compares against
+            // these stored values instead of trusting the capture response's own
+            // currency or re-deriving an amount with a possibly-different exchange
+            // rate. NULL on orders created before this column existed (legacy orders
+            // fail closed at capture time rather than being silently trusted).
+            addColumnIfMissing('orders', 'expected_payment_currency', 'TEXT'),
+            addColumnIfMissing('orders', 'expected_payment_amount', 'REAL'),
+            addColumnIfMissing('orders', 'paid_at', 'DATETIME', { critical: true }),
+            // design_jobs
+            addColumnIfMissing('design_jobs', 'lastError', 'TEXT'),
+            // product_variants
+            addColumnIfMissing('product_variants', 'imageUrl', 'TEXT'),
+            addColumnIfMissing('product_variants', 'stockQty', 'INTEGER'),
+            // order_items
+            addColumnIfMissing('order_items', 'variantId', 'INTEGER'),
+            addColumnIfMissing('order_items', 'selectedColor', 'TEXT'),
+            addColumnIfMissing('order_items', 'selectedSize', 'TEXT'),
+            // Phase 3: Multi-Vendor — per-item supplier snapshot + fulfillment tracking
+            addColumnIfMissing('order_items', 'supplier_id',        'TEXT'),
+            addColumnIfMissing('order_items', 'fulfillment_status', "TEXT DEFAULT 'pending'"),
+            addColumnIfMissing('order_items', 'fulfillment_ref',    'TEXT'),
+            // leads
+            addColumnIfMissing('leads', 'emailSent', 'INTEGER DEFAULT 0'),
+            addColumnIfMissing('leads', 'emailAttempts', 'INTEGER DEFAULT 0'),
+            addColumnIfMissing('leads', 'lastEmailAttemptAt', 'TEXT'),
+            addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0'),
+            addColumnIfMissing('abandoned_carts', 'alerted', 'INTEGER DEFAULT 0'),
+            // technical_issues (PR #34 follow-up: durable notification/cooldown
+            // state, so a repeated issue stays suppressed across a process
+            // restart instead of relying on owner-notifications' in-memory-only
+            // cooldown Map). last_notified_at is NULL until the first successful
+            // (or attempted) notification; notified_count is separate from
+            // occurrence_count, which keeps incrementing on every sighting
+            // regardless of whether an alert was actually sent.
+            addColumnIfMissing('technical_issues', 'last_notified_at', 'DATETIME'),
+            addColumnIfMissing('technical_issues', 'notified_count', 'INTEGER NOT NULL DEFAULT 0'),
+          ]);
+
+          // Create indexes only AFTER all column migrations complete
+          db.serialize(() => {
+            db.run(`CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_abandoned_carts_email_updated ON abandoned_carts(email, updated_at)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_leads_unsubscribed_emailSent ON leads(unsubscribed, emailSent, emailAttempts)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_orders_emailSent_status ON orders(status, emailSent, emailAttempts)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_product_images_design_job_view ON product_images(design_job_id, view)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_product_images_variant_view ON product_images(product_variant_id, view)`);
+            // Phase 3: Multi-Vendor indexes
+            db.run(`CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_supplier ON order_items(supplier_id, fulfillment_status)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_supplier_fulfillments_state ON supplier_fulfillments(supplierId, state)`);
+            // PR #34: visitor telemetry + technical issues indexes.
+            // idx_visitor_sessions_session_id is implied by the UNIQUE constraint above
+            // (SQLite auto-creates a unique index for it) -- not duplicated here.
+            db.run(`CREATE INDEX IF NOT EXISTS idx_visitor_sessions_visitor_id ON visitor_sessions(visitor_id)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_visitor_sessions_started_at ON visitor_sessions(started_at)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_last_seen ON technical_issues(last_seen_at)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_type ON technical_issues(type)`);
+            db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_last_notified ON technical_issues(last_notified_at)`);
+
+            // Enforces at the SQLite engine level what application code (checkout's
+            // printifyId guard, the sync duplicate-detection in
+            // services/printify-sync-helpers.js) can only ever police on its own:
+            // that two products can never share one real Printify identity. Partial
+            // index -- printifyId IS NULL or blank/whitespace-only is explicitly
+            // exempted, so any number of un-synced local rows remain unaffected; only
+            // a genuine non-empty duplicate is rejected.
+            db.run(
+              `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_printifyId_unique
+                 ON products(printifyId)
+                 WHERE printifyId IS NOT NULL AND TRIM(printifyId) != ''`,
+              (err) => {
+                if (err) {
+                  console.error(
+                    `Printify printifyId uniqueness index not active: duplicate printifyId values already exist in products, so this database-level protection could not be enabled. index not active -- run the global duplicate scan (SELECT printifyId, COUNT(*) AS c, GROUP_CONCAT(id) FROM products WHERE printifyId IS NOT NULL AND TRIM(printifyId) != '' GROUP BY printifyId HAVING c > 1) and resolve every duplicate, then restart. Underlying error: ${err.message}`
+                  );
+                }
+                resolveReady();
+              }
+            );
+          });
+        } catch (migrationErr) {
+          console.error('Schema migration block failed:', migrationErr.message);
+          rejectReady(migrationErr);
+        }
+      })();
     });
   });
-
-  await Promise.all([
-    // products
-    addColumnIfMissing('products', 'backImageUrl', 'TEXT'),
-    addColumnIfMissing('products', 'images', 'TEXT'),
-    addColumnIfMissing('products', 'printifyId', 'TEXT'),
-    addColumnIfMissing('products', 'fabric', 'TEXT'),
-    addColumnIfMissing('products', 'careInstructions', 'TEXT'),
-    addColumnIfMissing('products', 'deliveryInfo', 'TEXT'),
-    addColumnIfMissing('products', 'priceUSD', 'REAL'),
-    // Phase 3: Multi-Vendor — supplier routing
-    addColumnIfMissing('products', 'supplier_id', "TEXT NOT NULL DEFAULT 'printify'"),
-    // Direct-access token gate for hidden (type='local', supplier_id='manual')
-    // products — see GET /api/products/:id. NULL for every ordinary product;
-    // only ever set by scripts/manual-payment-test-product.js.
-    addColumnIfMissing('products', 'access_token_hash', 'TEXT'),
-    addColumnIfMissing('products', 'access_token_expires_at', 'DATETIME'),
-    // Manual-supplier stock reservation lease -- see reserveManualProductStock
-    // in index.js. Deliberately lives on the product row itself, not on any
-    // orders/order_items row, so a reservation can always be reclaimed even
-    // if the process crashes before an order row for it ever exists (between
-    // resolveValidatedOrderItems reserving stock and createPendingOrder's own
-    // orders INSERT). NULL for every ordinary product and whenever no manual
-    // product currently has an outstanding reservation.
-    addColumnIfMissing('products', 'stock_reservation_qty', 'INTEGER'),
-    addColumnIfMissing('products', 'stock_reservation_expires_at', 'DATETIME'),
-    // orders
-    // Populated at /api/paypal/create-order time with the real PayPal order
-    // id. Used only by capture-order's pre-capture reservation check for
-    // manual-supplier orders (see the matching comment there) -- looking a
-    // client-supplied PayPal orderID up against this column lets that check
-    // find the local order and re-verify its status BEFORE ever calling
-    // PayPal's real capture endpoint, instead of only after (when a real
-    // charge has already happened). Harmless/unused for every other order.
-    addColumnIfMissing('orders', 'paypal_order_id', 'TEXT'),
-    addColumnIfMissing('orders', 'promoCode', 'TEXT'),
-    addColumnIfMissing('orders', 'promoDiscount', 'REAL DEFAULT 0'),
-    addColumnIfMissing('orders', 'emailSent', 'INTEGER DEFAULT 0'),
-    addColumnIfMissing('orders', 'emailAttempts', 'INTEGER DEFAULT 0'),
-    addColumnIfMissing('orders', 'lastEmailAttemptAt', 'TEXT'),
-    addColumnIfMissing('orders', 'firstName', 'TEXT'),
-    addColumnIfMissing('orders', 'lastName', 'TEXT'),
-    addColumnIfMissing('orders', 'phone', 'TEXT'),
-    addColumnIfMissing('orders', 'addressLine1', 'TEXT'),
-    addColumnIfMissing('orders', 'addressLine2', 'TEXT'),
-    addColumnIfMissing('orders', 'city', 'TEXT'),
-    addColumnIfMissing('orders', 'region', 'TEXT'),
-    addColumnIfMissing('orders', 'postalCode', 'TEXT'),
-    addColumnIfMissing('orders', 'country', 'TEXT'),
-    // Backfill columns that CREATE TABLE declares but legacy DBs were created without
-    // (locale/currency added for i18n checkout; shippingCost added for transparency).
-    addColumnIfMissing('orders', 'shippingCost', 'REAL DEFAULT 0'),
-    addColumnIfMissing('orders', 'locale', "TEXT DEFAULT 'he'"),
-    addColumnIfMissing('orders', 'currency', "TEXT DEFAULT 'ILS'"),
-    // Immutable expected-payment snapshot, set once at PayPal order-creation
-    // time and never recomputed — capture-time verification compares against
-    // these stored values instead of trusting the capture response's own
-    // currency or re-deriving an amount with a possibly-different exchange
-    // rate. NULL on orders created before this column existed (legacy orders
-    // fail closed at capture time rather than being silently trusted).
-    addColumnIfMissing('orders', 'expected_payment_currency', 'TEXT'),
-    addColumnIfMissing('orders', 'expected_payment_amount', 'REAL'),
-    addColumnIfMissing('orders', 'paid_at', 'DATETIME', { critical: true }),
-    // design_jobs
-    addColumnIfMissing('design_jobs', 'lastError', 'TEXT'),
-    // product_variants
-    addColumnIfMissing('product_variants', 'imageUrl', 'TEXT'),
-    addColumnIfMissing('product_variants', 'stockQty', 'INTEGER'),
-    // order_items
-    addColumnIfMissing('order_items', 'variantId', 'INTEGER'),
-    addColumnIfMissing('order_items', 'selectedColor', 'TEXT'),
-    addColumnIfMissing('order_items', 'selectedSize', 'TEXT'),
-    // Phase 3: Multi-Vendor — per-item supplier snapshot + fulfillment tracking
-    addColumnIfMissing('order_items', 'supplier_id',        'TEXT'),
-    addColumnIfMissing('order_items', 'fulfillment_status', "TEXT DEFAULT 'pending'"),
-    addColumnIfMissing('order_items', 'fulfillment_ref',    'TEXT'),
-    // leads
-    addColumnIfMissing('leads', 'emailSent', 'INTEGER DEFAULT 0'),
-    addColumnIfMissing('leads', 'emailAttempts', 'INTEGER DEFAULT 0'),
-    addColumnIfMissing('leads', 'lastEmailAttemptAt', 'TEXT'),
-    addColumnIfMissing('leads', 'unsubscribed', 'INTEGER DEFAULT 0'),
-    addColumnIfMissing('abandoned_carts', 'alerted', 'INTEGER DEFAULT 0'),
-    // technical_issues (PR #34 follow-up: durable notification/cooldown
-    // state, so a repeated issue stays suppressed across a process
-    // restart instead of relying on owner-notifications' in-memory-only
-    // cooldown Map). last_notified_at is NULL until the first successful
-    // (or attempted) notification; notified_count is separate from
-    // occurrence_count, which keeps incrementing on every sighting
-    // regardless of whether an alert was actually sent.
-    addColumnIfMissing('technical_issues', 'last_notified_at', 'DATETIME'),
-    addColumnIfMissing('technical_issues', 'notified_count', 'INTEGER NOT NULL DEFAULT 0'),
-  ]);
-
-  // Local/mock placeholder products (type='local') are never purged here.
-  // Startup must never delete catalog rows -- see
-  // scripts/purge-local-placeholder-products.js for the explicit,
-  // opt-in-only cleanup this used to run unconditionally on every boot.
-
-  // Create indexes only AFTER all column migrations complete
-  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_abandoned_carts_email_updated ON abandoned_carts(email, updated_at)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_unsubscribed_emailSent ON leads(unsubscribed, emailSent, emailAttempts)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_orders_emailSent_status ON orders(status, emailSent, emailAttempts)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_product_images_design_job_view ON product_images(design_job_id, view)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_product_images_variant_view ON product_images(product_variant_id, view)`);
-  // Phase 3: Multi-Vendor indexes
-  db.run(`CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_order_items_supplier ON order_items(supplier_id, fulfillment_status)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_supplier_fulfillments_state ON supplier_fulfillments(supplierId, state)`);
-  // PR #34: visitor telemetry + technical issues indexes.
-  // idx_visitor_sessions_session_id is implied by the UNIQUE constraint above
-  // (SQLite auto-creates a unique index for it) -- not duplicated here.
-  db.run(`CREATE INDEX IF NOT EXISTS idx_visitor_sessions_visitor_id ON visitor_sessions(visitor_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_visitor_sessions_started_at ON visitor_sessions(started_at)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_last_seen ON technical_issues(last_seen_at)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_type ON technical_issues(type)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_technical_issues_last_notified ON technical_issues(last_notified_at)`);
-
-  // Enforces at the SQLite engine level what application code (checkout's
-  // printifyId guard, the sync duplicate-detection in
-  // services/printify-sync-helpers.js) can only ever police on its own:
-  // that two products can never share one real Printify identity. Partial
-  // index -- printifyId IS NULL or blank/whitespace-only is explicitly
-  // exempted, so any number of un-synced local rows remain unaffected; only
-  // a genuine non-empty duplicate is rejected.
-  db.run(
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_printifyId_unique
-       ON products(printifyId)
-       WHERE printifyId IS NOT NULL AND TRIM(printifyId) != ''`,
-    (err) => {
-      if (err) {
-        console.error(
-          `Printify printifyId uniqueness index not active: duplicate printifyId values already exist in products, so this database-level protection could not be enabled. index not active -- run the global duplicate scan (SELECT printifyId, COUNT(*) AS c, GROUP_CONCAT(id) FROM products WHERE printifyId IS NOT NULL AND TRIM(printifyId) != '' GROUP BY printifyId HAVING c > 1) and resolve every duplicate, then restart. Underlying error: ${err.message}`
-        );
-      }
-    }
-  );
-})();
+});
 
 readyPromise.catch((err) => {
   console.error('Schema migration block failed:', err.message);
@@ -470,4 +473,5 @@ db.readyPromise = readyPromise;
 module.exports = db;
 module.exports.dbPath = dbPath;
 module.exports.readyPromise = readyPromise;
+
 
