@@ -3328,16 +3328,10 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     // call of its own. A missing/legacy order (paypal_order_id not yet
     // populated) or any normal order (which can never reach this status)
     // simply falls through to the existing capture flow unchanged.
-    // Startup-race guard: on a freshly (re)started process, this query can
-    // in principle run before db.js's migration Promise.all has finished
-    // adding this column -- index.js does not currently await that promise
-    // before app.listen(). Treated as "no match" (falls through to the
-    // existing, unmodified capture flow) rather than a hard 500: a real
-    // customer's legitimate capture succeeding is strictly more important
-    // than this specific safeguard being active during the brief startup
-    // window before migrations finish. This is a pre-existing startup
-    // ordering gap (shared by every migration-added column), not something
-    // newly introduced here -- out of scope to fix broadly in this change.
+    // Schema readiness: db.readyPromise is awaited before app.listen() starts
+    // accepting traffic, ensuring orders.paypal_order_id is present. A try/catch
+    // is preserved here for defense-in-depth so unexpected SQL lookup failures fall
+    // through to the standard capture flow rather than returning an unhandled 500.
     let preCaptureOrder = null;
     try {
       preCaptureOrder = await dbGetAsync(`SELECT id, status FROM orders WHERE paypal_order_id = ?`, [orderID]);

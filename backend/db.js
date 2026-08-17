@@ -473,5 +473,3 @@ db.readyPromise = readyPromise;
 module.exports = db;
 module.exports.dbPath = dbPath;
 module.exports.readyPromise = readyPromise;
-
-

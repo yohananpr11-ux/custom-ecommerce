@@ -778,10 +778,12 @@ async function generateAndSendDailyReport({
   }
 
   const STALE_LEASE_SECONDS = 300; // 5 minutes lease timeout
+  const RETRY_COOLDOWN_SECONDS = 300; // 5 minutes retry cooldown on failure
 
-  // If previous attempt crashed after delivery_started, outcome is ambiguous
+  // If previous attempt reached delivery_started:
+  // If active (< 5m), skip so we don't interfere with concurrent in-flight delivery.
+  // If expired (>= 5m), outcome is ambiguous (crashed during external call) -> mark sticky delivery_unknown.
   if (existingRow && existingRow.status === 'delivery_started') {
-    // Check if the lease has expired
     const isStale = await dbGetAsync(
       db,
       `SELECT (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) as elapsedSec
@@ -793,10 +795,17 @@ async function generateAndSendDailyReport({
       console.warn(`[daily-owner-report] Detected ambiguous delivery crash for ${targetDateStr}: status was delivery_started with expired lease (${isStale.elapsedSec}s elapsed). Marking delivery_unknown.`);
       await dbRunAsync(
         db,
-        `UPDATE daily_owner_reports SET status = 'delivery_unknown' WHERE report_type = 'daily_summary' AND report_date = ?`,
+        `UPDATE daily_owner_reports
+         SET status = 'delivery_unknown'
+         WHERE report_type = 'daily_summary'
+           AND report_date = ?
+           AND status = 'delivery_started'`,
         [targetDateStr]
       );
       return { skipped: true, reason: 'ambiguous_delivery_detected', reportDate: targetDateStr };
+    } else {
+      console.log(`[daily-owner-report] Execution for ${targetDateStr} skipped: active delivery_started in flight.`);
+      return { skipped: true, reason: 'delivery_in_flight', reportDate: targetDateStr };
     }
   }
 
@@ -809,8 +818,8 @@ async function generateAndSendDailyReport({
   );
 
   // 3. Atomically claim execution (CAS)
-  // Reclaims pending, failed (after cooldown), or stale in_progress (crashed before delivery_started)
-  const RETRY_COOLDOWN_SECONDS = 300; // 5 minutes retry cooldown on failure
+  // Reclaims pending, failed (after cooldown), or stale in_progress (crashed before delivery_started).
+  // `force` is only for bypassing time eligibility; it never bypasses active ownership or delivery_unknown.
   const claimResult = await dbRunAsync(
     db,
     `UPDATE daily_owner_reports
@@ -820,21 +829,34 @@ async function generateAndSendDailyReport({
      WHERE report_type = 'daily_summary'
        AND report_date = ?
        AND sent_at IS NULL
+       AND status != 'delivery_unknown'
+       AND status != 'delivery_started'
        AND (
          status = 'pending'
          OR (status = 'failed' AND (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) >= ?)
          OR (status = 'in_progress' AND (strftime('%s', 'now') - strftime('%s', COALESCE(last_attempt_at, '1970-01-01'))) >= ?)
-         OR ? = 1
        )`,
-    [targetDateStr, RETRY_COOLDOWN_SECONDS, STALE_LEASE_SECONDS, force ? 1 : 0]
+    [targetDateStr, RETRY_COOLDOWN_SECONDS, STALE_LEASE_SECONDS]
   );
 
   if (!claimResult || claimResult.changes === 0) {
-    console.log(`[daily-owner-report] Execution for ${targetDateStr} skipped: in_progress, recently failed within cooldown, or already sent.`);
+    console.log(`[daily-owner-report] Execution for ${targetDateStr} skipped: in_progress, recently failed within cooldown, delivery_started in flight, or already sent.`);
     return { skipped: true, reason: 'claim_failed_or_cooling_down', reportDate: targetDateStr };
   }
 
-  console.log(`[daily-owner-report] Claimed daily report execution for ${targetDateStr}. Generating data...`);
+  // Read the atomically assigned attempt_count as fencing token
+  const claimedRow = await dbGetAsync(
+    db,
+    `SELECT attempt_count FROM daily_owner_reports WHERE report_type = 'daily_summary' AND report_date = ?`,
+    [targetDateStr]
+  );
+  const attemptToken = claimedRow ? claimedRow.attempt_count : null;
+  if (!attemptToken) {
+    console.warn(`[daily-owner-report] Failed to read attemptToken for ${targetDateStr} after claim. Aborting.`);
+    return { skipped: true, reason: 'lost_lease_or_delivery_state_changed', reportDate: targetDateStr };
+  }
+
+  console.log(`[daily-owner-report] Claimed daily report execution for ${targetDateStr} (attemptToken=${attemptToken}). Generating data...`);
 
   let metrics;
   let message;
@@ -842,24 +864,40 @@ async function generateAndSendDailyReport({
     metrics = await getReportMetrics({ dateStr: targetDateStr, db, backupDir, env });
     message = buildDailyReportMessage(metrics);
   } catch (err) {
-    console.error(`[daily-owner-report] Failed to generate report metrics for ${targetDateStr}:`, err.message);
-    await dbRunAsync(
+    console.error(`[daily-owner-report] Failed to generate report metrics for ${targetDateStr} (attemptToken=${attemptToken}):`, err.message);
+    const failRes = await dbRunAsync(
       db,
-      `UPDATE daily_owner_reports SET status = 'failed' WHERE report_type = 'daily_summary' AND report_date = ?`,
-      [targetDateStr]
+      `UPDATE daily_owner_reports
+       SET status = 'failed'
+       WHERE report_type = 'daily_summary'
+         AND report_date = ?
+         AND attempt_count = ?
+         AND status = 'in_progress'`,
+      [targetDateStr, attemptToken]
     );
+    if (!failRes || failRes.changes === 0) {
+      console.warn(`[daily-owner-report] Lost lease or delivery state changed while recording metric failure for ${targetDateStr} (attemptToken=${attemptToken}).`);
+    }
     return { ok: false, error: err.message, reportDate: targetDateStr };
   }
 
-  // 4. Mark delivery_started right before external Telegram call
-  await dbRunAsync(
+  // 4. Mark delivery_started right before external Telegram call with fencing token
+  const deliveryStartResult = await dbRunAsync(
     db,
     `UPDATE daily_owner_reports
      SET status = 'delivery_started',
          last_attempt_at = CURRENT_TIMESTAMP
-     WHERE report_type = 'daily_summary' AND report_date = ? AND status = 'in_progress'`,
-    [targetDateStr]
+     WHERE report_type = 'daily_summary'
+       AND report_date = ?
+       AND attempt_count = ?
+       AND status = 'in_progress'`,
+    [targetDateStr, attemptToken]
   );
+
+  if (!deliveryStartResult || deliveryStartResult.changes === 0) {
+    console.warn(`[daily-owner-report] Lost lease or delivery state changed before delivery_started for ${targetDateStr} (attemptToken=${attemptToken}). Aborting send.`);
+    return { skipped: true, reason: 'lost_lease_or_delivery_state_changed', reportDate: targetDateStr };
+  }
 
   // 5. Centralized Telegram delivery via owner-notifications.js
   const notifyResult = await ownerNotifications.notify({
@@ -869,22 +907,61 @@ async function generateAndSendDailyReport({
     message,
   });
 
-  // 6. Update DB status strictly upon confirmed Telegram delivery
-  if (notifyResult.sent) {
-    await dbRunAsync(
+  const isSuccess = Boolean(notifyResult && notifyResult.sent === true);
+  const isAmbiguous = Boolean(notifyResult && notifyResult.telegram && notifyResult.telegram.deliveryAmbiguous === true);
+
+  // 6. Update DB status strictly upon confirmed Telegram delivery or ambiguous outcome with fencing token
+  if (isSuccess) {
+    const sentRes = await dbRunAsync(
       db,
-      `UPDATE daily_owner_reports SET status = 'sent', sent_at = CURRENT_TIMESTAMP WHERE report_type = 'daily_summary' AND report_date = ?`,
-      [targetDateStr]
+      `UPDATE daily_owner_reports
+       SET status = 'sent',
+           sent_at = CURRENT_TIMESTAMP
+       WHERE report_type = 'daily_summary'
+         AND report_date = ?
+         AND attempt_count = ?
+         AND status = 'delivery_started'`,
+      [targetDateStr, attemptToken]
     );
-    console.log(`[daily-owner-report] Successfully sent daily owner report for ${targetDateStr}.`);
+    if (!sentRes || sentRes.changes === 0) {
+      console.warn(`[daily-owner-report] Lost lease or delivery state changed while recording sent status for ${targetDateStr} (attemptToken=${attemptToken}). State was not overwritten.`);
+    } else {
+      console.log(`[daily-owner-report] Successfully sent daily owner report for ${targetDateStr} (attemptToken=${attemptToken}).`);
+    }
     return { ok: true, sent: true, reportDate: targetDateStr, metrics, message };
-  } else {
-    await dbRunAsync(
+  } else if (isAmbiguous) {
+    const unknownRes = await dbRunAsync(
       db,
-      `UPDATE daily_owner_reports SET status = 'failed' WHERE report_type = 'daily_summary' AND report_date = ?`,
-      [targetDateStr]
+      `UPDATE daily_owner_reports
+       SET status = 'delivery_unknown'
+       WHERE report_type = 'daily_summary'
+         AND report_date = ?
+         AND attempt_count = ?
+         AND status = 'delivery_started'`,
+      [targetDateStr, attemptToken]
     );
-    console.warn(`[daily-owner-report] Telegram notification was not sent (skipped or failed) for ${targetDateStr}. Row marked failed for later retry.`);
+    if (!unknownRes || unknownRes.changes === 0) {
+      console.warn(`[daily-owner-report] Lost lease or delivery state changed while recording delivery_unknown for ${targetDateStr} (attemptToken=${attemptToken}).`);
+    } else {
+      console.warn(`[daily-owner-report] Telegram network transport failure without HTTP response for ${targetDateStr} (attemptToken=${attemptToken}). Marked delivery_unknown to prevent duplicate sends.`);
+    }
+    return { ok: false, sent: false, reason: 'delivery_unknown_transport_failure', reportDate: targetDateStr, metrics };
+  } else {
+    const failRes = await dbRunAsync(
+      db,
+      `UPDATE daily_owner_reports
+       SET status = 'failed'
+       WHERE report_type = 'daily_summary'
+         AND report_date = ?
+         AND attempt_count = ?
+         AND status = 'delivery_started'`,
+      [targetDateStr, attemptToken]
+    );
+    if (!failRes || failRes.changes === 0) {
+      console.warn(`[daily-owner-report] Lost lease or delivery state changed while recording failed status for ${targetDateStr} (attemptToken=${attemptToken}).`);
+    } else {
+      console.warn(`[daily-owner-report] Telegram notification failed explicitly for ${targetDateStr} (attemptToken=${attemptToken}). Marked failed for safe cooldown retry.`);
+    }
     return { ok: false, sent: false, reason: notifyResult.reason || 'telegram_send_failed', reportDate: targetDateStr, metrics };
   }
 }
@@ -968,4 +1045,3 @@ module.exports = {
   escapeHtml,
   extractSafeDomain,
 };
-

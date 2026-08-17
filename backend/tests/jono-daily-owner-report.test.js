@@ -756,3 +756,281 @@ test('20: technical issues report distinct active issues and do not mislabel cum
   assert.match(message, /Issues-Warning: 1/);
 });
 
+// ── 21. Attempt Fencing Token & Stale Lease Safety ────────────────────
+
+test('21: attempt fencing token prevents stalled attempt from sending Telegram or writing state after newer attempt claims', async () => {
+  const tMock = installTelegramMock();
+  const testDate = '2026-09-01';
+
+  try {
+    // Attempt A claims execution initially (attempt_count = 1)
+    await dbRun(
+      `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+       VALUES ('daily_summary', ?, 'in_progress', 1, datetime('now', '-10 minutes'))`,
+      [testDate]
+    );
+
+    // Attempt B reclaims after lease expiry and finishes successfully (attempt_count = 2)
+    const resB = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDate,
+      force: true,
+      db,
+    });
+    assert.equal(resB.ok, true);
+    assert.equal(resB.sent, true);
+    assert.equal(tMock.sentMessages.length, 1, 'Attempt B sent exactly 1 Telegram message');
+
+    const rowAfterB = await dbGet(`SELECT attempt_count, status, sent_at FROM daily_owner_reports WHERE report_date = ?`, [testDate]);
+    assert.equal(rowAfterB.attempt_count, 2);
+    assert.equal(rowAfterB.status, 'sent');
+    assert.ok(rowAfterB.sent_at);
+
+    // Attempt A resumes with stale attemptToken = 1 and tries to transition to delivery_started
+    const staleTransition = await dbRun(
+      `UPDATE daily_owner_reports
+       SET status = 'delivery_started', last_attempt_at = CURRENT_TIMESTAMP
+       WHERE report_type = 'daily_summary' AND report_date = ? AND attempt_count = 1 AND status = 'in_progress'`,
+      [testDate]
+    );
+    assert.equal(staleTransition.changes, 0, 'Stale attempt A fails CAS fencing and cannot enter delivery_started');
+
+    // Attempt A tries to write sent
+    const staleSent = await dbRun(
+      `UPDATE daily_owner_reports
+       SET status = 'sent', sent_at = CURRENT_TIMESTAMP
+       WHERE report_type = 'daily_summary' AND report_date = ? AND attempt_count = 1 AND status = 'delivery_started'`,
+      [testDate]
+    );
+    assert.equal(staleSent.changes, 0, 'Stale attempt A cannot overwrite sent state');
+
+    // Attempt A tries to write failed
+    const staleFailed = await dbRun(
+      `UPDATE daily_owner_reports
+       SET status = 'failed'
+       WHERE report_type = 'daily_summary' AND report_date = ? AND attempt_count = 1 AND status = 'delivery_started'`,
+      [testDate]
+    );
+    assert.equal(staleFailed.changes, 0, 'Stale attempt A cannot overwrite with failed');
+
+    // Total Telegram messages remains exactly 1
+    assert.equal(tMock.sentMessages.length, 1, 'Maximum Telegram sends across concurrent/stale attempts is exactly 1');
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 22. Concurrent Scheduler & delivery_started In-Flight Protection ──
+
+test('22: concurrent scheduler with force=true does not reclaim or send when delivery_started is actively in-flight', async () => {
+  const tMock = installTelegramMock();
+  const testDate = '2026-09-02';
+
+  try {
+    // Scheduler A reached delivery_started (lease fresh, 10s ago)
+    await dbRun(
+      `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+       VALUES ('daily_summary', ?, 'delivery_started', 1, datetime('now', '-10 seconds'))`,
+      [testDate]
+    );
+
+    // Scheduler B runs with force=true
+    const resB = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDate,
+      force: true,
+      db,
+    });
+
+    assert.equal(resB.skipped, true);
+    assert.equal(resB.reason, 'delivery_in_flight', 'Scheduler B skips active delivery in flight without touching state');
+    assert.equal(tMock.sentMessages.length, 0, 'Zero messages sent by concurrent scheduler B');
+
+    const row = await dbGet(`SELECT status, attempt_count FROM daily_owner_reports WHERE report_date = ?`, [testDate]);
+    assert.equal(row.status, 'delivery_started', 'Status remains delivery_started owned by attempt 1');
+    assert.equal(row.attempt_count, 1);
+  } finally {
+    tMock.restore();
+  }
+});
+
+// ── 23. Sticky delivery_unknown Against Late Explicit Failure ────────
+
+test('23: delivery_unknown is sticky and cannot be overwritten by a late explicit failure from an old attempt', async () => {
+  const testDate = '2026-09-03';
+
+  await dbRun(
+    `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+     VALUES ('daily_summary', ?, 'delivery_unknown', 1, CURRENT_TIMESTAMP)`,
+    [testDate]
+  );
+
+  // Late failure update from attempt 1 (expecting delivery_started)
+  const lateFailRes = await dbRun(
+    `UPDATE daily_owner_reports
+     SET status = 'failed'
+     WHERE report_type = 'daily_summary' AND report_date = ? AND attempt_count = 1 AND status = 'delivery_started'`,
+    [testDate]
+  );
+  assert.equal(lateFailRes.changes, 0, 'Late failure cannot overwrite delivery_unknown');
+
+  const row = await dbGet(`SELECT status FROM daily_owner_reports WHERE report_date = ?`, [testDate]);
+  assert.equal(row.status, 'delivery_unknown', 'delivery_unknown remains sticky');
+});
+
+// ── 24. Sticky delivery_unknown Against Late Success ─────────────────
+
+test('24: delivery_unknown is sticky and cannot be overwritten by a late success without valid fencing', async () => {
+  const testDate = '2026-09-04';
+
+  await dbRun(
+    `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+     VALUES ('daily_summary', ?, 'delivery_unknown', 1, CURRENT_TIMESTAMP)`,
+    [testDate]
+  );
+
+  // Late success update from attempt 1 (expecting delivery_started)
+  const lateSentRes = await dbRun(
+    `UPDATE daily_owner_reports
+     SET status = 'sent', sent_at = CURRENT_TIMESTAMP
+     WHERE report_type = 'daily_summary' AND report_date = ? AND attempt_count = 1 AND status = 'delivery_started'`,
+    [testDate]
+  );
+  assert.equal(lateSentRes.changes, 0, 'Late success cannot overwrite delivery_unknown');
+
+  const row = await dbGet(`SELECT status, sent_at FROM daily_owner_reports WHERE report_date = ?`, [testDate]);
+  assert.equal(row.status, 'delivery_unknown');
+  assert.equal(row.sent_at, null);
+});
+
+// ── 25. Transport Ambiguity (No HTTP Response) Transitions to delivery_unknown ──
+
+test('25: network timeout / transport error without HTTP response marks delivery_unknown and blocks automatic retries', async () => {
+  const sentMock = mock.method(telegram, 'sendMessage', async () => {
+    // Simulates Axios timeout / network drop with no HTTP response
+    return { ok: false, skipped: false, reason: 'telegram_api_error', details: 'ETIMEDOUT', deliveryAmbiguous: true };
+  });
+  const testDate = '2026-09-05';
+
+  try {
+    const res = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDate,
+      force: true,
+      db,
+    });
+
+    assert.equal(res.ok, false);
+    assert.equal(res.sent, false);
+    assert.equal(res.reason, 'delivery_unknown_transport_failure');
+
+    const row = await dbGet(`SELECT status, sent_at FROM daily_owner_reports WHERE report_date = ?`, [testDate]);
+    assert.equal(row.status, 'delivery_unknown', 'Row is marked delivery_unknown');
+    assert.equal(row.sent_at, null);
+
+    // Subsequent automatic execution attempt is safely blocked for manual review
+    const retryRes = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDate,
+      force: true,
+      db,
+    });
+    assert.equal(retryRes.skipped, true);
+    assert.equal(retryRes.reason, 'delivery_unknown_manual_review_required');
+  } finally {
+    sentMock.mock.restore();
+  }
+});
+
+// ── 26. Explicit Telegram HTTP Rejection Marks Failed with Retry Allowed ────
+
+test('26: explicit Telegram HTTP rejection marks status failed and allows retry after cooldown', async () => {
+  let attempt = 0;
+  const sentMock = mock.method(telegram, 'sendMessage', async () => {
+    attempt++;
+    if (attempt === 1) {
+      // Explicit HTTP 400 error with response
+      return { ok: false, skipped: false, reason: 'telegram_api_error', details: 'HTTP_400', deliveryAmbiguous: false };
+    }
+    return { ok: true, status: 200, deliveryAmbiguous: false };
+  });
+  const testDate = '2026-09-06';
+
+  try {
+    const res1 = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDate,
+      force: true,
+      db,
+    });
+    assert.equal(res1.ok, false);
+    assert.equal(res1.sent, false);
+
+    const row1 = await dbGet(`SELECT status, attempt_count FROM daily_owner_reports WHERE report_date = ?`, [testDate]);
+    assert.equal(row1.status, 'failed');
+    assert.equal(row1.attempt_count, 1);
+
+    // Immediate retry within 5-minute cooldown is skipped
+    const resImmediate = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDate,
+      force: true,
+      db,
+    });
+    assert.equal(resImmediate.skipped, true);
+    assert.equal(resImmediate.reason, 'claim_failed_or_cooling_down');
+
+    // Simulate cooldown expiry by shifting last_attempt_at back 10 minutes
+    await dbRun(
+      `UPDATE daily_owner_reports SET last_attempt_at = datetime('now', '-10 minutes') WHERE report_date = ?`,
+      [testDate]
+    );
+
+    // Second attempt succeeds
+    const res2 = await dailyOwnerReport.generateAndSendDailyReport({
+      dateStr: testDate,
+      force: true,
+      db,
+    });
+    assert.equal(res2.ok, true);
+    assert.equal(res2.sent, true);
+
+    const row2 = await dbGet(`SELECT status, attempt_count, sent_at FROM daily_owner_reports WHERE report_date = ?`, [testDate]);
+    assert.equal(row2.status, 'sent');
+    assert.equal(row2.attempt_count, 2);
+    assert.ok(row2.sent_at);
+  } finally {
+    sentMock.mock.restore();
+  }
+});
+
+// ── 27. Force Catch-Up Bypasses Time Eligibility Only ──────────────────
+
+test('27: force catch-up bypasses time eligibility only, never bypassing in_progress, delivery_unknown, or sent ownership', async () => {
+  const testDateA = '2026-09-07';
+  // Active in_progress (< 5m)
+  await dbRun(
+    `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+     VALUES ('daily_summary', ?, 'in_progress', 1, CURRENT_TIMESTAMP)`,
+    [testDateA]
+  );
+  const resA = await dailyOwnerReport.generateAndSendDailyReport({ dateStr: testDateA, force: true, db });
+  assert.equal(resA.skipped, true);
+  assert.equal(resA.reason, 'claim_failed_or_cooling_down');
+
+  // delivery_unknown
+  const testDateB = '2026-09-08';
+  await dbRun(
+    `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at)
+     VALUES ('daily_summary', ?, 'delivery_unknown', 1, CURRENT_TIMESTAMP)`,
+    [testDateB]
+  );
+  const resB = await dailyOwnerReport.generateAndSendDailyReport({ dateStr: testDateB, force: true, db });
+  assert.equal(resB.skipped, true);
+  assert.equal(resB.reason, 'delivery_unknown_manual_review_required');
+
+  // already sent
+  const testDateC = '2026-09-09';
+  await dbRun(
+    `INSERT INTO daily_owner_reports (report_type, report_date, status, attempt_count, last_attempt_at, sent_at)
+     VALUES ('daily_summary', ?, 'sent', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [testDateC]
+  );
+  const resC = await dailyOwnerReport.generateAndSendDailyReport({ dateStr: testDateC, force: true, db });
+  assert.equal(resC.skipped, true);
+  assert.equal(resC.reason, 'already_sent');
+});
