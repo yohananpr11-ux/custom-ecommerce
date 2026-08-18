@@ -403,7 +403,7 @@ test('generate-sitemap.cjs default mode', async (t) => {
 
       assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
       const publicXml = fs.readFileSync(path.join(dir, 'public', 'sitemap.xml'), 'utf8');
-      
+
       // All active products 1..16 present
       for (let id = 1; id <= 16; id++) {
         assert.match(publicXml, new RegExp(`/product/${id}<`));
