@@ -47,7 +47,6 @@ env:
   IPAPI_KEY: ""
   GEMINI_API_KEY: ""
   JONO_ADMIN_SECRET: ""
-  DRIP_ADMIN_SECRET: ""
 
 jobs:
   verify:

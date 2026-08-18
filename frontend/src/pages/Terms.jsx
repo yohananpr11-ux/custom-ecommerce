@@ -28,7 +28,7 @@ export default function Terms() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('jono_locale') || localStorage.getItem('drip_street_locale');
+      const stored = localStorage.getItem('jono_locale');
       if (stored === 'he') setLocale('he');
     } catch { /* noop */ }
   }, []);

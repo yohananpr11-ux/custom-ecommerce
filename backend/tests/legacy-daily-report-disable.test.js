@@ -29,7 +29,6 @@ process.env.TELEGRAM_BOT_TOKEN = 'mock-telegram-token';
 process.env.TELEGRAM_OWNER_CHAT_ID = '123456789';
 process.env.TELEGRAM_WEBHOOK_SECRET = 'test-sec-leg';
 process.env.JONO_ADMIN_SECRET = 'test-admin-secret-legacy';
-process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-legacy';
 
 const { app } = require('../index.js');
 const db = require('../db.js');

@@ -109,7 +109,6 @@ function startServer({ port, dbPath, adminSecret }) {
   // "present" as far as dotenv is concerned, so it stays unset, and
   // requireAdminAuth's `if (!expected)` correctly treats '' as falsy.
   env.JONO_ADMIN_SECRET = adminSecret === undefined ? '' : adminSecret;
-  env.DRIP_ADMIN_SECRET = adminSecret === undefined ? '' : adminSecret;
   if (process.env.NETWORK_GUARD_LOG_PATH) {
     env.NETWORK_GUARD_LOG_PATH = process.env.NETWORK_GUARD_LOG_PATH;
   }

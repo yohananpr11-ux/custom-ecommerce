@@ -9,13 +9,8 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 // Mandatory legacy brand pattern across all historical variants
 const FORBIDDEN_BRAND_PATTERN = /drip[ -]?street|dripstreet|dripstreetshop|דריפ ?סטריט|joakim|joachim|joaquin|joaquín|חואקין|יואקים|יואקין/i;
 
-// Allowlist ONLY for the temporary staged rollout env variable during migration
-const ALLOWED_EXCEPTIONS = [
-  'process.env.DRIP_ADMIN_SECRET',
-  'DRIP_ADMIN_SECRET',
-  'drip_street_cart',
-  'drip_street_locale',
-];
+// Strict zero allowlist — NO exceptions permitted
+const ALLOWED_EXCEPTIONS = [];
 
 test('Repository Brand Integrity: Zero active legacy brand strings in tracked files', () => {
   const trackedFilesOutput = execSync('git ls-files', { cwd: REPO_ROOT, encoding: 'utf8' });
@@ -24,8 +19,13 @@ test('Repository Brand Integrity: Zero active legacy brand strings in tracked fi
   const violations = [];
 
   for (const relativePath of trackedFiles) {
-    // Skip binary files and git metadata
+    // Skip binary files, lock files, and git metadata
     if (/\.(png|jpg|jpeg|gif|webp|ico|sqlite|db|ttf|woff|woff2|eot|lock)$/i.test(relativePath)) {
+      continue;
+    }
+
+    // Skip the regression test's own pattern definition line
+    if (relativePath.replace(/\\/g, '/') === 'backend/tests/brand-purge-regression.test.js') {
       continue;
     }
 
@@ -37,26 +37,11 @@ test('Repository Brand Integrity: Zero active legacy brand strings in tracked fi
 
     lines.forEach((line, lineIndex) => {
       if (FORBIDDEN_BRAND_PATTERN.test(line)) {
-        // Check if the only match is an explicit transitional backward-compatibility exception
-        let isAllowed = false;
-        for (const exception of ALLOWED_EXCEPTIONS) {
-          if (line.includes(exception)) {
-            // Strip the allowed token and check if any other forbidden brand match remains
-            const stripped = line.split(exception).join('');
-            if (!FORBIDDEN_BRAND_PATTERN.test(stripped)) {
-              isAllowed = true;
-              break;
-            }
-          }
-        }
-
-        if (!isAllowed) {
-          violations.push({
-            file: relativePath,
-            line: lineIndex + 1,
-            content: line.trim(),
-          });
-        }
+        violations.push({
+          file: relativePath,
+          line: lineIndex + 1,
+          content: line.trim(),
+        });
       }
     });
   }

@@ -26,7 +26,6 @@ process.env.PAYPAL_CLIENT_SECRET = 'test-paypal-client-secret-issues';
 process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
 process.env.JONO_ADMIN_SECRET = 'test-admin-secret-issues';
-process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-issues';
 
 const { app } = require('../index.js');
 const db = require('../db.js');

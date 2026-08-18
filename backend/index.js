@@ -2062,7 +2062,7 @@ const timingSafeEqualStr = (a, b) => {
 app.post('/api/admin/set-coupon', (req, res) => {
   // Auth: shared secret header. The endpoint mutates the public storefront state,
   // so it must never be reachable without JONO_ADMIN_SECRET configured.
-  const expected = process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET;
+  const expected = process.env.JONO_ADMIN_SECRET;
   if (!expected) {
     return res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
   }
@@ -2081,40 +2081,27 @@ app.post('/api/admin/set-coupon', (req, res) => {
   }
   setCouponCallTimestamps.push(now);
 
-  const { couponCode, discountPercent } = req.body || {};
-  if (!couponCode || typeof couponCode !== 'string') {
-    return res.status(400).json({ error: 'couponCode string required' });
-  }
-  if (typeof discountPercent !== 'number' || discountPercent <= 0 || discountPercent > 100) {
-    return res.status(400).json({ error: 'discountPercent must be a number between 1 and 100' });
+  const { code, discount_pct, duration_hours } = req.body || {};
+  if (!code || !discount_pct) {
+    currentActiveCoupon = null; // Clear coupon if empty
+    console.log(`[coupon] cleared by admin at ${new Date(now).toISOString()}`);
+    return res.json({ success: true, message: 'Coupon cleared.' });
   }
 
-  // Idempotent: upsert into leads table as a promo code with special email prefix
-  const promoEmail = `promo-${couponCode.toLowerCase()}@system.internal`;
-  db.run(
-    `INSERT INTO leads (email, promo_code, is_used)
-     VALUES (?, ?, 0)
-     ON CONFLICT(email) DO UPDATE SET promo_code = excluded.promo_code, is_used = 0`,
-    [promoEmail, couponCode.toUpperCase()],
-    (err) => {
-      if (err) {
-        // Fallback: try inserting without conflict clause if table has no UNIQUE(email) constraint
-        db.run(
-          `INSERT OR REPLACE INTO leads (email, promo_code, is_used) VALUES (?, ?, 0)`,
-          [promoEmail, couponCode.toUpperCase()],
-          (err2) => {
-            if (err2) {
-              console.error('Failed to set coupon:', err2.message);
-              return res.status(500).json({ error: 'Failed to set coupon' });
-            }
-            res.json({ success: true, couponCode: couponCode.toUpperCase(), discountPercent });
-          }
-        );
-        return;
+  currentActiveCoupon = { code, discount_pct };
+  console.log(`[coupon] set ${code} ${discount_pct}% for ${duration_hours || 0}h at ${new Date(now).toISOString()}`);
+
+  // Clear coupon after duration
+  if (duration_hours) {
+    setTimeout(() => {
+      if (currentActiveCoupon && currentActiveCoupon.code === code) {
+        currentActiveCoupon = null;
+        console.log(`Coupon ${code} expired.`);
       }
-      res.json({ success: true, couponCode: couponCode.toUpperCase(), discountPercent });
-    }
-  );
+    }, duration_hours * 60 * 60 * 1000);
+  }
+
+  res.json({ success: true, message: `Coupon ${code} set to ${discount_pct}% off.` });
 });
 
 // Manual Price Refresh Endpoint
@@ -2125,7 +2112,7 @@ app.post('/api/admin/set-coupon', (req, res) => {
 // Auth: same X-Admin-Secret shared header as set-coupon.
 // Usage: curl -X POST https://.../api/admin/refresh-prices -H "X-Admin-Secret: <secret>"
 app.post('/api/admin/refresh-prices', async (req, res) => {
-  const expected = process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET;
+  const expected = process.env.JONO_ADMIN_SECRET;
   if (!expected) {
     return res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
   }
@@ -2182,7 +2169,7 @@ app.post('/api/admin/refresh-prices', async (req, res) => {
 const designJsonParser = express.json({ limit: '15mb' });
 
 const requireAdminAuth = (req, res) => {
-  const expected = process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET;
+  const expected = process.env.JONO_ADMIN_SECRET;
   if (!expected) {
     res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
     return false;
@@ -4210,21 +4197,7 @@ if (require.main === module) {
   // Idempotent seeder for CJ Dropshipping products — runs on every startup
   // Ensures dropship products exist in production even after ephemeral DB wipes on Render
   const seedDropshipProducts = () => new Promise((resolve) => {
-    const CJ_CATALOG = [
-      {
-        id: 16, // Canonical ID — must match frontend routes (/product/16)
-        title: 'Six-sided Grinding Cuban Link Chain | Premium Jewelry',
-        description: 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the JONO jewelry line.',
-        price: 149.00,
-        priceUSD: 39.90,
-        imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
-        type: 'dropship',
-        supplier_id: 'dropship',
-        printifyId: 'CJLX222053101AZ',
-        stock: 999,
-        variant: { color: 'Gold', size: '20 Inch', price: 149.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
-      },
-    ];
+    const CJ_CATALOG = [];
 
     let pending = CJ_CATALOG.length;
     if (pending === 0) return resolve();

@@ -44,7 +44,7 @@ const baseUrl = normalizeBaseUrl(
 );
 
 const adminSecret = String(
-  args.adminSecret || args.admin_secret || process.env.JONO_ADMIN_SECRET || process.env.SMOKE_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET || DEFAULT_ADMIN_SECRET
+  args.adminSecret || args.admin_secret || process.env.JONO_ADMIN_SECRET || process.env.SMOKE_ADMIN_SECRET || DEFAULT_ADMIN_SECRET
 ).trim();
 
 const marketingSecret = String(

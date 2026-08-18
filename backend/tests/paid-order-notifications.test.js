@@ -28,7 +28,6 @@ process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
 process.env.RESEND_API_KEY = '';
 process.env.JONO_ADMIN_SECRET = 'test-admin-secret-notif-e2e';
-process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-notif-e2e';
 
 const { app, processPaidOrderFulfillment } = require('../index.js');
 const db = require('../db.js');

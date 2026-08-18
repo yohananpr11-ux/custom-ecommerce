@@ -166,7 +166,7 @@ class EmailService {
     `;
 
     const headers = {
-      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:unsubscribe@shopjono.com?subject=unsubscribe-${encodeURIComponent(email)}>`,
+      'List-Unsubscribe': `<${unsubscribeUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
     };
 

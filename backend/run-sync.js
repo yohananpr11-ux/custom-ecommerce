@@ -54,7 +54,7 @@ if (!backendBaseUrl) {
   fail('SYNC_BACKEND_URL must be set explicitly (e.g. https://custom-ecommerce-qp30.onrender.com). Refusing to guess a target.');
 }
 
-const adminSecret = process.env.JONO_ADMIN_SECRET || process.env.DRIP_ADMIN_SECRET;
+const adminSecret = process.env.JONO_ADMIN_SECRET;
 if (!adminSecret) {
   fail('JONO_ADMIN_SECRET must be set explicitly. Refusing to call an unauthenticated request.');
 }

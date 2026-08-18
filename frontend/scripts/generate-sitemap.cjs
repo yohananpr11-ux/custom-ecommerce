@@ -132,18 +132,38 @@ function fetchProductIdsFromDb() {
         return resolve(null);
       }
 
-      db.all('SELECT id FROM products WHERE COALESCE(is_hidden, 0) = 0 ORDER BY id ASC', [], (queryErr, rows) => {
-        db.close();
-        if (queryErr) {
-          console.warn(`[sitemap] SQLite query failed (${queryErr.message}); will try API fallback.`);
-          return resolve(null);
+      db.all(
+        `SELECT DISTINCT p.id
+         FROM products p
+         LEFT JOIN product_variants pv ON pv.productId = p.id
+         WHERE COALESCE(p.stock, 0) > 0
+           AND COALESCE(p.is_hidden, 0) = 0
+           AND (p.type = 'printify' OR p.type = 'dropship' OR p.supplier_id = 'printify' OR p.supplier_id = 'dropship')
+           AND p.id NOT IN (17, 18, 19, 20, 21)
+           AND p.title NOT LIKE '%Test%'
+           AND (
+             pv.id IS NULL
+             OR (
+               COALESCE(pv.isEnabled, 0) = 1
+               AND COALESCE(pv.isAvailable, 0) = 1
+               AND COALESCE(pv.stockQty, 0) > 0
+             )
+           )
+         ORDER BY p.id ASC`,
+        [],
+        (queryErr, rows) => {
+          db.close();
+          if (queryErr) {
+            console.warn(`[sitemap] SQLite query failed (${queryErr.message}); will try API fallback.`);
+            return resolve(null);
+          }
+          const ids = (rows || [])
+            .map((row) => Number(row && row.id))
+            .filter((id) => Number.isInteger(id) && id > 0 && id <= 16);
+          console.log(`[sitemap] Loaded ${ids.length} product IDs directly from SQLite.`);
+          resolve(ids);
         }
-        const ids = (rows || [])
-          .map((row) => Number(row && row.id))
-          .filter((id) => Number.isInteger(id) && id > 0);
-        console.log(`[sitemap] Loaded ${ids.length} product IDs directly from SQLite.`);
-        resolve(ids);
-      });
+      );
     });
   });
 }

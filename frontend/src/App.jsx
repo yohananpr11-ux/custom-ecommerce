@@ -982,10 +982,10 @@ function LeadCapturePopup({ t, currentPath }) {
   useEffect(() => {
     if (currentPath !== '/') return undefined;
 
-    if (sessionStorage.getItem(SESSION_KEY) === '1' || sessionStorage.getItem('drip_street_lead_popup_seen_session') === '1') return undefined;
-    if (localStorage.getItem('jono_lead_code') || localStorage.getItem('drip_street_lead_code')) return undefined;
+    if (sessionStorage.getItem(SESSION_KEY) === '1') return undefined;
+    if (localStorage.getItem('jono_lead_code')) return undefined;
 
-    const dismissedAt = Number(localStorage.getItem(STORAGE_KEY) || localStorage.getItem('drip_street_lead_dismissed_at') || 0);
+    const dismissedAt = Number(localStorage.getItem(STORAGE_KEY) || 0);
     if (dismissedAt && (Date.now() - dismissedAt) < DISMISS_TTL_MS) {
       return undefined;
     }
@@ -1928,7 +1928,7 @@ function MainApp() {
   const [isLoading, setIsLoading] = useState(true)
   const [cart, setCart] = useState(() => {
     try {
-      const saved = localStorage.getItem('jono_cart') || localStorage.getItem('drip_street_cart');
+      const saved = localStorage.getItem('jono_cart');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -1973,7 +1973,7 @@ function MainApp() {
   const [isQuickAddLoading, setIsQuickAddLoading] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
-  const [locale, setLocale] = useState(() => localStorage.getItem('jono_locale') || localStorage.getItem('drip_street_locale') || 'en');
+  const [locale, setLocale] = useState(() => localStorage.getItem('jono_locale') || 'en');
   const [currency, setCurrency] = useState('USD')
   const [exchangeRate, setExchangeRate] = useState(3.75)
   const [isHeaderScrolled, setIsHeaderScrolled] = useState(false)
@@ -2013,7 +2013,7 @@ function MainApp() {
           setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
         }
         // Set locale dynamically on first visit if no manual choice is stored
-        if (data && (data.locale === 'he' || data.locale === 'en') && !localStorage.getItem('jono_locale') && !localStorage.getItem('drip_street_locale')) {
+        if (data && (data.locale === 'he' || data.locale === 'en') && !localStorage.getItem('jono_locale')) {
           setLocale(data.locale);
         }
       })
@@ -2030,7 +2030,7 @@ function MainApp() {
         setShippingCountry(cc);
         setCheckoutForm((prev) => prev.country ? prev : { ...prev, country: cc });
         // Fallback locale dynamic set if no manual override
-        if (!localStorage.getItem('jono_locale') && !localStorage.getItem('drip_street_locale')) {
+        if (!localStorage.getItem('jono_locale')) {
           setLocale(cc === 'IL' ? 'he' : 'en');
         }
       })
@@ -2040,7 +2040,7 @@ function MainApp() {
   const [isWidgetChatOpen, setIsWidgetChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([]);
   const [chatSessionId] = useState(() => {
-    let sid = localStorage.getItem('jono_chat_session') || localStorage.getItem('drip_street_chat_session');
+    let sid = localStorage.getItem('jono_chat_session');
     if (!sid) {
       sid = 'session_' + Math.random().toString(36).substring(2, 15);
       localStorage.setItem('jono_chat_session', sid);
@@ -2360,7 +2360,7 @@ function MainApp() {
 
   useEffect(() => {
     const visitKey = 'jono_visit_notified';
-    if (!sessionStorage.getItem(visitKey) && !sessionStorage.getItem('drip_street_visit_notified')) {
+    if (!sessionStorage.getItem(visitKey)) {
       fetch(`${API_BASE}/api/analytics/visit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3097,7 +3097,6 @@ function MainApp() {
           }));
         } catch { /* sessionStorage unavailable in private mode */ }
         localStorage.removeItem('jono_cart');
-        localStorage.removeItem('drip_street_cart');
         setCart([]);
         showToast(locale === 'he' ? 'התשלום בוצע בהצלחה! 🎉' : 'Payment Successful! 🎉');
         navigate('/success');
@@ -3169,7 +3168,6 @@ function MainApp() {
       const data = await response.json();
       if (data.success && data.paymentUrl) {
         localStorage.removeItem('jono_cart');
-        localStorage.removeItem('drip_street_cart');
         window.location.assign(data.paymentUrl);
       } else {
         showToast(data.error || t('payment_unavailable'));
@@ -3451,7 +3449,7 @@ function MainApp() {
     if (location.pathname !== '/success') return;
     let snapshot = null;
     try {
-      const raw = sessionStorage.getItem('jono_pending_order') || sessionStorage.getItem('drip_street_pending_order');
+      const raw = sessionStorage.getItem('jono_pending_order');
       if (raw) snapshot = JSON.parse(raw);
     } catch { /* sessionStorage unavailable */ }
 
@@ -3465,7 +3463,6 @@ function MainApp() {
     // double-count the same purchase.
     try {
       sessionStorage.removeItem('jono_pending_order');
-      sessionStorage.removeItem('drip_street_pending_order');
     } catch { /* noop */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);

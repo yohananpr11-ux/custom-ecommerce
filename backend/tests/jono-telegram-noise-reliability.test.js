@@ -34,7 +34,6 @@ process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = 'mock-telegram-token';
 process.env.TELEGRAM_OWNER_CHAT_ID = '123456789';
 process.env.JONO_ADMIN_SECRET = 'test-admin-secret-noise';
-process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-noise';
 
 const { app } = require('../index.js');
 const db = require('../db.js');

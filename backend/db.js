@@ -454,41 +454,71 @@ const readyPromise = new Promise((resolveReady, rejectReady) => {
                   );
                 }
 
-                // Data migration: Product copy sanitization & soft-launch catalog cleanup
-                db.serialize(() => {
-                  // 1. Hide products 17, 18, 19, 20, 21 from customer-facing storefront for soft-launch
-                  db.run(`UPDATE products SET is_hidden = 1 WHERE id IN (17, 18, 19, 20, 21)`);
+                // Data migration: Product copy sanitization & soft-launch catalog cleanup (Fail-safe)
+                (async () => {
+                  try {
+                    // 1. Hide products 17, 18, 19, 20, 21 from customer-facing storefront for soft-launch
+                    await new Promise((res, rej) => {
+                      db.run(`UPDATE products SET is_hidden = 1 WHERE id IN (17, 18, 19, 20, 21)`, (err) => {
+                        if (err) return rej(new Error(`Failed to hide launch products 17-21: ${err.message}`));
+                        res();
+                      });
+                    });
 
-                  // 2. Product 16: Ensure truthful JONO copy
-                  db.run(
-                    `UPDATE products
-                     SET description = 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the JONO jewelry line.'
-                     WHERE id = 16`
-                  );
+                    // 2. Product 16: Ensure truthful JONO copy
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `UPDATE products
+                         SET description = 'JONO - Oversized CVC Logo Heather Grey — JONO CVC Minimalist Streetwear. Premium Airlume cotton-poly zero-iron blend.'
+                         WHERE id = 16`,
+                        (err) => {
+                          if (err) return rej(new Error(`Failed to update product 16 copy: ${err.message}`));
+                          res();
+                        }
+                      );
+                    });
 
-                  // 3. Products 22, 23, 24: Ensure truthful JONO copy
-                  db.run(
-                    `UPDATE products
-                     SET description = 'JONO Premium Street Hoodie Drop. Heavyweight cotton fleece with tailored silhouette.'
-                     WHERE id = 22`
-                  );
-                  db.run(
-                    `UPDATE products
-                     SET description = 'JONO Premium Street Hoodie Drop v2. Heavyweight cotton fleece with tailored silhouette.'
-                     WHERE id = 23`
-                  );
-                  db.run(
-                    `UPDATE products
-                     SET description = 'JONO Premium Street Hoodie Drop v3. Heavyweight cotton fleece with tailored silhouette.'
-                     WHERE id = 24`,
-                    (migErr) => {
-                      if (migErr) {
-                        console.error('Product copy sanitization migration error:', migErr.message);
-                      }
-                      resolveReady();
-                    }
-                  );
-                });
+                    // 3. Products 22, 23, 24: Ensure truthful JONO copy
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `UPDATE products
+                         SET description = 'Premium Street Hoodie v3 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+                         WHERE id = 22`,
+                        (err) => {
+                          if (err) return rej(new Error(`Failed to update product 22 copy: ${err.message}`));
+                          res();
+                        }
+                      );
+                    });
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `UPDATE products
+                         SET description = 'Premium Street Hoodie v4 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+                         WHERE id = 23`,
+                        (err) => {
+                          if (err) return rej(new Error(`Failed to update product 23 copy: ${err.message}`));
+                          res();
+                        }
+                      );
+                    });
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `UPDATE products
+                         SET description = 'Premium Street Hoodie v5 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+                         WHERE id = 24`,
+                        (err) => {
+                          if (err) return rej(new Error(`Failed to update product 24 copy: ${err.message}`));
+                          res();
+                        }
+                      );
+                    });
+
+                    resolveReady();
+                  } catch (migErr) {
+                    console.error('Launch catalog migration failed:', migErr.message);
+                    rejectReady(migErr);
+                  }
+                })();
               }
             );
           });

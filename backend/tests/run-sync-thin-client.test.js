@@ -71,7 +71,7 @@ test('missing SYNC_BACKEND_URL exits non-zero with a clear, non-crashing message
 });
 
 test('missing JONO_ADMIN_SECRET exits non-zero with a clear message, no secret in output', () => {
-  const result = runScript({ SYNC_BACKEND_URL: 'http://127.0.0.1:1', JONO_ADMIN_SECRET: '', DRIP_ADMIN_SECRET: '' });
+  const result = runScript({ SYNC_BACKEND_URL: 'http://127.0.0.1:1', JONO_ADMIN_SECRET: '' });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /JONO_ADMIN_SECRET/);
 });

@@ -22,7 +22,7 @@ export default function RefundPolicy() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('jono_locale') || localStorage.getItem('drip_street_locale');
+      const stored = localStorage.getItem('jono_locale');
       if (stored === 'he') setLocale('he');
     } catch { /* noop */ }
   }, []);
@@ -59,7 +59,7 @@ export default function RefundPolicy() {
               <li>צרפו תמונות חדות של התקלה ושל תווית המשלוח.</li>
             </ol>
             <p dir="rtl" style={{ marginTop: '16px', marginBottom: 0, lineHeight: '1.9', color: 'var(--color-text-secondary, #b3b3b3)' }}>
-              לאחר בדיקה, נעדכן אתכם לגבי ההמשך. במקרים מאושרים, ההחזר יועבר לאמצעי התשלום המקורי תוך 5-10 ימי עסקים.
+              לאחר בדיקה, נעדכן אתכם לגבי ההמשך. במקרים מאושרים, ההחזר יועבר לאמצעי התשלום המקורי תוך 3-7 ימי עסקים.
             </p>
           </section>
 
@@ -68,7 +68,16 @@ export default function RefundPolicy() {
               3. ביטול הזמנה
             </h2>
             <p dir="rtl" style={{ margin: 0, lineHeight: '1.9', color: 'var(--color-text-secondary, #b3b3b3)' }}>
-              לביטול הזמנה יש לפנות אלינו בהקדם דרך <Link to="/contact" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>עמוד יצירת קשר</Link>. לאחר כניסת ההזמנה לתהליך הייצור, לא ניתן יהיה לבטלה.
+              לביטול הזמנה יש לפנות אלינו בתוך שעתיים מרגע ביצוע ההזמנה דרך <Link to="/contact" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>עמוד יצירת קשר</Link>. לאחר מכן, ההזמנה נכנסת לייצור ולא ניתן יהיה לבטלה.
+            </p>
+          </section>
+
+          <section>
+            <h2 style={{ color: 'var(--color-white)', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>
+              4. עיתוי טיפול בהחזרים
+            </h2>
+            <p dir="rtl" style={{ margin: 0, lineHeight: '1.9', color: 'var(--color-text-secondary, #b3b3b3)' }}>
+              לאחר אישור הפנייה, ההחזר מבוצע מידית מול ספק התשלום. ברוב המקרים יידרשו 3-7 ימי עסקים עד להופעת הזיכוי בחשבון.
             </p>
           </section>
         </div>
@@ -103,14 +112,21 @@ export default function RefundPolicy() {
             <li>Include clear photos showing the defect and the packaging/shipping label.</li>
           </ol>
           <p style={{ margin: '8px 0 0 0', color: 'var(--color-text-secondary, #b3b3b3)' }}>
-            Approved refunds are credited back to your original payment method within 5–10 business days.
+            Approved refunds are credited back to your original payment method within 3–7 business days.
           </p>
         </section>
 
         <section style={sectionStyle}>
           <h2 style={headingStyle}>3. Order Cancellations</h2>
           <p style={{ margin: 0, color: 'var(--color-text-secondary, #b3b3b3)' }}>
-            Because orders are automatically queued for production, cancellation requests must be submitted immediately via our <Link to="/contact" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>Contact Us</Link> page. Once printing has begun, orders cannot be cancelled.
+            Because orders are automatically queued for production, cancellation requests must be submitted within 2 hours of placing the order via our <Link to="/contact" style={{ color: 'var(--color-white)', textDecoration: 'underline' }}>Contact Us</Link> page. Once printing has begun, orders cannot be cancelled.
+          </p>
+        </section>
+
+        <section style={sectionStyle}>
+          <h2 style={headingStyle}>4. Refund Processing Timing</h2>
+          <p style={{ margin: 0, color: 'var(--color-text-secondary, #b3b3b3)' }}>
+            Once approved, the refund is processed immediately through the payment processor. In most cases, it takes 3–7 business days to reflect on your statement depending on your financial institution.
           </p>
         </section>
       </div>

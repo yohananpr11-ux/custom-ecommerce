@@ -9,7 +9,6 @@ process.env.DB_PATH = TMP_DB;
 process.env.PORT = '0';
 process.env.NODE_ENV = 'test';
 process.env.JONO_ADMIN_SECRET = 'test-admin-secret-catalog';
-process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-catalog';
 
 const db = require('../db');
 const { app } = require('../index');
@@ -27,24 +26,34 @@ test('Soft Launch Catalog Migration & Visibility Gate', async (t) => {
 
   await db.readyPromise;
 
-  // Insert mock test products: 16 (old text), 17 (hardware item), 22 (mock text), 99 (clean product)
+  // Insert mock test products: 16 (old text), 17-21 (hardware items), 22, 23, 24 (mock text), 99 (clean product)
   await new Promise((resolve, reject) => {
     db.serialize(() => {
       db.run(
-        `INSERT OR REPLACE INTO products (id, title, description, price, type, stock)
-         VALUES (16, 'Cuban Link Chain', 'Outdated mock copy.', 299, 'dropship', 10)`
+        `INSERT OR REPLACE INTO products (id, title, description, price, type, supplier_id, stock)
+         VALUES (16, 'JONO - Oversized CVC Logo Heather Grey', 'Old mock copy.', 169.9, 'printify', 'printify', 10)`
+      );
+      for (let hid = 17; hid <= 21; hid++) {
+        db.run(
+          `INSERT OR REPLACE INTO products (id, title, description, price, type, supplier_id, stock)
+           VALUES (${hid}, 'Old Hardware Item ${hid}', 'Hardware drop.', 149, 'dropship', 'dropship', 5)`
+        );
+      }
+      db.run(
+        `INSERT OR REPLACE INTO products (id, title, description, price, type, supplier_id, stock)
+         VALUES (22, 'Premium Street Hoodie v3', 'Old mock copy.', 300, 'printify', 'printify', 8)`
       );
       db.run(
-        `INSERT OR REPLACE INTO products (id, title, description, price, type, stock)
-         VALUES (17, 'Old Legacy Hardware', 'Hardware drop.', 149, 'dropship', 5)`
+        `INSERT OR REPLACE INTO products (id, title, description, price, type, supplier_id, stock)
+         VALUES (23, 'Premium Street Hoodie v4', 'Old mock copy.', 300, 'printify', 'printify', 8)`
       );
       db.run(
-        `INSERT OR REPLACE INTO products (id, title, description, price, type, stock)
-         VALUES (22, 'Vintage Hoodie', 'Outdated mock copy.', 199, 'dropship', 8)`
+        `INSERT OR REPLACE INTO products (id, title, description, price, type, supplier_id, stock)
+         VALUES (24, 'Premium Street Hoodie v5', 'Old mock copy.', 300, 'printify', 'printify', 8)`
       );
       db.run(
-        `INSERT OR REPLACE INTO products (id, title, description, price, type, stock)
-         VALUES (99, 'JONO Flagship Hoodie', 'Premium heavyweight cotton hoodie.', 349, 'printify', 12)`
+        `INSERT OR REPLACE INTO products (id, title, description, price, type, supplier_id, stock)
+         VALUES (99, 'JONO Flagship Hoodie', 'Premium heavyweight cotton hoodie.', 349, 'printify', 'printify', 12)`
       );
       resolve();
     });
@@ -56,13 +65,23 @@ test('Soft Launch Catalog Migration & Visibility Gate', async (t) => {
       db.run(`UPDATE products SET is_hidden = 1 WHERE id IN (17, 18, 19, 20, 21)`);
       db.run(
         `UPDATE products
-         SET description = 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the JONO jewelry line.'
+         SET description = 'JONO - Oversized CVC Logo Heather Grey — JONO CVC Minimalist Streetwear. Premium Airlume cotton-poly zero-iron blend.'
          WHERE id = 16`
       );
       db.run(
         `UPDATE products
-         SET description = 'JONO Premium Street Hoodie Drop. Heavyweight cotton fleece with tailored silhouette.'
-         WHERE id = 22`,
+         SET description = 'Premium Street Hoodie v3 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+         WHERE id = 22`
+      );
+      db.run(
+        `UPDATE products
+         SET description = 'Premium Street Hoodie v4 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+         WHERE id = 23`
+      );
+      db.run(
+        `UPDATE products
+         SET description = 'Premium Street Hoodie v5 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+         WHERE id = 24`,
         resolve
       );
     });
@@ -70,14 +89,22 @@ test('Soft Launch Catalog Migration & Visibility Gate', async (t) => {
 
   // 1. Verify DB rows
   const prod16 = await new Promise((resolve) => db.get('SELECT * FROM products WHERE id = 16', (_, r) => resolve(r)));
-  assert.ok(prod16.description.includes('flagship staple of the JONO jewelry line'));
+  assert.ok(prod16.description.includes('JONO CVC Minimalist Streetwear'));
   assert.equal(prod16.is_hidden, 0);
 
-  const prod17 = await new Promise((resolve) => db.get('SELECT * FROM products WHERE id = 17', (_, r) => resolve(r)));
-  assert.equal(prod17.is_hidden, 1, 'Product 17 must be hidden for soft launch');
+  for (let hid = 17; hid <= 21; hid++) {
+    const prodH = await new Promise((resolve) => db.get(`SELECT * FROM products WHERE id = ${hid}`, (_, r) => resolve(r)));
+    assert.equal(prodH.is_hidden, 1, `Product ${hid} must be hidden for soft launch`);
+  }
 
   const prod22 = await new Promise((resolve) => db.get('SELECT * FROM products WHERE id = 22', (_, r) => resolve(r)));
-  assert.ok(prod22.description.includes('JONO Premium Street Hoodie Drop'));
+  assert.ok(prod22.description.includes('Premium Street Hoodie v3 — JONO drop'));
+
+  const prod23 = await new Promise((resolve) => db.get('SELECT * FROM products WHERE id = 23', (_, r) => resolve(r)));
+  assert.ok(prod23.description.includes('Premium Street Hoodie v4 — JONO drop'));
+
+  const prod24 = await new Promise((resolve) => db.get('SELECT * FROM products WHERE id = 24', (_, r) => resolve(r)));
+  assert.ok(prod24.description.includes('Premium Street Hoodie v5 — JONO drop'));
 
   // 2. Start HTTP server to test endpoints
   server = http.createServer(app);

@@ -27,7 +27,6 @@ process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
 process.env.TELEGRAM_WEBHOOK_SECRET = 'test-tgsec-configured';
 process.env.JONO_ADMIN_SECRET = 'test-admin-secret-tgsec';
-process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-tgsec';
 process.env.TELEGRAM_OWNER_CHAT_ID = 'test-authorized-chat-12345';
 delete process.env.TELEGRAM_WEBHOOK_SECRET;
 
