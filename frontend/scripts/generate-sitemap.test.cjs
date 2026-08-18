@@ -49,7 +49,7 @@ const BLANK_CREDENTIALS_ENV = {
   CLOUDINARY_CLOUD_NAME: '',
   CLOUDINARY_API_KEY: '',
   CLOUDINARY_API_SECRET: '',
-  DRIP_ADMIN_SECRET: '',
+  JONO_ADMIN_SECRET: '',
 };
 
 function makeTempProject() {
@@ -381,6 +381,38 @@ test('generate-sitemap.cjs default mode', async (t) => {
       assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
       const publicXml = fs.readFileSync(path.join(dir, 'public', 'sitemap.xml'), 'utf8');
       assert.match(publicXml, /\/product\/7777/);
+    } finally {
+      await fixture.close();
+      cleanupTempProject(dir);
+    }
+  });
+
+  await t.test('generated sitemap strictly contains active launch products and excludes 17-21', async () => {
+    const fixture = await startFixture((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      // API returns only active catalog IDs (1 to 16)
+      const activeIds = Array.from({ length: 16 }, (_, i) => i + 1);
+      res.end(JSON.stringify({ ids: activeIds }));
+    });
+    const { dir, scriptDest } = makeTempProject();
+    try {
+      const result = await runScript(scriptDest, {
+        SITEMAP_REQUIRE_API: 'true',
+        SITEMAP_API_BASE: fixture.baseUrl,
+      }, dir);
+
+      assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
+      const publicXml = fs.readFileSync(path.join(dir, 'public', 'sitemap.xml'), 'utf8');
+
+      // All active products 1..16 present
+      for (let id = 1; id <= 16; id++) {
+        assert.match(publicXml, new RegExp(`/product/${id}<`));
+      }
+
+      // Hidden hardware products 17..21 and nonexistent products must NOT be present
+      for (let id = 17; id <= 25; id++) {
+        assert.doesNotMatch(publicXml, new RegExp(`/product/${id}<`));
+      }
     } finally {
       await fixture.close();
       cleanupTempProject(dir);

@@ -5,7 +5,7 @@ const mockDestination = {
   firstName: 'Test',
   lastName: 'Customer',
   customerName: 'Test Customer',
-  customerEmail: 'test-cj@dripstreetshop.com',
+  customerEmail: 'test-cj@shopjono.com',
   phone: '1234567890',
   addressLine1: '123 Test Street',
   addressLine2: 'Apt 4B',

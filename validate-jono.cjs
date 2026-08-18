@@ -1,5 +1,5 @@
 /**
- * Phase 3 Validation — Drip Street Production Readiness
+ * Phase 3 Validation — JONO Production Readiness
  * Checks:
  * 1. Backend /api/products returns 17+ products
  * 2. Products 16-21 have distinct, non-duplicate image URLs
@@ -35,7 +35,7 @@ function head(url) {
 }
 
 async function run() {
-  console.log('=== Drip Street Phase 3 Validation ===\n');
+  console.log('=== JONO Phase 3 Validation ===\n');
   let passed = 0, failed = 0;
 
   // 1. Backend connectivity

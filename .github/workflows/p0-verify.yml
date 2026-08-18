@@ -46,7 +46,7 @@ env:
   CLOUDINARY_API_SECRET: ""
   IPAPI_KEY: ""
   GEMINI_API_KEY: ""
-  DRIP_ADMIN_SECRET: ""
+  JONO_ADMIN_SECRET: ""
 
 jobs:
   verify:

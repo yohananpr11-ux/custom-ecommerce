@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import JonoLogo from './JonoLogo';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
 const POLICY_CONTENT = {
   shipping: {
     title: 'Shipping Policy',
@@ -83,6 +85,9 @@ function PolicyModal({ policy, locale, onClose }) {
 
 export default function Footer({ locale = 'en' }) {
   const [activePolicy, setActivePolicy] = useState(null);
+  const [newsletterEmail, setNewsletterEmail] = useState('');
+  const [newsletterStatus, setNewsletterStatus] = useState('idle'); // 'idle' | 'loading' | 'success' | 'error'
+  const [newsletterMessage, setNewsletterMessage] = useState('');
 
   const copy = useMemo(() => {
     if (locale === 'he') {
@@ -91,6 +96,8 @@ export default function Footer({ locale = 'en' }) {
         newsletterSubtitle: 'הצטרפו לעדכונים, דרופים מוקדמים וקוד הטבה להזמנה הראשונה.',
         newsletterPlaceholder: 'כתובת האימייל שלך',
         newsletterCta: 'הצטרף',
+        newsletterSuccess: 'ברוכים הבאים! קוד ההטבה שלך:',
+        newsletterError: 'אירעה שגיאה, אנא נסה שוב.',
       };
     }
 
@@ -99,15 +106,35 @@ export default function Footer({ locale = 'en' }) {
       newsletterSubtitle: 'Subscribe for exclusive releases, early access, and 10% off your first order.',
       newsletterPlaceholder: 'Your email address',
       newsletterCta: 'Join',
+      newsletterSuccess: 'Welcome! Your 10% discount code:',
+      newsletterError: 'Something went wrong. Please try again.',
     };
   }, [locale]);
 
-  const handleNewsletterSubmit = (e) => {
+  const handleNewsletterSubmit = async (e) => {
     e.preventDefault();
-    const email = e.target.querySelector('input')?.value;
-    if (email) {
-      alert(`Thank you for subscribing, ${email}! Welcome to the club.`);
-      e.target.reset();
+    if (!newsletterEmail || !newsletterEmail.includes('@')) return;
+
+    setNewsletterStatus('loading');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: newsletterEmail.trim() }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setNewsletterStatus('success');
+        setNewsletterMessage(data.promoCode ? `${copy.newsletterSuccess} ${data.promoCode}` : copy.newsletterSuccess);
+        setNewsletterEmail('');
+      } else {
+        setNewsletterStatus('error');
+        setNewsletterMessage(data.error || copy.newsletterError);
+      }
+    } catch {
+      setNewsletterStatus('error');
+      setNewsletterMessage(copy.newsletterError);
     }
   };
 
@@ -117,9 +144,6 @@ export default function Footer({ locale = 'en' }) {
         
         {/* Brand Column */}
         <div className="footer-brand-col" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Phase 12: with the rembg-stripped transparent logo, footer mirrors
-              the navbar's clean rendering — no badge, no shadow, just the
-              metallic D floating on the dark footer canvas at 72px tall. */}
           <JonoLogo size="medium" style={{ alignSelf: 'flex-start', marginBottom: '4px' }} />
           <p style={{ fontSize: '14px', lineHeight: '1.6', opacity: 0.6, margin: 0 }}>
             Minimalist streetwear designed for ultimate confidence, superior fit, and premium everyday aesthetics. Built with high-grade materials.
@@ -169,44 +193,60 @@ export default function Footer({ locale = 'en' }) {
         <div className="footer-newsletter-col" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', textAlign: locale === 'he' ? 'right' : 'left' }}>{copy.newsletterTitle}</h3>
           <p style={{ fontSize: '13px', opacity: 0.6, margin: 0, textAlign: locale === 'he' ? 'right' : 'left' }}>{copy.newsletterSubtitle}</p>
-          <form onSubmit={handleNewsletterSubmit} style={{ display: 'flex', gap: '8px' }}>
-            <input 
-              type="email" 
-              placeholder={copy.newsletterPlaceholder}
-              required 
-              dir={locale === 'he' ? 'rtl' : 'ltr'}
-              style={{
-                flex: 1,
-                padding: '10px 14px',
-                borderRadius: '4px',
-                border: '1px solid var(--border-color)',
-                background: 'var(--color-black-300)',
-                color: 'var(--color-white)',
-                fontSize: '13px',
-                outline: 'none'
-              }} 
-            />
-            <button 
-              type="submit" 
-              data-track="newsletter_submit"
-              style={{
-                padding: '10px 24px',
-                borderRadius: '4px',
-                border: 'none',
-                background: 'var(--color-white)',
-                color: 'var(--color-black-500)',
-                fontWeight: '700',
-                fontSize: '13px',
-                cursor: 'pointer',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                whiteSpace: 'nowrap',
-                flexShrink: 0
-              }}
-            >
-              {copy.newsletterCta}
-            </button>
-          </form>
+          {newsletterStatus === 'success' ? (
+            <div style={{ padding: '12px 14px', borderRadius: '4px', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid #4caf50', color: '#81c784', fontSize: '13px', lineHeight: 1.5, textAlign: locale === 'he' ? 'right' : 'left' }}>
+              {newsletterMessage}
+            </div>
+          ) : (
+            <form onSubmit={handleNewsletterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="email"
+                  value={newsletterEmail}
+                  onChange={(e) => setNewsletterEmail(e.target.value)}
+                  placeholder={copy.newsletterPlaceholder}
+                  required
+                  disabled={newsletterStatus === 'loading'}
+                  dir={locale === 'he' ? 'rtl' : 'ltr'}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--color-black-300)',
+                    color: 'var(--color-white)',
+                    fontSize: '13px',
+                    outline: 'none'
+                  }}
+                />
+                <button
+                  type="submit"
+                  data-track="newsletter_submit"
+                  disabled={newsletterStatus === 'loading'}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: 'var(--color-white)',
+                    color: 'var(--color-black-500)',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    cursor: newsletterStatus === 'loading' ? 'wait' : 'pointer',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    opacity: newsletterStatus === 'loading' ? 0.7 : 1
+                  }}
+                >
+                  {newsletterStatus === 'loading' ? '...' : copy.newsletterCta}
+                </button>
+              </div>
+              {newsletterStatus === 'error' && (
+                <span style={{ color: '#e57373', fontSize: '12px', textAlign: locale === 'he' ? 'right' : 'left' }}>{newsletterMessage}</span>
+              )}
+            </form>
+          )}
         </div>
 
       </div>
@@ -215,11 +255,6 @@ export default function Footer({ locale = 'en' }) {
         <p style={{ fontSize: '13px', opacity: 0.5, margin: 0 }}>
           &copy; 2026 JONO. All rights reserved.
         </p>
-        <div className="footer-socials" style={{ display: 'flex', gap: '16px' }}>
-          <a href="#" style={{ color: 'inherit', textDecoration: 'none', fontSize: '13px', opacity: 0.5 }}>Instagram</a>
-          <a href="#" style={{ color: 'inherit', textDecoration: 'none', fontSize: '13px', opacity: 0.5 }}>TikTok</a>
-          <a href="#" style={{ color: 'inherit', textDecoration: 'none', fontSize: '13px', opacity: 0.5 }}>Twitter</a>
-        </div>
       </div>
 
       {activePolicy && <PolicyModal policy={activePolicy} locale={locale} onClose={() => setActivePolicy(null)} />}

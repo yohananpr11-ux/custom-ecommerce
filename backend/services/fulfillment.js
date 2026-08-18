@@ -1,7 +1,7 @@
 /**
  * fulfillment.js
  * ──────────────────────────────────────────────────────────────────────────
- * Central fulfillment router for Drip Street — Phase 3 Multi-Vendor.
+ * Central fulfillment router for JONO — Phase 3 Multi-Vendor.
  *
  * Replaces the hardcoded Printify-only logic that lived inside
  * processPaidOrderFulfillment() in index.js.
@@ -358,7 +358,7 @@ const HANDLERS = {
 /**
  * Route all items in a paid order to the correct supplier(s).
  *
- * @param {number}   orderId              Drip Street internal order ID
+ * @param {number}   orderId              JONO internal order ID
  * @param {object}   shippingDestination  Address object for the carrier
  * @param {Array}    items                order_items rows (must include supplier_id)
  *

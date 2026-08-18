@@ -49,7 +49,7 @@ const BLANK_CREDENTIALS_ENV = {
   CLOUDINARY_CLOUD_NAME: '',
   CLOUDINARY_API_KEY: '',
   CLOUDINARY_API_SECRET: '',
-  DRIP_ADMIN_SECRET: '',
+  JONO_ADMIN_SECRET: '',
 };
 
 function makeTempProject() {

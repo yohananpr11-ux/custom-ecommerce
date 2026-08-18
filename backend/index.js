@@ -290,10 +290,6 @@ const CORS_ALLOWED_ORIGINS = Array.from(new Set([
   // JONO domain — exact-match strings only, no wildcard.
   'https://shopjono.com',
   'https://www.shopjono.com',
-  'https://shopjoakim.com',
-  'https://www.shopjoakim.com',
-  'https://dripstreetshop.com',
-  'https://www.dripstreetshop.com',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:4173',
@@ -924,7 +920,7 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
   const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
   const emailItems = items.map((item) => ({
-    title: item.title || 'Drip Street Item',
+    title: item.title || 'JONO Item',
     color: item.selectedColor || null,
     size: item.selectedSize || null,
     quantity: item.quantity,
@@ -1685,7 +1681,7 @@ const lookupCountryFromIp = async (ip) => {
     ? `https://ipapi.co/${encodeURIComponent(ip)}/country/?key=${encodeURIComponent(apiKey)}`
     : `https://ipapi.co/${encodeURIComponent(ip)}/country/`;
   try {
-    const resp = await axios.get(url, { timeout: 3000, validateStatus: () => true, headers: { 'User-Agent': 'dripstreetshop/1.0' } });
+    const resp = await axios.get(url, { timeout: 3000, validateStatus: () => true, headers: { 'User-Agent': 'shopjono/1.0' } });
     const country = String(resp.data || '').trim().toUpperCase();
     if (/^[A-Z]{2}$/.test(country)) {
       GEO_CACHE.set(ip, { country, expiresAt: Date.now() + GEO_CACHE_TTL_MS });
@@ -1722,7 +1718,7 @@ app.get('/api/geolocation', async (req, res) => {
 
 // Get all products (list view - includes backImageUrl for hover effect and USD prices)
 app.get('/api/products', (req, res) => {
-  db.all("SELECT id, title, description, price, priceUSD, imageUrl, backImageUrl, stock, type FROM products", [], (err, rows) => {
+  db.all("SELECT id, title, description, price, priceUSD, imageUrl, backImageUrl, stock, type FROM products WHERE COALESCE(is_hidden, 0) = 0", [], (err, rows) => {
     if (err) {
       res.status(500).json({ error: err.message });
       return;
@@ -1744,8 +1740,8 @@ app.get('/api/products', (req, res) => {
 // Get active product IDs for sitemap/prerender pipelines.
 app.get('/api/products/active-ids', async (req, res) => {
   try {
-    const allProducts = await dbAllAsync('SELECT id, type FROM products');
-    const hasPrintifyProducts = allProducts.some((row) => row.type === 'printify');
+    const allProducts = await dbAllAsync('SELECT id, type, is_hidden FROM products');
+    const hasPrintifyProducts = allProducts.some((row) => row.type === 'printify' && !row.is_hidden);
     const visibilityFilter = hasPrintifyProducts
       ? "AND (p.type = 'printify' OR p.type = 'dropship')"
       : '';
@@ -1755,6 +1751,7 @@ app.get('/api/products/active-ids', async (req, res) => {
        FROM products p
        LEFT JOIN product_variants pv ON pv.productId = p.id
        WHERE COALESCE(p.stock, 0) > 0
+         AND COALESCE(p.is_hidden, 0) = 0
          ${visibilityFilter}
          AND (
            pv.id IS NULL
@@ -1873,6 +1870,10 @@ app.get('/api/products/:id', (req, res) => {
       // grant access even accidentally). The token's own transport-of-record
       // to the browser is a URL FRAGMENT (#access=...), which browsers never
       // send to any server at all -- see ProductDetailRoute in App.jsx.
+      if (row.is_hidden === 1 && row.supplier_id !== 'manual') {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+
       if (row.supplier_id === 'manual') {
         const headerToken = req.get('x-access-token');
         const providedToken = typeof headerToken === 'string' ? headerToken : '';
@@ -2060,10 +2061,10 @@ const timingSafeEqualStr = (a, b) => {
 
 app.post('/api/admin/set-coupon', (req, res) => {
   // Auth: shared secret header. The endpoint mutates the public storefront state,
-  // so it must never be reachable without DRIP_ADMIN_SECRET configured.
-  const expected = process.env.DRIP_ADMIN_SECRET;
+  // so it must never be reachable without JONO_ADMIN_SECRET configured.
+  const expected = process.env.JONO_ADMIN_SECRET;
   if (!expected) {
-    return res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+    return res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
   }
   const provided = req.get('X-Admin-Secret') || '';
   if (!timingSafeEqualStr(provided, expected)) {
@@ -2080,7 +2081,7 @@ app.post('/api/admin/set-coupon', (req, res) => {
   }
   setCouponCallTimestamps.push(now);
 
-  const { code, discount_pct, duration_hours } = req.body;
+  const { code, discount_pct, duration_hours } = req.body || {};
   if (!code || !discount_pct) {
     currentActiveCoupon = null; // Clear coupon if empty
     console.log(`[coupon] cleared by admin at ${new Date(now).toISOString()}`);
@@ -2103,16 +2104,17 @@ app.post('/api/admin/set-coupon', (req, res) => {
   res.json({ success: true, message: `Coupon ${code} set to ${discount_pct}% off.` });
 });
 
-// Admin Refresh Prices — force-run the pricing engine to re-apply targetPricesILS
-// to all products in the DB. Use this after changing targetPricesILS in pricing.js
-// to push the new prices live without waiting for an extreme FX swing.
+// Manual Price Refresh Endpoint
+// ═══════════════════════════════════════════════════════════════════════════
+// Forces a recalculation of all product prices from supplier costs (Printify
+// and CJ Dropship) using the formula: (cogsUSD * USD_ILS_RATE * 1.6 + 50) * 1.18.
 //
 // Auth: same X-Admin-Secret shared header as set-coupon.
 // Usage: curl -X POST https://.../api/admin/refresh-prices -H "X-Admin-Secret: <secret>"
 app.post('/api/admin/refresh-prices', async (req, res) => {
-  const expected = process.env.DRIP_ADMIN_SECRET;
+  const expected = process.env.JONO_ADMIN_SECRET;
   if (!expected) {
-    return res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+    return res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
   }
   const provided = req.get('X-Admin-Secret') || '';
   if (!timingSafeEqualStr(provided, expected)) {
@@ -2150,7 +2152,7 @@ app.post('/api/admin/refresh-prices', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // Flow:
-//   1. MENI_CORE (Telegram bot) POSTs an image to /api/admin/design/create-draft
+//   1. Telegram bot POSTs an image to /api/admin/design/create-draft
 //      → backend uploads to Printify, creates draft, polls until mockup ready,
 //        stores a row in design_jobs, returns { jobId, mockupUrl, ... }.
 //   2. Bot sends the mockup to the human via Telegram with [✅ Publish] / [❌ Reject].
@@ -2160,16 +2162,16 @@ app.post('/api/admin/refresh-prices', async (req, res) => {
 //   4. On rejection: POST /api/admin/design/:jobId/reject
 //      → backend asks Printify to delete the draft, marks job as rejected.
 //
-// Auth: same DRIP_ADMIN_SECRET header as the other admin endpoints.
+// Auth: same JONO_ADMIN_SECRET header as the other admin endpoints.
 
 // Tee draft requests carry ~5–10MB of base64 image. Apply a generous limit
 // just for this one route so the global 100kb json parser isn't an issue.
 const designJsonParser = express.json({ limit: '15mb' });
 
 const requireAdminAuth = (req, res) => {
-  const expected = process.env.DRIP_ADMIN_SECRET;
+  const expected = process.env.JONO_ADMIN_SECRET;
   if (!expected) {
-    res.status(503).json({ error: 'DRIP_ADMIN_SECRET not configured on server' });
+    res.status(503).json({ error: 'JONO_ADMIN_SECRET not configured on server' });
     return false;
   }
   const provided = req.get('X-Admin-Secret') || '';
@@ -2323,7 +2325,7 @@ app.post('/api/admin/design/:jobId/publish', async (req, res) => {
        VALUES (?, ?, ?, ?, 999, 'printify', ?)`,
       [
         job.title,
-        `${job.title} — Drip Street drop. Premium minimal streetwear.`,
+        `${job.title} — JONO drop. Premium minimal streetwear.`,
         job.priceILS,
         job.mockupUrl,
         job.printifyProductId,
@@ -2345,7 +2347,7 @@ app.post('/api/admin/design/:jobId/publish', async (req, res) => {
       success: true,
       jobId,
       productId: productInsert.lastID,
-      publicUrl: `https://dripstreetshop.com/product/${productInsert.lastID}`,
+      publicUrl: `https://shopjono.com/product/${productInsert.lastID}`,
     });
   } catch (err) {
     const upstream = err.response?.data || err.message;
@@ -2363,7 +2365,7 @@ app.post('/api/admin/design/:jobId/publish', async (req, res) => {
 // Used by MENI's Telegram flow when Groq suggests 3 names and the human
 // picks one before publishing. Only touches our local design_jobs row —
 // the storefront product name on publish reads from this column, so the
-// chosen title propagates to dripstreetshop.com. We deliberately do NOT
+// chosen title propagates to shopjono.com. We deliberately do NOT
 // sync the new title back to Printify (their dashboard product name is
 // invisible to customers and is not worth a second API round trip).
 app.patch('/api/admin/design/:jobId/title', express.json(), async (req, res) => {
@@ -2533,7 +2535,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>DRIP STREET | SUBSCRIPTION</title>
+      <title>JONO | SUBSCRIPTION</title>
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -2752,7 +2754,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
       <div class="bg-glow-1"></div>
       <div class="bg-glow-2"></div>
       <div class="container">
-        <div class="logo">DRIP STREET</div>
+        <div class="logo">JONO</div>
         <div class="icon-wrapper">
           <div id="status-icon" class="icon ${statusClass}">
             ${statusClass === 'success' ? '✓' : statusClass === 'warning' ? '?' : '⚠'}
@@ -2768,7 +2770,7 @@ const renderUnsubscribePage = ({ statusClass, messageHtml, subtextHtml, email, s
           ` : '')}
           <a href="https://www.shopjono.com" class="btn btn-secondary">Return to Store</a>
         </div>
-        <div class="footer-brand">&copy; 2026 DRIP STREET SHP</div>
+        <div class="footer-brand">&copy; 2026 JONO</div>
       </div>
 
       <script>
@@ -3238,7 +3240,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
             currency_code: requestedCurrency,
             value: amount,
           },
-          description: `Drip Street order #${orderId}`,
+          description: `JONO order #${orderId}`,
         },
       ],
       application_context: {
@@ -3563,7 +3565,7 @@ app.post('/api/checkout/stripe', async (req, res) => {
       line_items: [{
         price_data: {
           currency: 'ils',
-          product_data: { name: `Drip Street bundle order #${orderId}` },
+          product_data: { name: `JONO bundle order #${orderId}` },
           unit_amount: stripeAmountAgorot,
         },
         quantity: 1,
@@ -3949,7 +3951,7 @@ const runEmailRetryRecovery = async (forceIgnoreBackoff = false) => {
           const discount = Math.max(0, roundCurrency(subtotal + shipping - total));
 
           const emailItems = items.map((item) => ({
-            title: item.title || 'Drip Street Item',
+            title: item.title || 'JONO Item',
             color: item.selectedColor || null,
             size: item.selectedSize || null,
             quantity: item.quantity,
@@ -4195,21 +4197,7 @@ if (require.main === module) {
   // Idempotent seeder for CJ Dropshipping products — runs on every startup
   // Ensures dropship products exist in production even after ephemeral DB wipes on Render
   const seedDropshipProducts = () => new Promise((resolve) => {
-    const CJ_CATALOG = [
-      {
-        id: 16, // Canonical ID — must match frontend routes (/product/16)
-        title: 'Six-sided Grinding Cuban Link Chain | Premium Jewelry',
-        description: 'Elevate your aesthetic with our premium Six-sided Grinding Cuban Link Chain. Meticulously engineered with six flat-cut facets per link to capture the light. Crafted in solid hypoallergenic stainless steel and plated in a deep, premium gold/silver finish. A flagship staple of the Drip Street jewelry line.',
-        price: 149.00,
-        priceUSD: 39.90,
-        imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
-        type: 'dropship',
-        supplier_id: 'dropship',
-        printifyId: 'CJLX222053101AZ',
-        stock: 999,
-        variant: { color: 'Gold', size: '20 Inch', price: 149.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
-      },
-    ];
+    const CJ_CATALOG = [];
 
     let pending = CJ_CATALOG.length;
     if (pending === 0) return resolve();

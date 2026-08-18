@@ -2,7 +2,7 @@
 
 // ──────────────────────────────────────────────────────────────────────
 //  READ-ONLY audit of Printify products whose title starts with one of
-//  the known test prefixes (SMOKE TEST, DRIP STREET DROP). Prints a
+//  the known test prefixes (SMOKE TEST, JONO DROP). Prints a
 //  table of candidates so a human can decide which IDs to delete in a
 //  separate, explicit step. This script does NOT modify anything in
 //  Printify — no DELETE, no PUT, no POST.
@@ -18,7 +18,7 @@
 //    - OR copy from Render's environment for the custom-ecommerce
 //      service if it's already configured there.
 //
-//  PRINTIFY_SHOP_ID defaults to the Drip Street shop (27495153) and
+//  PRINTIFY_SHOP_ID defaults to the JONO shop (27495153) and
 //  can be overridden via env if you ever audit a different shop.
 // ──────────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ const TOKEN = process.env.PRINTIFY_API_TOKEN;
 // these phrases is treated as a real product and ignored.
 const TEST_TITLE_PATTERNS = [
   /^SMOKE TEST\b/i,
-  /^DRIP STREET DROP\b/i,
+  /^JONO DROP\b/i,
 ];
 
 if (!TOKEN || TOKEN.startsWith('YOUR_')) {

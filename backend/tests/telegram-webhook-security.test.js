@@ -25,8 +25,8 @@ process.env.PAYPAL_CLIENT_ID = 'test-paypal-client-id-tgsec';
 process.env.PAYPAL_CLIENT_SECRET = 'test-paypal-client-secret-tgsec';
 process.env.PRINTIFY_API_TOKEN = '';
 process.env.TELEGRAM_BOT_TOKEN = '';
-process.env.RESEND_API_KEY = '';
-process.env.DRIP_ADMIN_SECRET = 'test-admin-secret-tgsec';
+process.env.TELEGRAM_WEBHOOK_SECRET = 'test-tgsec-configured';
+process.env.JONO_ADMIN_SECRET = 'test-admin-secret-tgsec';
 process.env.TELEGRAM_OWNER_CHAT_ID = 'test-authorized-chat-12345';
 delete process.env.TELEGRAM_WEBHOOK_SECRET;
 
@@ -230,19 +230,19 @@ test('G: /reply <session_id> is still recognized when authorized', async () => {
 
 // ── J. MENI_CORE's admin-secret integration path is unaffected ─────────────
 
-test('J: MENI_CORE-facing /api/admin/set-coupon still requires DRIP_ADMIN_SECRET, unchanged', async () => {
-  const res = await apiPost('/api/admin/set-coupon', { code: 'SHOULD-FAIL', discount_pct: 10 });
+test('J: /api/admin/set-coupon still requires JONO_ADMIN_SECRET', async () => {
+  const res = await apiPost('/api/admin/set-coupon', { couponCode: 'SHOULD-FAIL', discountPercent: 10 });
   assert.equal(res.status, 401);
   assert.equal(res.json.error, 'Unauthorized');
 });
 
-test('J: MENI_CORE-facing /api/admin/set-coupon still succeeds with the correct DRIP_ADMIN_SECRET, unchanged', async (t) => {
+test('J: /api/admin/set-coupon still succeeds with the correct JONO_ADMIN_SECRET', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   try {
     const res = await apiPost(
       '/api/admin/set-coupon',
-      { code: 'MENI-CORE-OK', discount_pct: 10, duration_hours: 1 },
-      { 'X-Admin-Secret': process.env.DRIP_ADMIN_SECRET }
+      { couponCode: 'JONO-OK', discountPercent: 10 },
+      { 'X-Admin-Secret': process.env.JONO_ADMIN_SECRET }
     );
     assert.equal(res.status, 200);
     assert.equal(res.json.success, true);

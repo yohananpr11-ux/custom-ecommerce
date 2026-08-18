@@ -8,7 +8,7 @@ const dbPath = path.resolve(__dirname, 'ecommerce.db');
 const logFilePath = 'C:\\Users\\yohan\\.gemini\\antigravity\\brain\\54a94844-d4d8-4cd2-bb37-a5e3db12a4e9\\.system_generated\\tasks\\task-2070.log';
 
 console.log('==================================================================');
-console.log('⚡ Drip Street - Live End-to-End Checkout Monitor ⚡');
+console.log('⚡ JONO - Live End-to-End Checkout Monitor ⚡');
 console.log('==================================================================');
 console.log(`Database Path: ${dbPath}`);
 console.log(`Log File Path: ${logFilePath}`);

@@ -35,5 +35,5 @@ services:
         sync: false
       - key: PAYPLUS_API_KEY
         sync: false
-      - key: DRIP_ADMIN_SECRET
+      - key: JONO_ADMIN_SECRET
         sync: false

@@ -88,9 +88,9 @@ node --check backend/services/telegram.js  → OK
 node --check backend/services/design-pipeline.js → OK
 ```
 
-## ✅ Changes vs Old JOAKIM/DRIP STREET Pricing
+## ✅ Changes vs Old Legacy Brand Pricing
 
-| Metric | Before (DRIP STREET) | After (JONO) | Change |
+| Metric | Before (Legacy Brand) | After (JONO) | Change |
 |--------|---------------------|--------------|--------|
 | Heavyweight retail | ₪149.90 | ₪199.90 | **+₪50** |
 | CVC retail | ₪169.90 | ₪169.90 | Same |

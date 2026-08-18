@@ -330,6 +330,7 @@ const readyPromise = new Promise((resolveReady, rejectReady) => {
             addColumnIfMissing('products', 'careInstructions', 'TEXT'),
             addColumnIfMissing('products', 'deliveryInfo', 'TEXT'),
             addColumnIfMissing('products', 'priceUSD', 'REAL'),
+            addColumnIfMissing('products', 'is_hidden', 'INTEGER DEFAULT 0'),
             // Phase 3: Multi-Vendor — supplier routing
             addColumnIfMissing('products', 'supplier_id', "TEXT NOT NULL DEFAULT 'printify'"),
             // Direct-access token gate for hidden (type='local', supplier_id='manual')
@@ -452,7 +453,72 @@ const readyPromise = new Promise((resolveReady, rejectReady) => {
                     `Printify printifyId uniqueness index not active: duplicate printifyId values already exist in products, so this database-level protection could not be enabled. index not active -- run the global duplicate scan (SELECT printifyId, COUNT(*) AS c, GROUP_CONCAT(id) FROM products WHERE printifyId IS NOT NULL AND TRIM(printifyId) != '' GROUP BY printifyId HAVING c > 1) and resolve every duplicate, then restart. Underlying error: ${err.message}`
                   );
                 }
-                resolveReady();
+
+                // Data migration: Product copy sanitization & soft-launch catalog cleanup (Fail-safe)
+                (async () => {
+                  try {
+                    // 1. Hide products 17, 18, 19, 20, 21 from customer-facing storefront for soft-launch
+                    await new Promise((res, rej) => {
+                      db.run(`UPDATE products SET is_hidden = 1 WHERE id IN (17, 18, 19, 20, 21)`, (err) => {
+                        if (err) return rej(new Error(`Failed to hide launch products 17-21: ${err.message}`));
+                        res();
+                      });
+                    });
+
+                    // 2. Product 16: Ensure truthful JONO copy
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `UPDATE products
+                         SET description = 'JONO - Oversized CVC Logo Heather Grey — JONO CVC Minimalist Streetwear. Premium Airlume cotton-poly zero-iron blend.'
+                         WHERE id = 16`,
+                        (err) => {
+                          if (err) return rej(new Error(`Failed to update product 16 copy: ${err.message}`));
+                          res();
+                        }
+                      );
+                    });
+
+                    // 3. Products 22, 23, 24: Ensure truthful JONO copy
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `UPDATE products
+                         SET description = 'Premium Street Hoodie v3 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+                         WHERE id = 22`,
+                        (err) => {
+                          if (err) return rej(new Error(`Failed to update product 22 copy: ${err.message}`));
+                          res();
+                        }
+                      );
+                    });
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `UPDATE products
+                         SET description = 'Premium Street Hoodie v4 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+                         WHERE id = 23`,
+                        (err) => {
+                          if (err) return rej(new Error(`Failed to update product 23 copy: ${err.message}`));
+                          res();
+                        }
+                      );
+                    });
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `UPDATE products
+                         SET description = 'Premium Street Hoodie v5 — JONO drop. Heavyweight cotton fleece with tailored silhouette.'
+                         WHERE id = 24`,
+                        (err) => {
+                          if (err) return rej(new Error(`Failed to update product 24 copy: ${err.message}`));
+                          res();
+                        }
+                      );
+                    });
+
+                    resolveReady();
+                  } catch (migErr) {
+                    console.error('Launch catalog migration failed:', migErr.message);
+                    rejectReady(migErr);
+                  }
+                })();
               }
             );
           });

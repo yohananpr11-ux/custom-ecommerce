@@ -64,16 +64,16 @@ function runScriptAsync(env, timeoutMs = 10000) {
 }
 
 test('missing SYNC_BACKEND_URL exits non-zero with a clear, non-crashing message', () => {
-  const result = runScript({ SYNC_BACKEND_URL: '', DRIP_ADMIN_SECRET: FAKE_SECRET });
+  const result = runScript({ SYNC_BACKEND_URL: '', JONO_ADMIN_SECRET: FAKE_SECRET });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /SYNC_BACKEND_URL/);
   assert.doesNotMatch(result.stderr, /at Object\.|at Module\./, 'must not dump a raw stack trace');
 });
 
-test('missing DRIP_ADMIN_SECRET exits non-zero with a clear message, no secret in output', () => {
-  const result = runScript({ SYNC_BACKEND_URL: 'http://127.0.0.1:1', DRIP_ADMIN_SECRET: '' });
+test('missing JONO_ADMIN_SECRET exits non-zero with a clear message, no secret in output', () => {
+  const result = runScript({ SYNC_BACKEND_URL: 'http://127.0.0.1:1', JONO_ADMIN_SECRET: '' });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /DRIP_ADMIN_SECRET/);
+  assert.match(result.stderr, /JONO_ADMIN_SECRET/);
 });
 
 test('successful sync: exits 0, prints only a safe count summary, sends exactly one authenticated POST', async () => {
@@ -95,7 +95,7 @@ test('successful sync: exits 0, prints only a safe count summary, sends exactly 
     const { port } = server.address();
     const result = await runScriptAsync({
       SYNC_BACKEND_URL: `http://127.0.0.1:${port}`,
-      DRIP_ADMIN_SECRET: FAKE_SECRET,
+      JONO_ADMIN_SECRET: FAKE_SECRET,
     });
 
     assert.equal(result.status, 0, `stderr: ${result.stderr}`);
@@ -124,7 +124,7 @@ test('a 401/unauthorized response from the backend is treated as a failure, exit
     const { port } = server.address();
     const result = await runScriptAsync({
       SYNC_BACKEND_URL: `http://127.0.0.1:${port}`,
-      DRIP_ADMIN_SECRET: FAKE_SECRET,
+      JONO_ADMIN_SECRET: FAKE_SECRET,
     });
 
     assert.notEqual(result.status, 0);
@@ -146,7 +146,7 @@ test('a {success:false} or malformed body from the backend is treated as a failu
     const { port } = server.address();
     const result = await runScriptAsync({
       SYNC_BACKEND_URL: `http://127.0.0.1:${port}`,
-      DRIP_ADMIN_SECRET: FAKE_SECRET,
+      JONO_ADMIN_SECRET: FAKE_SECRET,
     });
 
     assert.notEqual(result.status, 0);
@@ -160,7 +160,7 @@ test('an unreachable backend (connection refused) exits non-zero without hanging
   // Port 1 is a privileged/unused port that reliably refuses connections.
   const result = runScript({
     SYNC_BACKEND_URL: 'http://127.0.0.1:1',
-    DRIP_ADMIN_SECRET: FAKE_SECRET,
+    JONO_ADMIN_SECRET: FAKE_SECRET,
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Request to backend failed/);

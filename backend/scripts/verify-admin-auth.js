@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /**
  * Automated verification that every /api/admin/* route enforces
- * DRIP_ADMIN_SECRET before running any business logic.
+ * JONO_ADMIN_SECRET before running any business logic.
  *
  * This is fully self-contained: it spawns its own local server instances
  * (never touches Render, never touches the real backend/ecommerce.db —
  * always DB_PATH-isolated to a throwaway file it creates and deletes) and
  * runs three phases:
  *
- *   Phase A — server started WITH a known DRIP_ADMIN_SECRET:
+ *   Phase A — server started WITH a known JONO_ADMIN_SECRET:
  *     - missing X-Admin-Secret header -> 401, before any handler side effect
  *     - wrong X-Admin-Secret value -> 401
  *     - correct X-Admin-Secret -> auth passes (verified by asserting the
  *       route's own downstream response, not a blanket "not 401")
  *
- *   Phase B — server started WITHOUT DRIP_ADMIN_SECRET configured at all:
+ *   Phase B — server started WITHOUT JONO_ADMIN_SECRET configured at all:
  *     - every route must fail closed with 503, regardless of any header sent
  *
  *   Phase C — regression check: the 7 routes that were already protected
@@ -108,7 +108,7 @@ function startServer({ port, dbPath, adminSecret }) {
   // that's genuinely absent from process.env — an explicit empty string is
   // "present" as far as dotenv is concerned, so it stays unset, and
   // requireAdminAuth's `if (!expected)` correctly treats '' as falsy.
-  env.DRIP_ADMIN_SECRET = adminSecret === undefined ? '' : adminSecret;
+  env.JONO_ADMIN_SECRET = adminSecret === undefined ? '' : adminSecret;
   if (process.env.NETWORK_GUARD_LOG_PATH) {
     env.NETWORK_GUARD_LOG_PATH = process.env.NETWORK_GUARD_LOG_PATH;
   }
@@ -220,7 +220,7 @@ async function request(baseUrl, { method, path: p }, headers = {}) {
 }
 
 async function phaseA(baseUrl, correctSecret) {
-  console.log('\n[Phase A] Server started WITH a known DRIP_ADMIN_SECRET');
+  console.log('\n[Phase A] Server started WITH a known JONO_ADMIN_SECRET');
   for (const route of NEWLY_PROTECTED) {
     const noHeader = await request(baseUrl, route);
     check(`${route.label}: no header -> 401`, noHeader.status === 401, `got ${noHeader.status}`);
@@ -234,7 +234,7 @@ async function phaseA(baseUrl, correctSecret) {
 }
 
 async function phaseB(baseUrl) {
-  console.log('\n[Phase B] Server started WITHOUT DRIP_ADMIN_SECRET configured at all');
+  console.log('\n[Phase B] Server started WITHOUT JONO_ADMIN_SECRET configured at all');
   for (const route of NEWLY_PROTECTED) {
     const res = await request(baseUrl, route, { 'X-Admin-Secret': 'anything-at-all' });
     check(

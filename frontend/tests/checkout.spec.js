@@ -409,10 +409,10 @@ function assertNoPageErrors(errorCapture) {
 async function addItemAndReachCheckout(page) {
   await page.goto('/');
   await page.evaluate(() => {
-    try { localStorage.removeItem('drip_street_cart'); } catch { /* noop */ }
-    try { sessionStorage.removeItem('drip_street_pending_order'); } catch { /* noop */ }
-    try { localStorage.setItem('drip_street_lead_dismissed_at', String(Date.now())); } catch { /* noop */ }
-    try { sessionStorage.setItem('drip_street_lead_popup_seen_session', '1'); } catch { /* noop */ }
+    try { localStorage.removeItem('jono_cart'); } catch { /* noop */ }
+    try { sessionStorage.removeItem('jono_pending_order'); } catch { /* noop */ }
+    try { localStorage.setItem('jono_lead_dismissed_at', String(Date.now())); } catch { /* noop */ }
+    try { sessionStorage.setItem('jono_lead_popup_seen_session', '1'); } catch { /* noop */ }
   });
   await page.reload();
 

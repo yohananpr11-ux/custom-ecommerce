@@ -13,7 +13,7 @@
  *
  * Env vars consumed:
  *   PRINTIFY_API_TOKEN              — required, the only way Printify auth works.
- *   PRINTIFY_SHOP_ID                — required, the Drip Street shop.
+ *   PRINTIFY_SHOP_ID                — required, the JONO shop.
  *   PRINTIFY_TEE_BLUEPRINT_ID       — default 6 (Bella+Canvas 3001).
  *   PRINTIFY_TEE_PRINT_PROVIDER_ID  — default 99 (Printify Choice).
  */
@@ -74,7 +74,7 @@ const fetchVariants = async (blueprintId, providerId) => {
   return variants;
 };
 
-// Curated lists per Drip Street brand book. Variants outside these are skipped.
+// Curated lists per JONO brand book. Variants outside these are skipped.
 const ALLOWED_SIZES = new Set(['S', 'M', 'L', 'XL', '2XL', 'XXL']);
 const ALLOWED_COLOR_KEYWORDS = ['black', 'white', 'heather grey', 'heather gray', 'athletic heather', 'navy', 'heather navy'];
 
@@ -92,7 +92,7 @@ const variantMatchesCuratedSet = (v) => {
 };
 
 /**
- * Pick variants curated to Drip Street's brand: sizes S-2XL × colors
+ * Pick variants curated to JONO's brand: sizes S-2XL × colors
  * Black/White/Heather Grey/Navy. Falls back to first N if curation
  * produces zero matches (so we never crash a draft just because a
  * provider uses unusual labels).
@@ -139,12 +139,12 @@ const uploadImageFromUrl = async (filename, sourceUrl) => {
   return res.data;
 };
 
-// JOAKIM neck label asset: 750x750 300 DPI DTF transparent background monogram.
+// JONO neck label asset: 750x750 300 DPI DTF transparent background monogram.
 // Asset ID in Printify library: 6a72e86f376cb40ed1f472c2.
 const PRINTIFY_NECK_LABEL_IMAGE_ID = env('PRINTIFY_NECK_LABEL_IMAGE_ID', '6a72e86f376cb40ed1f472c2');
 const NECK_LABEL_SOURCE_URL = env(
   'NECK_LABEL_SOURCE_URL',
-  'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/integration/joakim-phase-1/frontend/public/jono-logo-transparent.png'
+  'https://raw.githubusercontent.com/yohananpr11-ux/custom-ecommerce/main/frontend/public/jono-logo-transparent.png'
 );
 let neckLabelImageIdCache = null;
 
@@ -173,7 +173,7 @@ const ensureNeckLabelImageId = async () => {
  *   'front' — chest-centered (default)
  *   'back'  — back-centered, slightly higher
  * If a neck label image ID is provided, it's added as a small print on the
- * inside neck (constant Drip Street branding on every shirt).
+ * inside neck (constant JONO branding on every shirt).
  */
 const createDraftProduct = async ({
   imageId,
