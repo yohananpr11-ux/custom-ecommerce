@@ -73,9 +73,9 @@ export default function PrivacyPolicy() {
         </section>
 
         <section style={sectionStyle}>
-          <h3 style={headingStyle}>5. Cookies & Local Storage</h3>
+          <h3 style={headingStyle}>5. Storage, Analytics & Cookies</h3>
           <p style={{ margin: 0, color: 'var(--color-text-secondary, #b3b3b3)' }}>
-            We utilize essential cookies and browser local storage to maintain your shopping cart across sessions and remember your preferred locale. We do not use intrusive third-party cross-site tracking cookies.
+            JONO currently utilizes essential browser storage (such as local storage for your shopping cart and language preferences) and first-party session analytics to maintain store functionality and performance. While our platform is technically capable of integrating third-party analytics or marketing tools (such as Google Analytics or advertising pixels) to support future growth, these integrations are currently unconfigured in production. Should third-party analytics or advertising cookies be enabled, this policy will be updated accordingly.
           </p>
         </section>
 
