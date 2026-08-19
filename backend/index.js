@@ -4205,9 +4205,14 @@ if (require.main === module) {
         imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
         type: 'dropship',
         supplier_id: 'dropship',
-        printifyId: 'CJLX222053101AZ',
+        printifyId: 'CJLX2220531',
         stock: 999,
-        variant: { color: 'Gold', size: '20 Inch', price: 149.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+        variants: [
+          { color: 'Steel', colorHex: '#A7A7A7', size: '3mm / 50cm', price: 149.00, cost: 0.68, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, isEnabled: 1, isAvailable: 1, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+          { color: 'Steel', colorHex: '#A7A7A7', size: '5mm / 50cm', price: 149.00, cost: 0.92, printifyVariantId: 'CJLX222053104DW', stockQty: 999, isEnabled: 1, isAvailable: 1, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+          { color: 'Steel', colorHex: '#A7A7A7', size: '5mm / 60cm', price: 149.00, cost: 1.11, printifyVariantId: 'CJLX222053105EV', stockQty: 999, isEnabled: 1, isAvailable: 1, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+          { color: 'Steel', colorHex: '#A7A7A7', size: '7mm / 60cm', price: 149.00, cost: 1.51, printifyVariantId: 'CJLX222053108HS', stockQty: 999, isEnabled: 1, isAvailable: 1, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+        ],
       },
     ];
 
@@ -4216,7 +4221,15 @@ if (require.main === module) {
 
     CJ_CATALOG.forEach((product) => {
       const targetId = product.id;
-      const v = product.variant;
+      const variants = Array.isArray(product.variants)
+        ? product.variants
+        : (product.variant ? [product.variant] : []);
+
+      if (variants.length === 0) {
+        console.error(`[CJ Seed] No variants configured for ID:${targetId}`);
+        if (--pending === 0) resolve();
+        return;
+      }
 
       // Nuclear overwrite: always delete canonical product and its variants, then re-insert fresh.
       db.run(`DELETE FROM product_variants WHERE productId = ?`, [targetId], (deleteVariantErr) => {
@@ -4244,19 +4257,32 @@ if (require.main === module) {
                 return;
               }
 
-              db.run(
-                `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
-                [targetId, v.printifyVariantId, v.color, v.size, v.price, v.cost, v.stockQty, v.imageUrl],
-                (insertVariantErr) => {
-                  if (insertVariantErr) {
-                    console.error('[CJ Seed] Variant insert failed:', insertVariantErr.message);
-                  } else {
-                    console.log(`✅ [CJ Seed] Forced overwrite complete for ID:${targetId}`);
+              let remainingVariants = variants.length;
+              let hadVariantError = false;
+
+              variants.forEach((v) => {
+                db.run(
+                  `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
+                  [targetId, v.printifyVariantId, v.color, v.size, v.price, v.cost, v.stockQty, v.imageUrl],
+                  (insertVariantErr) => {
+                    if (insertVariantErr) {
+                      hadVariantError = true;
+                      console.error('[CJ Seed] Variant insert failed:', insertVariantErr.message);
+                    }
+
+                    remainingVariants -= 1;
+
+                    if (remainingVariants === 0) {
+                      if (!hadVariantError) {
+                        console.log(`✅ [CJ Seed] Forced overwrite complete for ID:${targetId} with ${variants.length} variants`);
+                      }
+
+                      if (--pending === 0) resolve();
+                    }
                   }
-                  if (--pending === 0) resolve();
-                }
-              );
+                );
+              });
             }
           );
         });

@@ -19,7 +19,7 @@ const COUNTRY_NAME_MAP = {
 };
 
 function getCountryName(code) {
-  const cleanCode = String(code || 'IL').trim().toUpperCase();
+  const cleanCode = String(code || '').trim().toUpperCase();
   return COUNTRY_NAME_MAP[cleanCode] || cleanCode;
 }
 
@@ -135,20 +135,89 @@ async function getLogisticName(token, fromCountry, toCountry, products) {
  * @returns {Promise<{ref: string}>}      Supplier order reference
  */
 async function sendOrder(orderId, shippingDestination, items) {
-  console.log(`[${SUPPLIER_NAME}] Resolving CJ Access Token for order #${orderId}...`);
-  const token = await getCJAccessToken();
+  // Validate everything locally BEFORE any CJ network request.
+  // A malformed order must fail closed without even authenticating with CJ.
   // Map products to CJ Dropshipping expected schema
   const products = items.map(item => {
-    const sku = item.sku || item.printifyVariantId || item.printifyProductId || 'CJLX222053101AZ';
+    const sku = String(item.printifyVariantId || '').trim();
+    const productSpu = String(item.printifyProductId || '').trim();
+    const quantity = Number(item.quantity);
+
+    if (!sku) {
+      throw new Error(`CJ variant SKU missing for order item ${item.id}`);
+    }
+
+    if (productSpu && sku === productSpu) {
+      throw new Error(`CJ variant SKU for order item ${item.id} is the product SPU, not a variant SKU`);
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new Error(`Invalid CJ quantity for order item ${item.id}`);
+    }
+
     return {
-      sku: sku,
-      quantity: Number(item.quantity) || 1,
+      sku,
+      quantity,
       storeLineItemId: String(item.id)
     };
   });
 
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error(`CJ order #${orderId} has no items`);
+  }
+
+  const clean = (value) => String(value == null ? '' : value).trim();
+
+  const customerName =
+    clean(shippingDestination.customerName) ||
+    `${clean(shippingDestination.firstName)} ${clean(shippingDestination.lastName)}`.trim();
+
+  const addressLine1 = clean(shippingDestination.addressLine1);
+  const addressLine2 = clean(shippingDestination.addressLine2);
+  const city = clean(shippingDestination.city);
+  const region = clean(shippingDestination.region);
+  const postalCode = clean(shippingDestination.postalCode);
+  const phone = clean(shippingDestination.phone);
+  const toCountry = clean(shippingDestination.country).toUpperCase();
+
+  if (!customerName) {
+    throw new Error(`CJ shipping customer name missing for order #${orderId}`);
+  }
+
+  if (!addressLine1) {
+    throw new Error(`CJ shipping street address missing for order #${orderId}`);
+  }
+
+  if (!city) {
+    throw new Error(`CJ shipping city missing for order #${orderId}`);
+  }
+
+  if (!postalCode) {
+    throw new Error(`CJ shipping postal code missing for order #${orderId}`);
+  }
+
+  if (!phone) {
+    throw new Error(`CJ shipping phone missing for order #${orderId}`);
+  }
+
+  if (!/^[A-Z]{2}$/.test(toCountry)) {
+    throw new Error(`CJ shipping country must be a valid 2-letter country code for order #${orderId}`);
+  }
+
+  if (['US', 'CA', 'AU'].includes(toCountry) && !region) {
+    throw new Error(`CJ shipping region/state missing for order #${orderId}`);
+  }
+
+  const shippingAddress = addressLine2
+    ? `${addressLine1}, ${addressLine2}`
+    : addressLine1;
+
   const fromCountry = 'CN';
-  const toCountry = (shippingDestination.country || 'IL').toUpperCase();
+
+  // Only now, after all local identity/address checks passed,
+  // is an external CJ request allowed.
+  console.log(`[${SUPPLIER_NAME}] Resolving CJ Access Token for order #${orderId}...`);
+  const token = await getCJAccessToken();
 
   // Resolve shipping carrier method dynamically
   const logisticName = await getLogisticName(token, fromCountry, toCountry, products);
@@ -156,16 +225,14 @@ async function sendOrder(orderId, shippingDestination, items) {
   // Map shipping address fields to CJ expected schema
   const payload = {
     orderNumber: String(orderId),
-    shippingCustomerName: shippingDestination.customerName || `${shippingDestination.firstName || ''} ${shippingDestination.lastName || ''}`.trim() || 'Customer',
-    shippingAddress: shippingDestination.addressLine2
-      ? `${shippingDestination.addressLine1}, ${shippingDestination.addressLine2}`
-      : shippingDestination.addressLine1 || 'N/A',
-    shippingCity: shippingDestination.city || 'N/A',
-    shippingProvince: shippingDestination.region || shippingDestination.city || 'N/A',
+    shippingCustomerName: customerName,
+    shippingAddress,
+    shippingCity: city,
+    shippingProvince: region || city,
     shippingCountry: getCountryName(toCountry),
     shippingCountryCode: toCountry,
-    shippingZip: shippingDestination.postalCode || '00000',
-    shippingPhone: shippingDestination.phone || '0000000000',
+    shippingZip: postalCode,
+    shippingPhone: phone,
     fromCountryCode: fromCountry,
     logisticName: logisticName,
     payType: 3, // Create only (no payment/cart confirmation at creation time)

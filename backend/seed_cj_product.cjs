@@ -12,6 +12,12 @@ const HARDWARE_ITEMS = [
     title: 'HEAVYWEIGHT CUBAN CHAIN',
     price: 149,
     imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
+    variants: [
+      { sku: 'CJLX157447004DW', color: 'Steel', size: '8mm / 50cm' },
+      { sku: 'CJLX157447011KP', color: 'Steel', size: '10mm / 50cm' },
+      { sku: 'CJLX157447043QJ', color: 'Steel', size: '10mm / 60cm' },
+      { sku: 'CJLX157447019SH', color: 'Steel', size: '12mm / 60cm' },
+    ],
   },
   {
     id: 18,
@@ -19,6 +25,11 @@ const HARDWARE_ITEMS = [
     title: 'TITANIUM BRAIDED PENDANT',
     price: 139,
     imageUrl: 'https://cf.cjdropshipping.com/quick/product/88af505d-2f06-4dc1-a84b-6cc0530a5c89.jpg',
+    variants: [
+      { sku: 'CJLX285316001AZ', color: 'Steel', size: 'Twisted / 50cm' },
+      { sku: 'CJLX285316002BY', color: 'Steel', size: 'Hemp / 55cm' },
+      { sku: 'CJLX285316003CX', color: 'Steel', size: 'Twisted / 60cm' },
+    ],
   },
   {
     id: 19,
@@ -26,6 +37,12 @@ const HARDWARE_ITEMS = [
     title: 'COLD WIND CUBAN BRACELET',
     price: 119,
     imageUrl: 'https://cf.cjdropshipping.com/2054/4883093832835.jpg',
+    variants: [
+      { sku: 'CJZBLXSL06697-Silver 5mm-20cm', color: 'Silver', size: '5mm / 20cm' },
+      { sku: 'CJZBLXSL06697-Silver 7mm-20cm', color: 'Silver', size: '7mm / 20cm' },
+      { sku: 'CJZBLXSL06697-Gold 5mm-20cm', color: 'Gold', size: '5mm / 20cm' },
+      { sku: 'CJZBLXSL06697-Black 5mm-20cm', color: 'Black', size: '5mm / 20cm' },
+    ],
   },
   {
     id: 20,
@@ -33,6 +50,12 @@ const HARDWARE_ITEMS = [
     title: 'ESSENTIAL STEEL STUDS',
     price: 79,
     imageUrl: 'https://cf.cjdropshipping.com/1614328451320.jpg',
+    variants: [
+      { sku: 'CJLX102245204DW', color: 'Steel', size: 'Standard' },
+      { sku: 'CJLX102245202BY', color: 'Black', size: 'Standard' },
+      { sku: 'CJLX102245201AZ', color: 'Gold', size: 'Standard' },
+      { sku: 'CJLX102245203CX', color: 'Colorful', size: 'Standard' },
+    ],
   },
   {
     id: 21,
@@ -40,6 +63,12 @@ const HARDWARE_ITEMS = [
     title: 'ONYX ZIRCON STUDS',
     price: 89,
     imageUrl: 'https://cf.cjdropshipping.com/12ea4987-ca57-4c6e-926a-30c78e2ec8a7.jpg',
+    variants: [
+      { sku: 'CJLX155217603CX', color: 'Steel', size: '4mm' },
+      { sku: 'CJLX155217604DW', color: 'Steel', size: '5mm' },
+      { sku: 'CJLX155217605EV', color: 'Steel', size: '6mm' },
+      { sku: 'CJLX155217606FU', color: 'Steel', size: '7mm' },
+    ],
   },
 ];
 
@@ -168,11 +197,17 @@ async function seedHardwareCatalog({ verbose = false } = {}) {
       [item.id, item.title, description, item.price, null, imageUrl, 'dropship', item.spu, 'dropship', 999]
     );
 
-    await dbRun(
-      `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
-      [item.id, item.spu, 'Default', 'One Size', item.price, 0, 999, imageUrl]
-    );
+    if (!Array.isArray(item.variants) || item.variants.length === 0) {
+      throw new Error(`No approved CJ variants configured for product ${item.id} (${item.spu})`);
+    }
+
+    for (const variant of item.variants) {
+      await dbRun(
+        `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
+        [item.id, variant.sku, variant.color, variant.size, item.price, 0, 999, imageUrl]
+      );
+    }
 
     if (verbose) {
       console.log(`[hardware-seed] Seeded ID ${item.id} (${item.spu})`);
