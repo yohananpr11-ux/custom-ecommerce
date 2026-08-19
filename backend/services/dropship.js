@@ -137,6 +137,14 @@ async function getLogisticName(token, fromCountry, toCountry, products) {
 async function sendOrder(orderId, shippingDestination, items) {
   // Validate everything locally BEFORE any CJ network request.
   // A malformed order must fail closed without even authenticating with CJ.
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error(`CJ order #${orderId} has no items`);
+  }
+
+  if (!shippingDestination || typeof shippingDestination !== 'object') {
+    throw new Error(`CJ shipping destination missing for order #${orderId}`);
+  }
+
   // Map products to CJ Dropshipping expected schema
   const products = items.map(item => {
     const sku = String(item.printifyVariantId || '').trim();
@@ -161,10 +169,6 @@ async function sendOrder(orderId, shippingDestination, items) {
       storeLineItemId: String(item.id)
     };
   });
-
-  if (!Array.isArray(items) || items.length === 0) {
-    throw new Error(`CJ order #${orderId} has no items`);
-  }
 
   const clean = (value) => String(value == null ? '' : value).trim();
 
