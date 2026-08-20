@@ -278,12 +278,40 @@ function installPrintifySuccessMocks() {
 
 function installDropshipSuccessMock() {
   const calls = [];
-  const sendOrderMock = mock.method(dropship, 'sendOrder', async (orderId) => {
-    const ref = `CJ-REF-E2E-${orderId}-${crypto.randomUUID().slice(0, 8)}`;
-    calls.push({ orderId, ref });
-    return { ref };
-  });
-  return { calls, restore() { sendOrderMock.mock.restore(); } };
+
+  const lookupMock = mock.method(
+    dropship,
+    'findOrderByCustomId',
+    async () => ({
+      ok: true,
+      found: false
+    })
+  );
+
+  const sendOrderMock = mock.method(
+    dropship,
+    'sendOrder',
+    async (orderId) => {
+      const ref =
+        `CJ-REF-E2E-${orderId}-${crypto.randomUUID().slice(0, 8)}`;
+
+      calls.push({
+        orderId,
+        ref
+      });
+
+      return { ref };
+    }
+  );
+
+  return {
+    calls,
+
+    restore() {
+      lookupMock.mock.restore();
+      sendOrderMock.mock.restore();
+    }
+  };
 }
 
 async function captureConsoleLogs(fn) {
