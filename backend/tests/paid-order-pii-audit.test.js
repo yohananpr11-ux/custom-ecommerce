@@ -306,7 +306,8 @@ test('regression: dropship.sendOrder success no longer logs the raw CJ API respo
       return {
         data: {
           code: 200,
-          result: { orderNumber: CANARY.printifyId },
+          result: true,
+          data: { orderId: CANARY.printifyId },
           echo: {
             shippingCustomerName: CANARY.customerName,
             shippingAddress: CANARY.address,
@@ -322,8 +323,13 @@ test('regression: dropship.sendOrder success no longer logs the raw CJ API respo
   const lines = await captureConsoleLogs(async () => {
     const result = await dropship.sendOrder(999001, {
       customerName: CANARY.customerName, customerEmail: CANARY.email, phone: CANARY.phone,
-      firstName: 'Canary', lastName: 'McTestface', addressLine1: CANARY.address, city: 'Faketown', country: 'US',
-    }, [{ id: 1, sku: 'TEST-SKU', quantity: 1 }]);
+      firstName: 'Canary', lastName: 'McTestface', addressLine1: CANARY.address, city: 'Faketown', region: 'CA', postalCode: '90001', country: 'US',
+    }, [{
+      id: 1,
+      printifyVariantId: 'TEST-SKU',
+      printifyProductId: 'TEST-SPU',
+      quantity: 1
+    }]);
     assert.equal(result.ref, CANARY.printifyId);
   });
   axiosMock.mock.restore();
@@ -360,8 +366,13 @@ test('regression: dropship.sendOrder failure no longer logs or forwards-to-Teleg
   const lines = await captureConsoleLogs(async () => {
     await assert.rejects(() => dropship.sendOrder(999002, {
       customerName: CANARY.customerName, customerEmail: CANARY.email, phone: CANARY.phone,
-      firstName: 'Canary', lastName: 'McTestface', addressLine1: CANARY.address, city: 'Faketown', country: 'US',
-    }, [{ id: 2, sku: 'TEST-SKU-2', quantity: 1 }]));
+      firstName: 'Canary', lastName: 'McTestface', addressLine1: CANARY.address, city: 'Faketown', region: 'CA', postalCode: '90001', country: 'US',
+    }, [{
+      id: 2,
+      printifyVariantId: 'TEST-SKU-2',
+      printifyProductId: 'TEST-SPU-2',
+      quantity: 1
+    }]));
   });
   axiosMock.mock.restore();
   notifyErrorMock.mock.restore();

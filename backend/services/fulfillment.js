@@ -77,6 +77,7 @@ async function writeItemStatus(itemIds, status, ref) {
 // retry actually reconciles against.
 
 const deterministicExternalId = (orderId) => `jono-order-${orderId}-printify-v1`;
+const deterministicCJExternalId = (orderId) => `jono-order-${orderId}-cj-v1`;
 const deterministicLineExternalId = (orderItemId) => `jono-item-${orderItemId}`;
 
 async function ensureSupplierFulfillmentRecord(orderId, supplierId, externalId) {
@@ -299,9 +300,214 @@ async function handlePrintify(orderId, destination, items) {
  * Route a group of Dropship items (external API).
  */
 async function handleDropship(orderId, destination, items) {
-  const { ref } = await dropship.sendOrder(orderId, destination, items);
-  await writeItemStatus(items.map(i => i.id), 'submitted', ref);
-  return { supplier: 'dropship', ref, count: items.length };
+  const supplierId = 'dropship';
+  const externalId = deterministicCJExternalId(orderId);
+
+  await ensureSupplierFulfillmentRecord(
+    orderId,
+    supplierId,
+    externalId
+  );
+
+  const claimed = await claimSupplierFulfillment(
+    orderId,
+    supplierId
+  );
+
+  if (!claimed) {
+    const current = await getSupplierFulfillment(
+      orderId,
+      supplierId
+    );
+
+    if (
+      current &&
+      current.state === 'submitted'
+    ) {
+      const ref =
+        current.supplierOrderId ||
+        externalId;
+
+      await writeItemStatus(
+        items.map((i) => i.id),
+        'submitted',
+        ref
+      );
+
+      return {
+        supplier: supplierId,
+        ref,
+        count: items.length
+      };
+    }
+
+    if (isWithinActiveLease(current)) {
+      return {
+        supplier: supplierId,
+        ref:
+          current.supplierOrderId ||
+          externalId,
+        count: 0,
+        skipped: true
+      };
+    }
+
+    throw new Error(
+      `CJ fulfillment for order #${orderId} requires manual review ` +
+      `(state=${current ? current.state : 'unknown'}) — no supplier write attempted`
+    );
+  }
+
+  const safeExistingStatuses = new Set([
+    'CREATED',
+    'IN_CART',
+    'UNPAID',
+    'PENDING',
+    'PROCESSING',
+    'UNSHIPPED',
+    'SHIPPED',
+    'DELIVERED'
+  ]);
+
+  const reconcileExisting = async () => {
+    const lookup =
+      await dropship.findOrderByCustomId(
+        externalId
+      );
+
+    if (!lookup.ok) {
+      await persistSupplierState(
+        orderId,
+        supplierId,
+        'reconcile_required',
+        lookup.errorCode
+      );
+
+      throw new Error(
+        `CJ reconciliation lookup failed for order #${orderId}: ${lookup.errorCode}`
+      );
+    }
+
+    if (!lookup.found) {
+      return null;
+    }
+
+    const status =
+      lookup.order.status || '';
+
+    if (!safeExistingStatuses.has(status)) {
+      await persistSupplierState(
+        orderId,
+        supplierId,
+        'reconcile_required',
+        `CJ_UNSAFE_STATUS_${status || 'UNKNOWN'}`
+      );
+
+      throw new Error(
+        `Existing CJ order for #${orderId} is in unsafe status "${status || 'UNKNOWN'}" — manual review required`
+      );
+    }
+
+    const ref = lookup.order.orderId;
+
+    await persistSupplierOrderId(
+      orderId,
+      supplierId,
+      ref,
+      'submitted'
+    );
+
+    await writeItemStatus(
+      items.map((i) => i.id),
+      'submitted',
+      ref
+    );
+
+    return {
+      supplier: supplierId,
+      ref,
+      count: items.length,
+      reconciled: true
+    };
+  };
+
+  // Always reconcile remotely before attempting a create.
+  // This closes the crash window where CJ created the order but
+  // the process died before supplierOrderId was persisted locally.
+  const existing =
+    await reconcileExisting();
+
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    const { ref } =
+      await dropship.sendOrder(
+        orderId,
+        destination,
+        items,
+        {
+          orderNumber: externalId
+        }
+      );
+
+    await persistSupplierOrderId(
+      orderId,
+      supplierId,
+      ref,
+      'submitted'
+    );
+
+    await writeItemStatus(
+      items.map((i) => i.id),
+      'submitted',
+      ref
+    );
+
+    return {
+      supplier: supplierId,
+      ref,
+      count: items.length
+    };
+
+  } catch (error) {
+    // CJ explicitly reports duplicate custom order numbers with
+    // code 1603003. Reconcile immediately instead of creating again.
+    if (error && error.code === 'CJ_1603003') {
+      const recovered =
+        await reconcileExisting();
+
+      if (recovered) {
+        return recovered;
+      }
+
+      await persistSupplierState(
+        orderId,
+        supplierId,
+        'reconcile_required',
+        'CJ_DUPLICATE_WITHOUT_LOOKUP_MATCH'
+      );
+
+      throw new Error(
+        `CJ reported duplicate order #${orderId}, but reconciliation could not resolve the existing supplier order`
+      );
+    }
+
+    // A timeout/crash-looking create failure is restart-safe:
+    // the next claimed attempt MUST perform remote reconciliation
+    // before any new create request.
+    await persistSupplierState(
+      orderId,
+      supplierId,
+      'create_failed',
+      error && error.code
+        ? error.code
+        : 'CJ_CREATE_FAILED'
+    );
+
+    throw error;
+  }
 }
 
 /**
@@ -434,6 +640,8 @@ async function routeOrderToSupplier(orderId, shippingDestination, items) {
 module.exports = {
   routeOrderToSupplier,
   handlePrintify,
+  handleDropship,
   deterministicExternalId,
+  deterministicCJExternalId,
   deterministicLineExternalId,
 };

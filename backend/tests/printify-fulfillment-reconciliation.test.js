@@ -473,7 +473,27 @@ test('mixed printify + dropship items in one order: only the printify-supplier i
   assert.equal(items.length, 2);
 
   const dropship = require('../services/dropship.js');
-  const dropshipMock = mock.method(dropship, 'sendOrder', async () => ({ ref: 'CJ-REF-123' }));
+
+  // CJ fulfillment now always reconciles by deterministic custom order id
+  // BEFORE a create attempt. This mixed-supplier test is intentionally
+  // hermetic, so explicitly model "no existing CJ order" instead of
+  // allowing the reconciliation lookup to reach the real provider.
+  const dropshipLookupMock = mock.method(
+    dropship,
+    'findOrderByCustomId',
+    async () => ({
+      ok: true,
+      found: false
+    })
+  );
+
+  const dropshipMock = mock.method(
+    dropship,
+    'sendOrder',
+    async () => ({
+      ref: 'CJ-REF-123'
+    })
+  );
   const createMock = mock.method(printify, 'createPrintifyOrderDraft', async ({ items: draftItems }) => {
     assert.equal(draftItems.length, 1, 'only the printify-supplier item may be included');
     return { ok: true, orderId: 'pf-order-12', status: 'on-hold' };
@@ -484,11 +504,18 @@ test('mixed printify + dropship items in one order: only the printify-supplier i
   try {
     await routeOrderToSupplier(orderId, FAKE_DESTINATION, items);
     assert.equal(createMock.mock.callCount(), 1);
+    assert.equal(dropshipLookupMock.mock.callCount(), 1);
     assert.equal(dropshipMock.mock.callCount(), 1);
     void cjItemInsert;
     void printifyProductId;
   } finally {
-    restoreAll([dropshipMock, createMock, getMock, submitMock]);
+    restoreAll([
+      dropshipLookupMock,
+      dropshipMock,
+      createMock,
+      getMock,
+      submitMock
+    ]);
   }
 });
 

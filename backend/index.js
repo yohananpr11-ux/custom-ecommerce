@@ -878,14 +878,17 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
          OR fulfillment_status = 'pending'
          OR (
            fulfillment_status IN ('processing', 'failed')
-           AND COALESCE(supplier_id, 'printify') = 'printify'
+           AND COALESCE(supplier_id, 'printify') IN ('printify', 'dropship')
            AND NOT EXISTS (
              SELECT 1 FROM supplier_fulfillments sf
              WHERE sf.orderId = order_items.orderId
-               AND sf.supplierId = 'printify'
+               AND sf.supplierId = COALESCE(order_items.supplier_id, 'printify')
                AND (
                  sf.state IN ('submitted', 'reconcile_required')
-                 OR (sf.state IN ('reconciling', 'created', 'submitting') AND sf.updatedAt > datetime('now', '-5 minutes'))
+                 OR (
+                   sf.state IN ('reconciling', 'created', 'submitting')
+                   AND sf.updatedAt > datetime('now', '-5 minutes')
+                 )
                )
            )
          )
