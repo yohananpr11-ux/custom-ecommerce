@@ -42,7 +42,7 @@ test.after(() => {
 });
 
 test.before(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  await db.readyPromise;
 });
 
 // Captures every console.log call made during fn() and returns the lines.

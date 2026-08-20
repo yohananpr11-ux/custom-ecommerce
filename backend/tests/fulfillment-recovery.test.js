@@ -45,7 +45,7 @@ test.after(() => {
 });
 
 test.before(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  await db.readyPromise;
 });
 
 // Each call gets its own printifyId (products.printifyId now has a partial
