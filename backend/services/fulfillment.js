@@ -575,10 +575,25 @@ const HANDLERS = {
  *                            Throws if any group failed.
  */
 async function routeOrderToSupplier(orderId, shippingDestination, items) {
-  // 1. Group items by supplier_id (fallback to 'printify' for legacy rows)
+  // 1. Validate supplier routing before ANY supplier side effect.
+  // Missing/unknown supplier identities are unsafe: never guess Printify or manual.
   const groups = {};
   for (const item of items) {
-    const sid = item.supplier_id || 'printify';
+    const rawSupplierId = item && item.supplier_id;
+    const sid = typeof rawSupplierId === 'string' ? rawSupplierId.trim() : '';
+
+    if (!sid) {
+      throw new Error(
+        `Order #${orderId} item #${item && item.id != null ? item.id : 'unknown'} is missing supplier_id — no supplier write attempted`
+      );
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(HANDLERS, sid)) {
+      throw new Error(
+        `Order #${orderId} item #${item && item.id != null ? item.id : 'unknown'} has unknown supplier_id='${sid}' — no supplier write attempted`
+      );
+    }
+
     if (!groups[sid]) groups[sid] = [];
     groups[sid].push(item);
   }
@@ -591,8 +606,9 @@ async function routeOrderToSupplier(orderId, shippingDestination, items) {
     supplierIds.map((sid) => {
       const handler = HANDLERS[sid];
       if (!handler) {
-        console.error(`[fulfillment] Unknown supplier_id='${sid}' — treating as manual`);
-        return handleManual(orderId, groups[sid]);
+        throw new Error(
+          `Unknown supplier_id='${sid}' reached dispatcher — no supplier write attempted`
+        );
       }
       // handleManual doesn't need destination
       if (sid === 'manual') return handler(orderId, groups[sid]);
