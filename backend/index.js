@@ -613,6 +613,26 @@ const reserveManualProductStock = async (productId, quantity) => {
   return attempt();
 };
 
+const KNOWN_SUPPLIER_IDS = new Set([
+  'printify',
+  'dropship',
+  'manual'
+]);
+
+const isValidProductSupplierRouting = (productType, supplierId) => {
+  if (!KNOWN_SUPPLIER_IDS.has(supplierId)) return false;
+
+  const type = String(productType || '').trim().toLowerCase();
+
+  if (type === 'printify') return supplierId === 'printify';
+  if (type === 'dropship') return supplierId === 'dropship';
+  if (type === 'local') return supplierId === 'manual';
+
+  // Unknown legacy product types may still route only through an
+  // explicitly configured, known supplier. Never invent one.
+  return true;
+};
+
 const resolveValidatedOrderItems = async (items = []) => {
   const validatedItems = [];
 
@@ -627,6 +647,20 @@ const resolveValidatedOrderItems = async (items = []) => {
     const product = await dbGetAsync(`SELECT id, title, type, price, priceUSD, printifyId, supplier_id, stock, access_token_hash, access_token_expires_at FROM products WHERE id = ?`, [productId]);
     if (!product) {
       throw new ClientValidationError(`Product ${productId} was not found`);
+    }
+
+    const supplierId =
+      typeof product.supplier_id === 'string'
+        ? product.supplier_id.trim()
+        : '';
+
+    // SECURITY: supplier identity is server-owned routing data.
+    // Missing, unknown, or type-incompatible routing must stop
+    // checkout BEFORE payment creation. Never guess Printify.
+    if (!isValidProductSupplierRouting(product.type, supplierId)) {
+      throw new ClientValidationError(
+        `Product ${productId} is not currently available`
+      );
     }
 
     // SECURITY: a type='printify' row with no real Printify product identity
@@ -708,7 +742,7 @@ const resolveValidatedOrderItems = async (items = []) => {
       printifyProductId: product.printifyId || null,
       printifyVariantId: resolvedVariant ? resolvedVariant.printifyVariantId : null,
       // Phase 3: snapshot supplier_id at order-creation time
-      supplier_id: product.supplier_id || 'printify',
+      supplier_id: supplierId,
       // Trusted (never client-supplied) — see calculateOrderPricing's
       // TEST_PRODUCT_SHIPPING_EXEMPT_ID check, which requires this exact
       // server-verified value, not rawItem.type.
@@ -3124,7 +3158,7 @@ const createPendingOrder = async (shippingInput, items, couponCode) => {
   for (const item of validatedItems) {
     await dbRunAsync(
       `INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null, item.supplier_id || 'printify']
+      [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null, item.supplier_id]
     );
   }
 

@@ -1076,3 +1076,156 @@ test('unknown Printify status: a never-before-seen status blocks submission and 
     submitMock.mock.restore();
   }
 });
+
+
+test('checkout rejects blank supplier routing before payment provider', async () => {
+  const product =
+    await seedPrintifyProduct({ price: 41 });
+
+  await dbRun(
+    "UPDATE products SET supplier_id = '' WHERE id = ?",
+    [product.productId]
+  );
+
+  const before =
+    (await dbGet('SELECT COUNT(*) AS n FROM orders')).n;
+
+  const axiosMock =
+    installAxiosPostMock();
+
+  try {
+    const res = await apiPost(
+      '/api/paypal/create-order',
+      {
+        ...SYNTHETIC_SHIPPING,
+        items: [{
+          id: product.productId,
+          quantity: 1,
+          selectedColor: 'Black',
+          selectedSize: 'M'
+        }],
+        currency: 'ILS'
+      }
+    );
+
+    assert.equal(res.status, 400);
+    assert.match(
+      res.json.error,
+      /not currently available/i
+    );
+
+    assert.equal(
+      axiosMock.calls.length,
+      0,
+      'payment provider must not be contacted'
+    );
+
+    assert.equal(
+      (await dbGet('SELECT COUNT(*) AS n FROM orders')).n,
+      before,
+      'rejected supplier routing must create no order'
+    );
+  } finally {
+    axiosMock.restore();
+  }
+});
+
+test('checkout rejects a dropship product carrying the legacy Printify supplier default', async () => {
+  const product =
+    await seedDropshipProduct({ price: 42 });
+
+  await dbRun(
+    "UPDATE products SET supplier_id = 'printify' WHERE id = ?",
+    [product.productId]
+  );
+
+  const before =
+    (await dbGet('SELECT COUNT(*) AS n FROM orders')).n;
+
+  const axiosMock =
+    installAxiosPostMock();
+
+  try {
+    const res = await apiPost(
+      '/api/paypal/create-order',
+      {
+        ...SYNTHETIC_SHIPPING,
+        items: [{
+          id: product.productId,
+          quantity: 1
+        }],
+        currency: 'ILS'
+      }
+    );
+
+    assert.equal(res.status, 400);
+    assert.match(
+      res.json.error,
+      /not currently available/i
+    );
+
+    assert.equal(
+      axiosMock.calls.length,
+      0,
+      'payment provider must not be contacted'
+    );
+
+    assert.equal(
+      (await dbGet('SELECT COUNT(*) AS n FROM orders')).n,
+      before
+    );
+  } finally {
+    axiosMock.restore();
+  }
+});
+
+test('checkout rejects an unknown supplier before payment provider', async () => {
+  const product =
+    await seedPrintifyProduct({ price: 43 });
+
+  await dbRun(
+    "UPDATE products SET supplier_id = 'mystery-supplier' WHERE id = ?",
+    [product.productId]
+  );
+
+  const before =
+    (await dbGet('SELECT COUNT(*) AS n FROM orders')).n;
+
+  const axiosMock =
+    installAxiosPostMock();
+
+  try {
+    const res = await apiPost(
+      '/api/paypal/create-order',
+      {
+        ...SYNTHETIC_SHIPPING,
+        items: [{
+          id: product.productId,
+          quantity: 1,
+          selectedColor: 'Black',
+          selectedSize: 'M'
+        }],
+        currency: 'ILS'
+      }
+    );
+
+    assert.equal(res.status, 400);
+    assert.match(
+      res.json.error,
+      /not currently available/i
+    );
+
+    assert.equal(
+      axiosMock.calls.length,
+      0,
+      'payment provider must not be contacted'
+    );
+
+    assert.equal(
+      (await dbGet('SELECT COUNT(*) AS n FROM orders')).n,
+      before
+    );
+  } finally {
+    axiosMock.restore();
+  }
+});
