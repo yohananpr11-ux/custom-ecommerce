@@ -117,6 +117,7 @@ jobs:
           node --check backend/tests/fulfillment-concurrency.test.js
           node --check backend/tests/printify-fulfillment-reconciliation.test.js
           node --check backend/tests/cj-fulfillment-reconciliation.test.js
+          node --check backend/tests/cj-variant-reseed-stability.test.js
           node --check backend/tests/network-guard-negative-control.test.js
           node --check backend/tests/fulfillment-recovery.test.js
           node --check backend/tests/legacy-schema-migration.test.js
@@ -237,6 +238,22 @@ jobs:
 
       - name: Assert CJ reconciliation guard log clean
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-cj-reconciliation.jsonl"
+
+      # CJ supplier variant identity must remain stable even when startup
+      # reseeding deletes and recreates mutable product_variants rows.
+      # Run standalone so its isolated DB lifecycle cannot add pressure to
+      # the existing multi-file migration group.
+      - name: Run P0 CJ variant reseed stability regression
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          HERMETIC_TEST_MODE: "true"
+          DISABLE_BACKGROUND_JOBS: "true"
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-cj-reseed-stability.jsonl
+        run: node -r ./scripts/network-guard.cjs --test tests/cj-variant-reseed-stability.test.js
+
+      - name: Assert CJ variant reseed stability guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-cj-reseed-stability.jsonl"
 
       # Kept as its own step rather than folded into the group above: that
       # group is a multi-file `node --test` invocation, which runs its files

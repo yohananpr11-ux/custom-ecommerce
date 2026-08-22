@@ -938,7 +938,20 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
 
   const claimedIds = claimed.map((row) => row.id);
   const items = await dbAllAsync(
-    `SELECT oi.*, p.title, p.type, oi.supplier_id, p.printifyId AS printifyProductId, pv.printifyVariantId
+    `SELECT
+       oi.*,
+       p.title,
+       p.type,
+       oi.supplier_id,
+       p.printifyId AS printifyProductId,
+       CASE
+         WHEN oi.supplier_id = 'dropship'
+           THEN oi.supplier_variant_id
+         ELSE COALESCE(
+           oi.supplier_variant_id,
+           pv.printifyVariantId
+         )
+       END AS printifyVariantId
      FROM order_items oi
      LEFT JOIN products p ON p.id = oi.productId
      LEFT JOIN product_variants pv ON pv.id = oi.variantId
@@ -3157,8 +3170,18 @@ const createPendingOrder = async (shippingInput, items, couponCode) => {
 
   for (const item of validatedItems) {
     await dbRunAsync(
-      `INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null, item.supplier_id]
+      `INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize, supplier_id, supplier_variant_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        orderId,
+        item.id,
+        item.variantId || null,
+        item.quantity,
+        item.price,
+        item.selectedColor || null,
+        item.selectedSize || null,
+        item.supplier_id,
+        item.printifyVariantId || null
+      ]
     );
   }
 

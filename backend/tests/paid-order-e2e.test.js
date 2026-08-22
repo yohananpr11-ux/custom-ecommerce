@@ -1309,7 +1309,8 @@ test('CJ variant identity: internal variant id resolves to exact supplier SKU', 
       await dbGet(
         `SELECT
            variantId,
-           supplier_id
+           supplier_id,
+           supplier_variant_id
          FROM order_items
          WHERE orderId = ?`,
         [localOrderId]
@@ -1324,6 +1325,12 @@ test('CJ variant identity: internal variant id resolves to exact supplier SKU', 
     assert.equal(
       storedItem.supplier_id,
       'dropship'
+    );
+
+    assert.equal(
+      storedItem.supplier_variant_id,
+      expectedCjSku,
+      'checkout must snapshot the exact CJ SKU before payment'
     );
 
     const captureRes =
