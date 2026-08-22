@@ -482,7 +482,7 @@ test(
 
       assert.equal(
         supplier.state,
-        'submitted'
+        'created'
       );
 
       assert.equal(
@@ -492,7 +492,7 @@ test(
 
       assert.equal(
         item.fulfillment_status,
-        'submitted'
+        'processing'
       );
     } finally {
       restore(originals);
@@ -581,7 +581,17 @@ test(
 
       assert.equal(
         supplier.state,
-        'submitted'
+        'created'
+      );
+
+      const item =
+        await itemRow(
+          seeded.itemId
+        );
+
+      assert.equal(
+        item.fulfillment_status,
+        'processing'
       );
     } finally {
       restore(originals);
@@ -1339,6 +1349,179 @@ test(
         process.env.CJ_API_KEY =
           originalApiKey;
       }
+    }
+  }
+);
+
+
+test(
+  'CJ create-only response must not be represented locally as submitted',
+  async () => {
+    const seeded =
+      await seedDropshipOrder();
+
+    const originals = [
+      [
+        dropship,
+        'findOrderByCustomId',
+        dropship.findOrderByCustomId
+      ],
+      [
+        dropship,
+        'sendOrder',
+        dropship.sendOrder
+      ]
+    ];
+
+    try {
+      dropship.findOrderByCustomId =
+        async () => ({
+          ok: true,
+          found: false
+        });
+
+      dropship.sendOrder =
+        async () => ({
+          ref: 'CJ-CREATE-ONLY-REF'
+        });
+
+      await handleDropship(
+        seeded.orderId,
+        {},
+        [seeded.item]
+      );
+
+      const supplier =
+        await supplierRow(
+          seeded.orderId
+        );
+
+      const item =
+        await itemRow(
+          seeded.itemId
+        );
+
+      if (
+        supplier.state !== 'created' ||
+        item.fulfillment_status !== 'processing'
+      ) {
+        const error =
+          new Error(
+            'CJ_CREATE_ONLY_SEMANTICS_WRONG ' +
+            'supplier=' +
+            supplier.state +
+            ' item=' +
+            item.fulfillment_status
+          );
+
+        error.code =
+          'CJ_CREATE_ONLY_SEMANTICS_WRONG';
+
+        throw error;
+      }
+
+      assert.equal(
+        supplier.supplierOrderId,
+        'CJ-CREATE-ONLY-REF'
+      );
+
+    } finally {
+      restore(originals);
+    }
+  }
+);
+
+test(
+  'existing UNPAID CJ order must not be represented locally as submitted',
+  async () => {
+    const seeded =
+      await seedDropshipOrder();
+
+    let createCalls = 0;
+
+    const originals = [
+      [
+        dropship,
+        'findOrderByCustomId',
+        dropship.findOrderByCustomId
+      ],
+      [
+        dropship,
+        'sendOrder',
+        dropship.sendOrder
+      ]
+    ];
+
+    try {
+      dropship.findOrderByCustomId =
+        async () => ({
+          ok: true,
+          found: true,
+          order: {
+            orderId:
+              'CJ-UNPAID-EXISTING',
+            status:
+              'UNPAID'
+          }
+        });
+
+      dropship.sendOrder =
+        async () => {
+          createCalls += 1;
+
+          throw new Error(
+            'CJ_CREATE_MUST_NOT_RUN'
+          );
+        };
+
+      await handleDropship(
+        seeded.orderId,
+        {},
+        [seeded.item]
+      );
+
+      const supplier =
+        await supplierRow(
+          seeded.orderId
+        );
+
+      const item =
+        await itemRow(
+          seeded.itemId
+        );
+
+      assert.equal(
+        createCalls,
+        0,
+        'existing CJ order must never be recreated'
+      );
+
+      if (
+        supplier.state !== 'created' ||
+        item.fulfillment_status !== 'processing'
+      ) {
+        const error =
+          new Error(
+            'CJ_UNPAID_SEMANTICS_WRONG ' +
+            'supplier=' +
+            supplier.state +
+            ' item=' +
+            item.fulfillment_status
+          );
+
+        error.code =
+          'CJ_UNPAID_SEMANTICS_WRONG';
+
+        throw error;
+      }
+
+      assert.equal(
+        supplier.supplierOrderId,
+        'CJ-UNPAID-EXISTING'
+      );
+
+    } finally {
+      restore(originals);
     }
   }
 );

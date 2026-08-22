@@ -964,15 +964,93 @@ test('mixed-supplier order: printify and dropship items in one paid order are ea
     const captureRes = await apiPost('/api/paypal/capture-order', { orderID: createRes.json.orderID });
     assert.equal(captureRes.json.success, true);
 
-    await waitForFulfillmentSettled(createRes.json.orderId);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    /*
+     * Mixed supplier semantics are intentionally different:
+     * Printify can reach submitted, while CJ payType=3 only proves
+     * the remote order was created, so CJ remains processing.
+     *
+     * Do not use waitForFulfillmentSettled() here because that helper
+     * correctly treats processing as unfinished and would wait until
+     * timeout for the CJ line.
+     */
+    const deadline =
+      Date.now() + 5000;
 
-    const items = await dbAll(`SELECT supplier_id, fulfillment_status FROM order_items WHERE orderId = ? ORDER BY id`, [createRes.json.orderId]);
-    assert.equal(items.length, 2);
-    assert.equal(items.find((i) => i.supplier_id === 'printify').fulfillment_status, 'submitted');
-    assert.equal(items.find((i) => i.supplier_id === 'dropship').fulfillment_status, 'submitted');
-    assert.equal(printifyMock.drafts.length, 1, 'only the printify item reaches Printify, not the dropship item');
-    assert.equal(dropshipMock.calls.length, 1, 'the dropship item reaches the dropship service exactly once');
+    let items = [];
+
+    while (Date.now() < deadline) {
+      items =
+        await dbAll(
+          `SELECT
+             supplier_id,
+             fulfillment_status
+           FROM order_items
+           WHERE orderId = ?
+           ORDER BY id`,
+          [createRes.json.orderId]
+        );
+
+      const printifyItem =
+        items.find(
+          (i) =>
+            i.supplier_id === 'printify'
+        );
+
+      const dropshipItem =
+        items.find(
+          (i) =>
+            i.supplier_id === 'dropship'
+        );
+
+      if (
+        printifyItem &&
+        dropshipItem &&
+        printifyItem.fulfillment_status ===
+          'submitted' &&
+        dropshipItem.fulfillment_status ===
+          'processing'
+      ) {
+        break;
+      }
+
+      await new Promise(
+        (resolve) =>
+          setTimeout(resolve, 25)
+      );
+    }
+
+    assert.equal(
+      items.length,
+      2
+    );
+
+    assert.equal(
+      items.find(
+        (i) =>
+          i.supplier_id === 'printify'
+      ).fulfillment_status,
+      'submitted'
+    );
+
+    assert.equal(
+      items.find(
+        (i) =>
+          i.supplier_id === 'dropship'
+      ).fulfillment_status,
+      'processing'
+    );
+
+    assert.equal(
+      printifyMock.drafts.length,
+      1,
+      'only the printify item reaches Printify, not the dropship item'
+    );
+
+    assert.equal(
+      dropshipMock.calls.length,
+      1,
+      'the dropship item reaches the dropship service exactly once'
+    );
   } finally {
     axiosMock.restore();
     printifyMock.restore();

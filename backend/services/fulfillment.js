@@ -369,6 +369,15 @@ async function handleDropship(orderId, destination, items) {
     'DELIVERED'
   ]);
 
+  // payType=3 only creates the CJ order.
+  // These statuses prove the remote order exists,
+  // but do NOT prove it has entered paid fulfillment.
+  const createOnlyStatuses = new Set([
+    'CREATED',
+    'IN_CART',
+    'UNPAID'
+  ]);
+
   const reconcileExisting = async () => {
     const lookup =
       await dropship.findOrderByCustomId(
@@ -409,6 +418,29 @@ async function handleDropship(orderId, destination, items) {
     }
 
     const ref = lookup.order.orderId;
+
+    if (createOnlyStatuses.has(status)) {
+      await persistSupplierOrderId(
+        orderId,
+        supplierId,
+        ref,
+        'created'
+      );
+
+      await writeItemStatus(
+        items.map((i) => i.id),
+        'processing',
+        ref
+      );
+
+      return {
+        supplier: supplierId,
+        ref,
+        count: items.length,
+        reconciled: true,
+        awaitingSupplierAction: true
+      };
+    }
 
     await persistSupplierOrderId(
       orderId,
@@ -452,23 +484,27 @@ async function handleDropship(orderId, destination, items) {
         }
       );
 
+    // dropship.sendOrder currently creates CJ with payType=3.
+    // A successful API response means "remote order exists",
+    // not "supplier fulfillment has been paid/submitted".
     await persistSupplierOrderId(
       orderId,
       supplierId,
       ref,
-      'submitted'
+      'created'
     );
 
     await writeItemStatus(
       items.map((i) => i.id),
-      'submitted',
+      'processing',
       ref
     );
 
     return {
       supplier: supplierId,
       ref,
-      count: items.length
+      count: items.length,
+      awaitingSupplierAction: true
     };
 
   } catch (error) {
