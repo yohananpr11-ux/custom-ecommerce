@@ -405,7 +405,10 @@ test('production Printify sync fails closed when credentials are missing', async
   process.env.NODE_ENV =
     'production';
 
-  delete process.env.HERMETIC_TEST_MODE;
+  // Even if a test/simulation flag leaks into production,
+  // production must always win and fail closed.
+  process.env.HERMETIC_TEST_MODE =
+    'true';
 
   const getMock =
     mock.method(
@@ -506,7 +509,10 @@ test('production Printify fulfillment fails closed when credentials are missing'
   process.env.NODE_ENV =
     'production';
 
-  delete process.env.HERMETIC_TEST_MODE;
+  // Even if a test/simulation flag leaks into production,
+  // production must always win and fail closed.
+  process.env.HERMETIC_TEST_MODE =
+    'true';
 
   const getMock =
     mock.method(
