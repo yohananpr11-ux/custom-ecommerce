@@ -86,44 +86,137 @@ async function getCJAccessToken() {
  * @param {Array}  products     Mapped products array { sku/vid, quantity }
  * @returns {Promise<string>}   The chosen logisticName
  */
-async function getLogisticName(token, fromCountry, toCountry, products) {
-  try {
-    const payload = {
-      startCountryCode: fromCountry,
-      endCountryCode: toCountry,
-      products: products.map(p => ({
+async function getLogisticName(
+  token,
+  fromCountry,
+  toCountry,
+  products
+) {
+  const payload = {
+    startCountryCode: fromCountry,
+    endCountryCode: toCountry,
+
+    products:
+      products.map((p) => ({
         sku: p.sku,
         quantity: p.quantity
       }))
-    };
+  };
 
-    console.log(`[${SUPPLIER_NAME}] Querying CJ Freight Calculation (origin=${fromCountry}, dest=${toCountry})...`);
-    const response = await axios.post(
-      'https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate',
-      payload,
-      {
-        headers: {
-          'CJ-Access-Token': token,
-          'Content-Type': 'application/json'
+  console.log(
+    `[${SUPPLIER_NAME}] Querying CJ Freight Calculation (origin=${fromCountry}, dest=${toCountry})...`
+  );
+
+  let response;
+
+  try {
+    response =
+      await axios.post(
+        'https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate',
+        payload,
+        {
+          headers: {
+            'CJ-Access-Token': token,
+            'Content-Type':
+              'application/json'
+          }
         }
-      }
+      );
+  } catch (error) {
+    const status =
+      error.response &&
+      error.response.status;
+
+    const cjCode =
+      error.response &&
+      error.response.data &&
+      typeof error.response.data.code ===
+        'number'
+        ? error.response.data.code
+        : undefined;
+
+    const safeReason =
+      status
+        ? `HTTP_${status}`
+        : (
+            cjCode !== undefined
+              ? `CJ_${cjCode}`
+              : (
+                  error.code ||
+                  'CJ_FREIGHT_REQUEST_FAILED'
+                )
+          );
+
+    console.warn(
+      `[${SUPPLIER_NAME}] Freight calculation failed: ${safeReason}`
     );
 
-    const json = response.data || {};
-    if (json.code === 200 && Array.isArray(json.data) && json.data.length > 0) {
-      // Pick the first available carrier method (often the most standard/cost-effective)
-      const chosen = json.data[0].logisticName;
-      console.log(`[${SUPPLIER_NAME}] Dynamic shipping carrier selected: "${chosen}"`);
-      return chosen;
-    }
+    const wrapped =
+      new Error(
+        `CJ freight calculation failed: ${safeReason}`
+      );
 
-    console.warn(`[${SUPPLIER_NAME}] Freight API returned no options: ${JSON.stringify(json)}. Using standard fallback.`);
-  } catch (error) {
-    console.warn(`[${SUPPLIER_NAME}] Freight calculation call failed, using default fallback:`, error.message);
+    wrapped.code =
+      'CJ_FREIGHT_UNAVAILABLE';
+
+    throw wrapped;
   }
 
-  // Fallback to a highly common standard shipping carrier
-  return 'CJ Packet Sensitive';
+  const json =
+    response.data || {};
+
+  const options =
+    Array.isArray(json.data)
+      ? json.data
+      : [];
+
+  if (
+    json.code !== 200 ||
+    json.result === false ||
+    options.length === 0
+  ) {
+    const safeReason =
+      typeof json.code === 'number'
+        ? `CJ_${json.code}`
+        : 'CJ_FREIGHT_NO_OPTIONS';
+
+    console.warn(
+      `[${SUPPLIER_NAME}] Freight calculation returned no usable option: ${safeReason}`
+    );
+
+    const error =
+      new Error(
+        `CJ freight option unavailable: ${safeReason}`
+      );
+
+    error.code =
+      'CJ_FREIGHT_UNAVAILABLE';
+
+    throw error;
+  }
+
+  const logisticName =
+    String(
+      options[0].logisticName || ''
+    ).trim();
+
+  if (!logisticName) {
+    const error =
+      new Error(
+        'CJ freight option did not include logisticName'
+      );
+
+    error.code =
+      'CJ_FREIGHT_UNAVAILABLE';
+
+    throw error;
+  }
+
+  console.log(
+    `[${SUPPLIER_NAME}] Dynamic shipping carrier selected: "${logisticName}"`
+  );
+
+  return logisticName;
 }
 
 /**

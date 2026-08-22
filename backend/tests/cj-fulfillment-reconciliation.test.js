@@ -826,3 +826,243 @@ test(
     );
   }
 );
+
+
+test(
+  'CJ freight failure blocks createOrderV2',
+  async () => {
+    let createCalls = 0;
+    let freightCalls = 0;
+
+    const postMock =
+      mock.method(
+        axios,
+        'post',
+        async (url) => {
+          if (
+            url.includes(
+              'getAccessToken'
+            )
+          ) {
+            return {
+              data: {
+                code: 200,
+                result: true,
+                data: {
+                  accessToken:
+                    'synthetic-access-token'
+                }
+              }
+            };
+          }
+
+          if (
+            url.includes(
+              'freightCalculate'
+            )
+          ) {
+            freightCalls += 1;
+
+            const error =
+              new Error(
+                'synthetic freight outage'
+              );
+
+            error.response = {
+              status: 503,
+              data: {
+                code: 503
+              }
+            };
+
+            throw error;
+          }
+
+          if (
+            url.includes(
+              'createOrderV2'
+            )
+          ) {
+            createCalls += 1;
+
+            throw new Error(
+              'createOrderV2 must not be called'
+            );
+          }
+
+          throw new Error(
+            `Unexpected axios.post URL: ${url}`
+          );
+        }
+      );
+
+    let caught;
+
+    try {
+      await dropship.sendOrder(
+        990001,
+        {
+          customerName:
+            'Synthetic Customer',
+          firstName: 'Synthetic',
+          lastName: 'Customer',
+          phone: '+15550000000',
+          addressLine1:
+            '1 Synthetic Street',
+          city: 'Los Angeles',
+          region: 'CA',
+          postalCode: '90001',
+          country: 'US'
+        },
+        [
+          {
+            id: 1,
+            printifyVariantId:
+              'CJ-SYNTHETIC-VARIANT',
+            printifyProductId:
+              'CJ-SYNTHETIC-SPU',
+            quantity: 1
+          }
+        ],
+        {
+          orderNumber:
+            'jono-order-990001-cj-v1'
+        }
+      );
+    } catch (error) {
+      caught = error;
+    } finally {
+      postMock.mock.restore();
+    }
+
+    assert.ok(caught);
+
+    assert.equal(
+      caught.code,
+      'CJ_FREIGHT_UNAVAILABLE'
+    );
+
+    assert.equal(
+      freightCalls,
+      1
+    );
+
+    assert.equal(
+      createCalls,
+      0,
+      'CJ createOrderV2 must never run after freight failure'
+    );
+  }
+);
+
+test(
+  'CJ empty freight options block createOrderV2 instead of guessing a carrier',
+  async () => {
+    let createCalls = 0;
+
+    const postMock =
+      mock.method(
+        axios,
+        'post',
+        async (url) => {
+          if (
+            url.includes(
+              'getAccessToken'
+            )
+          ) {
+            return {
+              data: {
+                code: 200,
+                result: true,
+                data: {
+                  accessToken:
+                    'synthetic-access-token'
+                }
+              }
+            };
+          }
+
+          if (
+            url.includes(
+              'freightCalculate'
+            )
+          ) {
+            return {
+              data: {
+                code: 200,
+                result: true,
+                data: []
+              }
+            };
+          }
+
+          if (
+            url.includes(
+              'createOrderV2'
+            )
+          ) {
+            createCalls += 1;
+
+            throw new Error(
+              'createOrderV2 must not be called'
+            );
+          }
+
+          throw new Error(
+            `Unexpected axios.post URL: ${url}`
+          );
+        }
+      );
+
+    let caught;
+
+    try {
+      await dropship.sendOrder(
+        990002,
+        {
+          customerName:
+            'Synthetic Customer',
+          firstName: 'Synthetic',
+          lastName: 'Customer',
+          phone: '+15550000000',
+          addressLine1:
+            '1 Synthetic Street',
+          city: 'Los Angeles',
+          region: 'CA',
+          postalCode: '90001',
+          country: 'US'
+        },
+        [
+          {
+            id: 2,
+            printifyVariantId:
+              'CJ-SYNTHETIC-VARIANT-2',
+            printifyProductId:
+              'CJ-SYNTHETIC-SPU-2',
+            quantity: 1
+          }
+        ],
+        {
+          orderNumber:
+            'jono-order-990002-cj-v1'
+        }
+      );
+    } catch (error) {
+      caught = error;
+    } finally {
+      postMock.mock.restore();
+    }
+
+    assert.ok(caught);
+
+    assert.equal(
+      caught.code,
+      'CJ_FREIGHT_UNAVAILABLE'
+    );
+
+    assert.equal(
+      createCalls,
+      0
+    );
+  }
+);
