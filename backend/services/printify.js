@@ -32,6 +32,39 @@ function safeSyncSource(source) {
   return ALLOWED_SYNC_SOURCES.has(source) ? source : 'unknown';
 }
 
+function hasConfiguredPrintifyValue(value) {
+  const normalized =
+    String(value || '').trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  return !/^(YOUR_|CHANGE_ME|placeholder|example|mock)/i.test(
+    normalized
+  );
+}
+
+function isProductionRuntime() {
+  return (
+    process.env.NODE_ENV === 'production'
+    || Boolean(
+      String(process.env.RENDER || '').trim()
+    )
+  );
+}
+
+function isExplicitPrintifySimulationMode() {
+  if (isProductionRuntime()) {
+    return false;
+  }
+
+  return (
+    process.env.NODE_ENV === 'test'
+    || process.env.HERMETIC_TEST_MODE === 'true'
+  );
+}
+
 class PrintifyService {
   constructor() {
     this.token = process.env.PRINTIFY_API_TOKEN;
@@ -42,8 +75,26 @@ class PrintifyService {
     this._syncTail = Promise.resolve();
   }
 
+  _hasConfiguredCredentials() {
+    return (
+      hasConfiguredPrintifyValue(this.token)
+      && hasConfiguredPrintifyValue(this.shopId)
+    );
+  }
+
+  _missingCredentialsResult() {
+    return {
+      ok: false,
+      errorCode:
+        'PRINTIFY_CREDENTIALS_MISSING'
+    };
+  }
+
   async getLiveProductSnapshot(printifyProductId) {
-    if (!printifyProductId || !this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
+    if (
+      !printifyProductId
+      || !this._hasConfiguredCredentials()
+    ) {
       return null;
     }
 
@@ -86,14 +137,52 @@ class PrintifyService {
   async _syncProductsOnce(rawSource = 'unknown') {
     const source = safeSyncSource(rawSource);
     const startedAt = Date.now();
-    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
-      console.warn(`⚠️ Printify token missing. Simulating 10 product sync.`);
-      const db = require('../db');
-      for(let i=1; i<=10; i++) {
-        db.run(`INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
-          [`Premium Street Hoodie v${i}`, `Exclusive Printify collection. Sync mock.`, 300, `https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=400&q=80`, 999, 'printify']);
+    if (!this._hasConfiguredCredentials()) {
+      if (!isExplicitPrintifySimulationMode()) {
+        const error =
+          new Error(
+            'Printify credentials are not configured'
+          );
+
+        error.code =
+          'PRINTIFY_CREDENTIALS_MISSING';
+
+        console.warn(
+          '⚠️ Printify credentials missing. Sync aborted.'
+        );
+
+        console.log(
+          `OPS_PRINTIFY_SYNC source=${source} result=failed products_seen=0 products_updated=0 error_code=PRINTIFY_CREDENTIALS_MISSING duration_ms=${Date.now() - startedAt}`
+        );
+
+        throw error;
       }
-      console.log(`OPS_PRINTIFY_SYNC source=${source} result=success products_seen=10 products_updated=10 duration_ms=${Date.now() - startedAt}`);
+
+      console.warn(
+        '⚠️ Printify credentials missing. Using explicit test simulation.'
+      );
+
+      const db =
+        require('../db');
+
+      for (let i = 1; i <= 10; i++) {
+        db.run(
+          `INSERT INTO products (title, description, price, imageUrl, stock, type) VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            `Premium Street Hoodie v${i}`,
+            'Exclusive Printify collection. Sync mock.',
+            300,
+            'https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=400&q=80',
+            999,
+            'printify'
+          ]
+        );
+      }
+
+      console.log(
+        `OPS_PRINTIFY_SYNC source=${source} result=success products_seen=10 products_updated=10 duration_ms=${Date.now() - startedAt}`
+      );
+
       return 10;
     }
 
@@ -329,8 +418,18 @@ class PrintifyService {
   // real Printify order id so the caller can persist it before doing
   // anything else.
   async createPrintifyOrderDraft({ externalId, shipping, items }) {
-    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
-      return { ok: true, mocked: true, orderId: `mock_printify_${externalId}`, status: 'simulated' };
+    if (!this._hasConfiguredCredentials()) {
+      if (!isExplicitPrintifySimulationMode()) {
+        return this._missingCredentialsResult();
+      }
+
+      return {
+        ok: true,
+        mocked: true,
+        orderId:
+          `mock_printify_${externalId}`,
+        status: 'simulated'
+      };
     }
     try {
       const printifyItems = items.map((item) => ({
@@ -375,8 +474,16 @@ class PrintifyService {
 
   // GET a single order by its real Printify order id.
   async getPrintifyOrder(printifyOrderId) {
-    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
-      return { ok: true, mocked: true, order: null };
+    if (!this._hasConfiguredCredentials()) {
+      if (!isExplicitPrintifySimulationMode()) {
+        return this._missingCredentialsResult();
+      }
+
+      return {
+        ok: true,
+        mocked: true,
+        order: null
+      };
     }
     try {
       const response = await axios.get(
@@ -400,8 +507,17 @@ class PrintifyService {
   // more would either be silently clamped or rejected, which this default
   // avoids relying on.
   async findPrintifyOrderByExternalId(externalId, { maxPages = 10, pageSize = 10 } = {}) {
-    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
-      return { ok: true, mocked: true, matchCount: 0, order: null };
+    if (!this._hasConfiguredCredentials()) {
+      if (!isExplicitPrintifySimulationMode()) {
+        return this._missingCredentialsResult();
+      }
+
+      return {
+        ok: true,
+        mocked: true,
+        matchCount: 0,
+        order: null
+      };
     }
     try {
       const matches = [];
@@ -429,8 +545,15 @@ class PrintifyService {
   // POST send_to_production only. Requires an already-known real Printify
   // order id. Never creates an order.
   async sendPrintifyOrderToProduction(printifyOrderId) {
-    if (!this.token || this.token === 'YOUR_PRINTIFY_TOKEN') {
-      return { ok: true, mocked: true };
+    if (!this._hasConfiguredCredentials()) {
+      if (!isExplicitPrintifySimulationMode()) {
+        return this._missingCredentialsResult();
+      }
+
+      return {
+        ok: true,
+        mocked: true
+      };
     }
     try {
       await axios.post(
