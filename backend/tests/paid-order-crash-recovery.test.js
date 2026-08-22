@@ -78,7 +78,10 @@ let server;
 let baseUrl;
 
 test.before(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  // Wait for the real db.js schema migrations instead of guessing
+  // with a fixed delay. CI runners can legitimately take >500ms.
+  await db.readyPromise;
+
   server = app.listen(0);
   await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
