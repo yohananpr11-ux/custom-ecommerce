@@ -34,44 +34,148 @@ let cachedTokenExpiry = 0;
  */
 async function getCJAccessToken() {
   const now = Date.now();
-  if (cachedToken && now < cachedTokenExpiry) {
+
+  if (
+    cachedToken &&
+    now < cachedTokenExpiry
+  ) {
     return cachedToken;
   }
 
-  const apiKey = process.env.CJ_API_KEY;
+  const apiKey =
+    String(
+      process.env.CJ_API_KEY || ''
+    ).trim();
+
   if (!apiKey) {
-    throw new Error('CJ_API_KEY environment variable is missing.');
+    const error =
+      new Error(
+        'CJ API key is not configured'
+      );
+
+    error.code =
+      'CJ_API_KEY_MISSING';
+
+    throw error;
   }
 
   try {
-    const response = await axios.post(
-      'https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken',
-      { apiKey },
-      { headers: { 'Content-Type': 'application/json' } }
+    const response =
+      await axios.post(
+        'https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken',
+        { apiKey },
+        {
+          headers: {
+            'Content-Type':
+              'application/json'
+          }
+        }
+      );
+
+    const json =
+      response.data || {};
+
+    /*
+     * BOTH conditions must indicate success.
+     * code=200 with result=false is still failure.
+     */
+    if (
+      json.code !== 200 ||
+      json.result !== true
+    ) {
+      const rejected =
+        new Error(
+          'CJ authentication rejected'
+        );
+
+      rejected.code =
+        (
+          typeof json.code === 'number' &&
+          json.code !== 200
+        )
+          ? `CJ_${json.code}`
+          : 'CJ_AUTH_REJECTED';
+
+      throw rejected;
+    }
+
+    const data =
+      json.data || {};
+
+    const token =
+      String(
+        data.accessToken ||
+        json.accessToken ||
+        data.token ||
+        ''
+      ).trim();
+
+    if (!token) {
+      const missing =
+        new Error(
+          'CJ authentication token missing'
+        );
+
+      missing.code =
+        'CJ_AUTH_TOKEN_MISSING';
+
+      throw missing;
+    }
+
+    cachedToken =
+      token;
+
+    cachedTokenExpiry =
+      now +
+      12 * 60 * 60 * 1000;
+
+    return token;
+
+  } catch (error) {
+    const status =
+      error &&
+      error.response &&
+      error.response.status;
+
+    const responseCode =
+      error &&
+      error.response &&
+      error.response.data &&
+      typeof error.response.data.code ===
+        'number'
+        ? error.response.data.code
+        : undefined;
+
+    const safeSummary =
+      status
+        ? `HTTP_${status}`
+        : (
+            responseCode !== undefined
+              ? `CJ_${responseCode}`
+              : (
+                  error &&
+                  typeof error.code ===
+                    'string' &&
+                  error.code
+                    ? error.code
+                    : 'CJ_AUTH_FAILED'
+                )
+          );
+
+    console.error(
+      '❌ CJ Dropshipping authentication failed:',
+      safeSummary
     );
 
-    const json = response.data || {};
-    if (json.code !== 200 && json.result !== true) {
-      throw new Error(json.message || 'Authentication endpoint returned failure');
-    }
+    const wrapped =
+      new Error(
+        `CJ Dropshipping authentication failed: ${safeSummary}`
+      );
 
-    const data = json.data || {};
-    const token = data.accessToken || json.accessToken || data.token;
-    if (!token) {
-      throw new Error(`Access token not found in CJ response: ${JSON.stringify(json)}`);
-    }
+    wrapped.code =
+      safeSummary;
 
-    cachedToken = token;
-    // Cache for 12 hours (CJ token expires in 180 days)
-    cachedTokenExpiry = now + 12 * 60 * 60 * 1000;
-    return token;
-  } catch (error) {
-    // SECURITY: never log or forward the raw response body -- see the
-    // matching comment in sendOrder() below for the full reasoning.
-    const status = error.response && error.response.status;
-    const safeSummary = status ? `HTTP_${status}` : (error.code || error.message || 'UNKNOWN_ERROR');
-    console.error('❌ CJ Dropshipping authentication failed:', safeSummary);
-    throw new Error(`CJ Dropshipping authentication failed: ${safeSummary}`);
+    throw wrapped;
   }
 }
 
@@ -459,9 +563,10 @@ async function findOrderByCustomId(customOrderNumber) {
     };
   }
 
-  const token = await getCJAccessToken();
-
   try {
+    const token =
+      await getCJAccessToken();
+
     const response = await axios.get(
       'https://' + 'developers.cjdropshipping.com/api2.0/v1/shopping/order/getOrderDetail',
       {

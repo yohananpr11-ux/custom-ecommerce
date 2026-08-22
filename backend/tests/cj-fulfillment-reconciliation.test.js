@@ -1066,3 +1066,279 @@ test(
     );
   }
 );
+
+
+function loadFreshDropshipForAuthTest() {
+  const modulePath =
+    require.resolve(
+      '../services/dropship.js'
+    );
+
+  delete require.cache[modulePath];
+
+  return require(modulePath);
+}
+
+test(
+  'CJ lookup catches missing API key before network',
+  async () => {
+    const originalApiKey =
+      process.env.CJ_API_KEY;
+
+    process.env.CJ_API_KEY = '';
+
+    const postMock =
+      mock.method(
+        axios,
+        'post',
+        async () => {
+          throw new Error(
+            'NETWORK_MUST_NOT_BE_CALLED'
+          );
+        }
+      );
+
+    const getMock =
+      mock.method(
+        axios,
+        'get',
+        async () => {
+          throw new Error(
+            'NETWORK_MUST_NOT_BE_CALLED'
+          );
+        }
+      );
+
+    try {
+      const freshDropship =
+        loadFreshDropshipForAuthTest();
+
+      const result =
+        await freshDropship.findOrderByCustomId(
+          'jono-auth-missing-key'
+        );
+
+      assert.deepEqual(
+        result,
+        {
+          ok: false,
+          found: false,
+          errorCode:
+            'CJ_API_KEY_MISSING'
+        }
+      );
+
+      assert.equal(
+        postMock.mock.callCount(),
+        0
+      );
+
+      assert.equal(
+        getMock.mock.callCount(),
+        0
+      );
+
+    } finally {
+      postMock.mock.restore();
+      getMock.mock.restore();
+
+      if (
+        originalApiKey === undefined
+      ) {
+        delete process.env.CJ_API_KEY;
+      } else {
+        process.env.CJ_API_KEY =
+          originalApiKey;
+      }
+    }
+  }
+);
+
+test(
+  'CJ authentication rejects code 200 with result false',
+  async () => {
+    const originalApiKey =
+      process.env.CJ_API_KEY;
+
+    process.env.CJ_API_KEY =
+      'synthetic-auth-test-key';
+
+    const postMock =
+      mock.method(
+        axios,
+        'post',
+        async (url) => {
+          assert.match(
+            url,
+            /getAccessToken/
+          );
+
+          return {
+            data: {
+              code: 200,
+              result: false,
+
+              /*
+               * Must never be accepted just
+               * because code happens to be 200.
+               */
+              data: {
+                accessToken:
+                  'MUST-NOT-BE-ACCEPTED'
+              }
+            }
+          };
+        }
+      );
+
+    const getMock =
+      mock.method(
+        axios,
+        'get',
+        async () => {
+          throw new Error(
+            'ORDER_LOOKUP_MUST_NOT_RUN'
+          );
+        }
+      );
+
+    try {
+      const freshDropship =
+        loadFreshDropshipForAuthTest();
+
+      const result =
+        await freshDropship.findOrderByCustomId(
+          'jono-auth-result-false'
+        );
+
+      assert.deepEqual(
+        result,
+        {
+          ok: false,
+          found: false,
+          errorCode:
+            'CJ_AUTH_REJECTED'
+        }
+      );
+
+      assert.equal(
+        postMock.mock.callCount(),
+        1
+      );
+
+      assert.equal(
+        getMock.mock.callCount(),
+        0
+      );
+
+    } finally {
+      postMock.mock.restore();
+      getMock.mock.restore();
+
+      if (
+        originalApiKey === undefined
+      ) {
+        delete process.env.CJ_API_KEY;
+      } else {
+        process.env.CJ_API_KEY =
+          originalApiKey;
+      }
+    }
+  }
+);
+
+test(
+  'CJ authentication missing-token response never leaks provider body',
+  async () => {
+    const originalApiKey =
+      process.env.CJ_API_KEY;
+
+    process.env.CJ_API_KEY =
+      'synthetic-auth-test-key-2';
+
+    const canary =
+      'CJ-AUTH-BODY-CANARY-MUST-NOT-LEAK';
+
+    const postMock =
+      mock.method(
+        axios,
+        'post',
+        async () => ({
+          data: {
+            code: 200,
+            result: true,
+            message: canary,
+            data: {}
+          }
+        })
+      );
+
+    const getMock =
+      mock.method(
+        axios,
+        'get',
+        async () => {
+          throw new Error(
+            'ORDER_LOOKUP_MUST_NOT_RUN'
+          );
+        }
+      );
+
+    const errorLines = [];
+
+    const consoleMock =
+      mock.method(
+        console,
+        'error',
+        (...args) => {
+          errorLines.push(
+            args.join(' ')
+          );
+        }
+      );
+
+    try {
+      const freshDropship =
+        loadFreshDropshipForAuthTest();
+
+      const result =
+        await freshDropship.findOrderByCustomId(
+          'jono-auth-token-missing'
+        );
+
+      assert.deepEqual(
+        result,
+        {
+          ok: false,
+          found: false,
+          errorCode:
+            'CJ_AUTH_TOKEN_MISSING'
+        }
+      );
+
+      assert.equal(
+        getMock.mock.callCount(),
+        0
+      );
+
+      assert.doesNotMatch(
+        errorLines.join('\n'),
+        new RegExp(canary)
+      );
+
+    } finally {
+      postMock.mock.restore();
+      getMock.mock.restore();
+      consoleMock.mock.restore();
+
+      if (
+        originalApiKey === undefined
+      ) {
+        delete process.env.CJ_API_KEY;
+      } else {
+        process.env.CJ_API_KEY =
+          originalApiKey;
+      }
+    }
+  }
+);
