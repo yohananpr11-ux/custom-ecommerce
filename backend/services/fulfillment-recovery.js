@@ -1,7 +1,7 @@
 /**
  * fulfillment-recovery.js
  * ──────────────────────────────────────────────────────────────────────────
- * Automatic recovery for stale paid Printify fulfillments.
+ * Automatic recovery for stale paid supplier fulfillments.
  *
  * Why this exists: neither a duplicate/replayed payment webhook nor an
  * application restart previously re-invoked processPaidOrderFulfillment()
@@ -54,15 +54,15 @@ function safeSource(source) {
 
 // Mirrors the exact eligibility condition backend/index.js's outer
 // order_items claim query uses, but as a read-only order-level scan: finds
-// orders that have at least one printify item the real claim query would
-// actually match, so this never invokes fulfillment for an order that has
-// nothing left to do.
+// orders that have at least one Printify or CJ/dropship item the real
+// claim query would actually match, so this never invokes fulfillment for
+// an order that has nothing left to do.
 const ELIGIBLE_ORDERS_SQL = `
   SELECT DISTINCT o.id AS orderId
   FROM orders o
   JOIN order_items oi ON oi.orderId = o.id
   WHERE o.status = 'paid'
-    AND COALESCE(oi.supplier_id, 'printify') = 'printify'
+    AND COALESCE(oi.supplier_id, 'printify') IN ('printify', 'dropship')
     AND (
       oi.fulfillment_status IS NULL
       OR oi.fulfillment_status = 'pending'
@@ -71,10 +71,13 @@ const ELIGIBLE_ORDERS_SQL = `
         AND NOT EXISTS (
           SELECT 1 FROM supplier_fulfillments sf
           WHERE sf.orderId = o.id
-            AND sf.supplierId = 'printify'
+            AND sf.supplierId = COALESCE(oi.supplier_id, 'printify')
             AND (
               sf.state IN ('submitted', 'reconcile_required')
-              OR (sf.state IN ('reconciling', 'created', 'submitting') AND sf.updatedAt > datetime('now', '-5 minutes'))
+              OR (
+                sf.state IN ('reconciling', 'created', 'submitting')
+                AND sf.updatedAt > datetime('now', '-5 minutes')
+              )
             )
         )
       )

@@ -116,6 +116,8 @@ jobs:
           node --check backend/tests/paypal-capture-validation.test.js
           node --check backend/tests/fulfillment-concurrency.test.js
           node --check backend/tests/printify-fulfillment-reconciliation.test.js
+          node --check backend/tests/cj-fulfillment-reconciliation.test.js
+          node --check backend/tests/cj-variant-reseed-stability.test.js
           node --check backend/tests/network-guard-negative-control.test.js
           node --check backend/tests/fulfillment-recovery.test.js
           node --check backend/tests/legacy-schema-migration.test.js
@@ -218,6 +220,40 @@ jobs:
       #   NETWORK GUARD: CLEAN
       - name: Assert P0 backend unit-test guard log clean
         run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-nodetest.jsonl"
+
+      # CJ fulfillment reconciliation is intentionally isolated from the
+      # multi-file node --test group above. It exercises its own SQLite
+      # lifecycle plus the real paid-order outer claim/recovery boundary,
+      # while mocking every CJ network edge. Keeping it standalone avoids
+      # adding pressure to the pre-existing startup-migration race noted
+      # below and gives it a dedicated zero-egress guard log.
+      - name: Run P0 backend unit tests (CJ fulfillment reconciliation)
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          HERMETIC_TEST_MODE: "true"
+          DISABLE_BACKGROUND_JOBS: "true"
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-cj-reconciliation.jsonl
+        run: node -r ./scripts/network-guard.cjs --test tests/cj-fulfillment-reconciliation.test.js
+
+      - name: Assert CJ reconciliation guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-cj-reconciliation.jsonl"
+
+      # CJ supplier variant identity must remain stable even when startup
+      # reseeding deletes and recreates mutable product_variants rows.
+      # Run standalone so its isolated DB lifecycle cannot add pressure to
+      # the existing multi-file migration group.
+      - name: Run P0 CJ variant reseed stability regression
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          HERMETIC_TEST_MODE: "true"
+          DISABLE_BACKGROUND_JOBS: "true"
+          NETWORK_GUARD_LOG_PATH: ${{ runner.temp }}/guard-cj-reseed-stability.jsonl
+        run: node -r ./scripts/network-guard.cjs --test tests/cj-variant-reseed-stability.test.js
+
+      - name: Assert CJ variant reseed stability guard log clean
+        run: node backend/scripts/assert-network-guard-clean.cjs "${{ runner.temp }}/guard-cj-reseed-stability.jsonl"
 
       # Kept as its own step rather than folded into the group above: that
       # group is a multi-file `node --test` invocation, which runs its files
@@ -344,8 +380,8 @@ jobs:
             const sqlite3 = require('sqlite3').verbose();
             const db = new sqlite3.Database(process.env.DB_PATH);
             db.run(
-              'INSERT INTO products (id, title, description, price, stock, imageUrl) VALUES (?, ?, ?, ?, ?, ?)',
-              [9001, 'Strict Mode Fixture Product', 'A deterministic CI fixture.', 74.5, 999, '/images/ci-fixture-9001.jpg'],
+              'INSERT INTO products (id, title, description, price, stock, imageUrl, type, supplier_id, printifyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [9001, 'Strict Mode Fixture Product', 'A deterministic CI fixture.', 74.5, 999, '/images/ci-fixture-9001.jpg', 'printify', 'printify', 'ci-printify-fixture-9001'],
               (err) => { db.close(); if (err) { console.error(err); process.exit(1); } }
             );
           "

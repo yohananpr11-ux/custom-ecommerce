@@ -473,7 +473,27 @@ test('mixed printify + dropship items in one order: only the printify-supplier i
   assert.equal(items.length, 2);
 
   const dropship = require('../services/dropship.js');
-  const dropshipMock = mock.method(dropship, 'sendOrder', async () => ({ ref: 'CJ-REF-123' }));
+
+  // CJ fulfillment now always reconciles by deterministic custom order id
+  // BEFORE a create attempt. This mixed-supplier test is intentionally
+  // hermetic, so explicitly model "no existing CJ order" instead of
+  // allowing the reconciliation lookup to reach the real provider.
+  const dropshipLookupMock = mock.method(
+    dropship,
+    'findOrderByCustomId',
+    async () => ({
+      ok: true,
+      found: false
+    })
+  );
+
+  const dropshipMock = mock.method(
+    dropship,
+    'sendOrder',
+    async () => ({
+      ref: 'CJ-REF-123'
+    })
+  );
   const createMock = mock.method(printify, 'createPrintifyOrderDraft', async ({ items: draftItems }) => {
     assert.equal(draftItems.length, 1, 'only the printify-supplier item may be included');
     return { ok: true, orderId: 'pf-order-12', status: 'on-hold' };
@@ -484,11 +504,18 @@ test('mixed printify + dropship items in one order: only the printify-supplier i
   try {
     await routeOrderToSupplier(orderId, FAKE_DESTINATION, items);
     assert.equal(createMock.mock.callCount(), 1);
+    assert.equal(dropshipLookupMock.mock.callCount(), 1);
     assert.equal(dropshipMock.mock.callCount(), 1);
     void cjItemInsert;
     void printifyProductId;
   } finally {
-    restoreAll([dropshipMock, createMock, getMock, submitMock]);
+    restoreAll([
+      dropshipLookupMock,
+      dropshipMock,
+      createMock,
+      getMock,
+      submitMock
+    ]);
   }
 });
 
@@ -742,5 +769,132 @@ test('a completely novel, never-before-seen Printify status string blocks both c
     assert.equal(row.supplierOrderId, 'pf-novel-status', 'the real order id must still be retained for manual review');
   } finally {
     restoreAll([createMock, getMock, submitMock]);
+  }
+});
+
+
+test('supplier routing fails closed when supplier_id is missing before any supplier work', async () => {
+  const findMock = mock.method(
+    printify,
+    'findPrintifyOrderByExternalId',
+    async () => {
+      throw new Error('Printify lookup must not run');
+    }
+  );
+
+  const createMock = mock.method(
+    printify,
+    'createPrintifyOrderDraft',
+    async () => {
+      throw new Error('Printify create must not run');
+    }
+  );
+
+  try {
+    await assert.rejects(
+      () => routeOrderToSupplier(
+        910001,
+        FAKE_DESTINATION,
+        [
+          {
+            id: 910001,
+            supplier_id: null
+          }
+        ]
+      ),
+      /missing supplier_id.*no supplier write attempted/
+    );
+
+    assert.equal(findMock.mock.callCount(), 0);
+    assert.equal(createMock.mock.callCount(), 0);
+  } finally {
+    restoreAll([
+      findMock,
+      createMock
+    ]);
+  }
+});
+
+test('supplier routing preflights a mixed order and rejects an unknown supplier before valid adapters run', async () => {
+  const dropship =
+    require('../services/dropship.js');
+
+  const printifyFindMock = mock.method(
+    printify,
+    'findPrintifyOrderByExternalId',
+    async () => {
+      throw new Error('Printify lookup must not run');
+    }
+  );
+
+  const printifyCreateMock = mock.method(
+    printify,
+    'createPrintifyOrderDraft',
+    async () => {
+      throw new Error('Printify create must not run');
+    }
+  );
+
+  const cjLookupMock = mock.method(
+    dropship,
+    'findOrderByCustomId',
+    async () => {
+      throw new Error('CJ lookup must not run');
+    }
+  );
+
+  const cjCreateMock = mock.method(
+    dropship,
+    'sendOrder',
+    async () => {
+      throw new Error('CJ create must not run');
+    }
+  );
+
+  try {
+    await assert.rejects(
+      () => routeOrderToSupplier(
+        910002,
+        FAKE_DESTINATION,
+        [
+          {
+            id: 910002,
+            supplier_id: 'printify'
+          },
+          {
+            id: 910003,
+            supplier_id: 'mystery-supplier'
+          }
+        ]
+      ),
+      /unknown supplier_id='mystery-supplier'.*no supplier write attempted/
+    );
+
+    assert.equal(
+      printifyFindMock.mock.callCount(),
+      0
+    );
+
+    assert.equal(
+      printifyCreateMock.mock.callCount(),
+      0
+    );
+
+    assert.equal(
+      cjLookupMock.mock.callCount(),
+      0
+    );
+
+    assert.equal(
+      cjCreateMock.mock.callCount(),
+      0
+    );
+  } finally {
+    restoreAll([
+      printifyFindMock,
+      printifyCreateMock,
+      cjLookupMock,
+      cjCreateMock
+    ]);
   }
 });

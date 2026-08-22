@@ -19,7 +19,7 @@ const COUNTRY_NAME_MAP = {
 };
 
 function getCountryName(code) {
-  const cleanCode = String(code || 'IL').trim().toUpperCase();
+  const cleanCode = String(code || '').trim().toUpperCase();
   return COUNTRY_NAME_MAP[cleanCode] || cleanCode;
 }
 
@@ -34,44 +34,148 @@ let cachedTokenExpiry = 0;
  */
 async function getCJAccessToken() {
   const now = Date.now();
-  if (cachedToken && now < cachedTokenExpiry) {
+
+  if (
+    cachedToken &&
+    now < cachedTokenExpiry
+  ) {
     return cachedToken;
   }
 
-  const apiKey = process.env.CJ_API_KEY;
+  const apiKey =
+    String(
+      process.env.CJ_API_KEY || ''
+    ).trim();
+
   if (!apiKey) {
-    throw new Error('CJ_API_KEY environment variable is missing.');
+    const error =
+      new Error(
+        'CJ API key is not configured'
+      );
+
+    error.code =
+      'CJ_API_KEY_MISSING';
+
+    throw error;
   }
 
   try {
-    const response = await axios.post(
-      'https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken',
-      { apiKey },
-      { headers: { 'Content-Type': 'application/json' } }
+    const response =
+      await axios.post(
+        'https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken',
+        { apiKey },
+        {
+          headers: {
+            'Content-Type':
+              'application/json'
+          }
+        }
+      );
+
+    const json =
+      response.data || {};
+
+    /*
+     * BOTH conditions must indicate success.
+     * code=200 with result=false is still failure.
+     */
+    if (
+      json.code !== 200 ||
+      json.result !== true
+    ) {
+      const rejected =
+        new Error(
+          'CJ authentication rejected'
+        );
+
+      rejected.code =
+        (
+          typeof json.code === 'number' &&
+          json.code !== 200
+        )
+          ? `CJ_${json.code}`
+          : 'CJ_AUTH_REJECTED';
+
+      throw rejected;
+    }
+
+    const data =
+      json.data || {};
+
+    const token =
+      String(
+        data.accessToken ||
+        json.accessToken ||
+        data.token ||
+        ''
+      ).trim();
+
+    if (!token) {
+      const missing =
+        new Error(
+          'CJ authentication token missing'
+        );
+
+      missing.code =
+        'CJ_AUTH_TOKEN_MISSING';
+
+      throw missing;
+    }
+
+    cachedToken =
+      token;
+
+    cachedTokenExpiry =
+      now +
+      12 * 60 * 60 * 1000;
+
+    return token;
+
+  } catch (error) {
+    const status =
+      error &&
+      error.response &&
+      error.response.status;
+
+    const responseCode =
+      error &&
+      error.response &&
+      error.response.data &&
+      typeof error.response.data.code ===
+        'number'
+        ? error.response.data.code
+        : undefined;
+
+    const safeSummary =
+      status
+        ? `HTTP_${status}`
+        : (
+            responseCode !== undefined
+              ? `CJ_${responseCode}`
+              : (
+                  error &&
+                  typeof error.code ===
+                    'string' &&
+                  error.code
+                    ? error.code
+                    : 'CJ_AUTH_FAILED'
+                )
+          );
+
+    console.error(
+      '❌ CJ Dropshipping authentication failed:',
+      safeSummary
     );
 
-    const json = response.data || {};
-    if (json.code !== 200 && json.result !== true) {
-      throw new Error(json.message || 'Authentication endpoint returned failure');
-    }
+    const wrapped =
+      new Error(
+        `CJ Dropshipping authentication failed: ${safeSummary}`
+      );
 
-    const data = json.data || {};
-    const token = data.accessToken || json.accessToken || data.token;
-    if (!token) {
-      throw new Error(`Access token not found in CJ response: ${JSON.stringify(json)}`);
-    }
+    wrapped.code =
+      safeSummary;
 
-    cachedToken = token;
-    // Cache for 12 hours (CJ token expires in 180 days)
-    cachedTokenExpiry = now + 12 * 60 * 60 * 1000;
-    return token;
-  } catch (error) {
-    // SECURITY: never log or forward the raw response body -- see the
-    // matching comment in sendOrder() below for the full reasoning.
-    const status = error.response && error.response.status;
-    const safeSummary = status ? `HTTP_${status}` : (error.code || error.message || 'UNKNOWN_ERROR');
-    console.error('❌ CJ Dropshipping authentication failed:', safeSummary);
-    throw new Error(`CJ Dropshipping authentication failed: ${safeSummary}`);
+    throw wrapped;
   }
 }
 
@@ -86,44 +190,137 @@ async function getCJAccessToken() {
  * @param {Array}  products     Mapped products array { sku/vid, quantity }
  * @returns {Promise<string>}   The chosen logisticName
  */
-async function getLogisticName(token, fromCountry, toCountry, products) {
-  try {
-    const payload = {
-      startCountryCode: fromCountry,
-      endCountryCode: toCountry,
-      products: products.map(p => ({
+async function getLogisticName(
+  token,
+  fromCountry,
+  toCountry,
+  products
+) {
+  const payload = {
+    startCountryCode: fromCountry,
+    endCountryCode: toCountry,
+
+    products:
+      products.map((p) => ({
         sku: p.sku,
         quantity: p.quantity
       }))
-    };
+  };
 
-    console.log(`[${SUPPLIER_NAME}] Querying CJ Freight Calculation (origin=${fromCountry}, dest=${toCountry})...`);
-    const response = await axios.post(
-      'https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate',
-      payload,
-      {
-        headers: {
-          'CJ-Access-Token': token,
-          'Content-Type': 'application/json'
+  console.log(
+    `[${SUPPLIER_NAME}] Querying CJ Freight Calculation (origin=${fromCountry}, dest=${toCountry})...`
+  );
+
+  let response;
+
+  try {
+    response =
+      await axios.post(
+        'https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate',
+        payload,
+        {
+          headers: {
+            'CJ-Access-Token': token,
+            'Content-Type':
+              'application/json'
+          }
         }
-      }
+      );
+  } catch (error) {
+    const status =
+      error.response &&
+      error.response.status;
+
+    const cjCode =
+      error.response &&
+      error.response.data &&
+      typeof error.response.data.code ===
+        'number'
+        ? error.response.data.code
+        : undefined;
+
+    const safeReason =
+      status
+        ? `HTTP_${status}`
+        : (
+            cjCode !== undefined
+              ? `CJ_${cjCode}`
+              : (
+                  error.code ||
+                  'CJ_FREIGHT_REQUEST_FAILED'
+                )
+          );
+
+    console.warn(
+      `[${SUPPLIER_NAME}] Freight calculation failed: ${safeReason}`
     );
 
-    const json = response.data || {};
-    if (json.code === 200 && Array.isArray(json.data) && json.data.length > 0) {
-      // Pick the first available carrier method (often the most standard/cost-effective)
-      const chosen = json.data[0].logisticName;
-      console.log(`[${SUPPLIER_NAME}] Dynamic shipping carrier selected: "${chosen}"`);
-      return chosen;
-    }
+    const wrapped =
+      new Error(
+        `CJ freight calculation failed: ${safeReason}`
+      );
 
-    console.warn(`[${SUPPLIER_NAME}] Freight API returned no options: ${JSON.stringify(json)}. Using standard fallback.`);
-  } catch (error) {
-    console.warn(`[${SUPPLIER_NAME}] Freight calculation call failed, using default fallback:`, error.message);
+    wrapped.code =
+      'CJ_FREIGHT_UNAVAILABLE';
+
+    throw wrapped;
   }
 
-  // Fallback to a highly common standard shipping carrier
-  return 'CJ Packet Sensitive';
+  const json =
+    response.data || {};
+
+  const options =
+    Array.isArray(json.data)
+      ? json.data
+      : [];
+
+  if (
+    json.code !== 200 ||
+    json.result === false ||
+    options.length === 0
+  ) {
+    const safeReason =
+      typeof json.code === 'number'
+        ? `CJ_${json.code}`
+        : 'CJ_FREIGHT_NO_OPTIONS';
+
+    console.warn(
+      `[${SUPPLIER_NAME}] Freight calculation returned no usable option: ${safeReason}`
+    );
+
+    const error =
+      new Error(
+        `CJ freight option unavailable: ${safeReason}`
+      );
+
+    error.code =
+      'CJ_FREIGHT_UNAVAILABLE';
+
+    throw error;
+  }
+
+  const logisticName =
+    String(
+      options[0].logisticName || ''
+    ).trim();
+
+  if (!logisticName) {
+    const error =
+      new Error(
+        'CJ freight option did not include logisticName'
+      );
+
+    error.code =
+      'CJ_FREIGHT_UNAVAILABLE';
+
+    throw error;
+  }
+
+  console.log(
+    `[${SUPPLIER_NAME}] Dynamic shipping carrier selected: "${logisticName}"`
+  );
+
+  return logisticName;
 }
 
 /**
@@ -134,38 +331,120 @@ async function getLogisticName(token, fromCountry, toCountry, products) {
  * @param {Array}    items                order_items rows (supplier_id='dropship')
  * @returns {Promise<{ref: string}>}      Supplier order reference
  */
-async function sendOrder(orderId, shippingDestination, items) {
-  console.log(`[${SUPPLIER_NAME}] Resolving CJ Access Token for order #${orderId}...`);
-  const token = await getCJAccessToken();
+async function sendOrder(orderId, shippingDestination, items, options = {}) {
+  // Validate everything locally BEFORE any CJ network request.
+  // A malformed order must fail closed without even authenticating with CJ.
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error(`CJ order #${orderId} has no items`);
+  }
+
+  if (!shippingDestination || typeof shippingDestination !== 'object') {
+    throw new Error(`CJ shipping destination missing for order #${orderId}`);
+  }
+
+  const supplierOrderNumber =
+    String(options.orderNumber || orderId).trim();
+
+  if (!supplierOrderNumber) {
+    throw new Error(`CJ custom order number missing for order #${orderId}`);
+  }
+
+  if (supplierOrderNumber.length > 50) {
+    throw new Error(`CJ custom order number too long for order #${orderId}`);
+  }
+
   // Map products to CJ Dropshipping expected schema
   const products = items.map(item => {
-    const sku = item.sku || item.printifyVariantId || item.printifyProductId || 'CJLX222053101AZ';
+    const sku = String(item.printifyVariantId || '').trim();
+    const productSpu = String(item.printifyProductId || '').trim();
+    const quantity = Number(item.quantity);
+
+    if (!sku) {
+      throw new Error(`CJ variant SKU missing for order item ${item.id}`);
+    }
+
+    if (productSpu && sku === productSpu) {
+      throw new Error(`CJ variant SKU for order item ${item.id} is the product SPU, not a variant SKU`);
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new Error(`Invalid CJ quantity for order item ${item.id}`);
+    }
+
     return {
-      sku: sku,
-      quantity: Number(item.quantity) || 1,
+      sku,
+      quantity,
       storeLineItemId: String(item.id)
     };
   });
 
+  const clean = (value) => String(value == null ? '' : value).trim();
+
+  const customerName =
+    clean(shippingDestination.customerName) ||
+    `${clean(shippingDestination.firstName)} ${clean(shippingDestination.lastName)}`.trim();
+
+  const addressLine1 = clean(shippingDestination.addressLine1);
+  const addressLine2 = clean(shippingDestination.addressLine2);
+  const city = clean(shippingDestination.city);
+  const region = clean(shippingDestination.region);
+  const postalCode = clean(shippingDestination.postalCode);
+  const phone = clean(shippingDestination.phone);
+  const toCountry = clean(shippingDestination.country).toUpperCase();
+
+  if (!customerName) {
+    throw new Error(`CJ shipping customer name missing for order #${orderId}`);
+  }
+
+  if (!addressLine1) {
+    throw new Error(`CJ shipping street address missing for order #${orderId}`);
+  }
+
+  if (!city) {
+    throw new Error(`CJ shipping city missing for order #${orderId}`);
+  }
+
+  if (!postalCode) {
+    throw new Error(`CJ shipping postal code missing for order #${orderId}`);
+  }
+
+  if (!phone) {
+    throw new Error(`CJ shipping phone missing for order #${orderId}`);
+  }
+
+  if (!/^[A-Z]{2}$/.test(toCountry)) {
+    throw new Error(`CJ shipping country must be a valid 2-letter country code for order #${orderId}`);
+  }
+
+  if (['US', 'CA', 'AU'].includes(toCountry) && !region) {
+    throw new Error(`CJ shipping region/state missing for order #${orderId}`);
+  }
+
+  const shippingAddress = addressLine2
+    ? `${addressLine1}, ${addressLine2}`
+    : addressLine1;
+
   const fromCountry = 'CN';
-  const toCountry = (shippingDestination.country || 'IL').toUpperCase();
+
+  // Only now, after all local identity/address checks passed,
+  // is an external CJ request allowed.
+  console.log(`[${SUPPLIER_NAME}] Resolving CJ Access Token for order #${orderId}...`);
+  const token = await getCJAccessToken();
 
   // Resolve shipping carrier method dynamically
   const logisticName = await getLogisticName(token, fromCountry, toCountry, products);
 
   // Map shipping address fields to CJ expected schema
   const payload = {
-    orderNumber: String(orderId),
-    shippingCustomerName: shippingDestination.customerName || `${shippingDestination.firstName || ''} ${shippingDestination.lastName || ''}`.trim() || 'Customer',
-    shippingAddress: shippingDestination.addressLine2
-      ? `${shippingDestination.addressLine1}, ${shippingDestination.addressLine2}`
-      : shippingDestination.addressLine1 || 'N/A',
-    shippingCity: shippingDestination.city || 'N/A',
-    shippingProvince: shippingDestination.region || shippingDestination.city || 'N/A',
+    orderNumber: supplierOrderNumber,
+    shippingCustomerName: customerName,
+    shippingAddress,
+    shippingCity: city,
+    shippingProvince: region || city,
     shippingCountry: getCountryName(toCountry),
     shippingCountryCode: toCountry,
-    shippingZip: shippingDestination.postalCode || '00000',
-    shippingPhone: shippingDestination.phone || '0000000000',
+    shippingZip: postalCode,
+    shippingPhone: phone,
     fromCountryCode: fromCountry,
     logisticName: logisticName,
     payType: 3, // Create only (no payment/cart confirmation at creation time)
@@ -187,12 +466,37 @@ async function sendOrder(orderId, shippingDestination, items) {
     );
 
     const json = response.data || {};
-    if (json.code !== 200 && json.result !== true) {
-      throw new Error(json.message || `CJ API returned status code ${json.code}`);
+
+    if (json.code !== 200 || json.result !== true) {
+      const apiError = new Error(
+        json.message ||
+        `CJ API returned status code ${json.code}`
+      );
+
+      if (typeof json.code === 'number') {
+        apiError.cjCode = json.code;
+      }
+
+      throw apiError;
     }
 
-    const resultObj = json.result || json.data || {};
-    const ref = resultObj.orderNumber || resultObj.cjOrderNumber || json.orderNumber || `CJ-${orderId}`;
+    const data = json.data || {};
+    const ref = String(
+      data.orderId ||
+      data.cjOrderId ||
+      ''
+    ).trim();
+
+    if (!ref) {
+      const apiError = new Error(
+        'CJ create response did not include a supplier order id'
+      );
+
+      apiError.code =
+        'CJ_ORDER_ID_MISSING_AFTER_CREATE';
+
+      throw apiError;
+    }
 
     // SECURITY: never log the raw API response -- the payload just sent to
     // CJ (above) includes the customer's full name, address, city, zip, and
@@ -209,11 +513,149 @@ async function sendOrder(orderId, shippingDestination, items) {
     // safe, fixed-shape summary (HTTP status / CJ's own numeric error code)
     // is ever logged or sent.
     const status = error.response && error.response.status;
-    const cjCode = error.response && error.response.data && typeof error.response.data.code === 'number' ? error.response.data.code : undefined;
-    const safeSummary = status ? `HTTP_${status}${cjCode !== undefined ? ` (cj_code=${cjCode})` : ''}` : (error.code || error.message || 'UNKNOWN_ERROR');
+    const cjCode =
+      typeof error.cjCode === 'number'
+        ? error.cjCode
+        : (
+            error.response &&
+            error.response.data &&
+            typeof error.response.data.code === 'number'
+              ? error.response.data.code
+              : undefined
+          );
+    const safeSummary = status
+      ? `HTTP_${status}${cjCode !== undefined ? ` (cj_code=${cjCode})` : ''}`
+      : (
+          cjCode !== undefined
+            ? `CJ_${cjCode}`
+            : (error.code || 'CJ_CREATE_FAILED')
+        );
     console.error(`[${SUPPLIER_NAME}] ✗ Failed to submit order #${orderId} to CJ Dropshipping:`, safeSummary);
     await telegram.notifyError(`CJ Dropshipping Fulfillment (Order #${orderId})`, safeSummary).catch(() => null);
-    throw new Error(`CJ Dropshipping order submission failed: ${safeSummary}`);
+
+    const wrapped = new Error(
+      `CJ Dropshipping order submission failed: ${safeSummary}`
+    );
+
+    wrapped.code =
+      cjCode !== undefined
+        ? `CJ_${cjCode}`
+        : (error.code || 'CJ_CREATE_FAILED');
+
+    throw wrapped;
+  }
+}
+
+/**
+ * Resolve an existing CJ order using our deterministic custom order number.
+ *
+ * CJ's getOrderDetail endpoint accepts either the CJ order id or the
+ * merchant/custom order id. No customer PII from the response is logged.
+ */
+async function findOrderByCustomId(customOrderNumber) {
+  const orderNumber = String(customOrderNumber || '').trim();
+
+  if (!orderNumber) {
+    return {
+      ok: false,
+      found: false,
+      errorCode: 'CJ_CUSTOM_ORDER_NUMBER_MISSING'
+    };
+  }
+
+  try {
+    const token =
+      await getCJAccessToken();
+
+    const response = await axios.get(
+      'https://' + 'developers.cjdropshipping.com/api2.0/v1/shopping/order/getOrderDetail',
+      {
+        params: {
+          orderId: orderNumber
+        },
+        headers: {
+          'CJ-Access-Token': token
+        }
+      }
+    );
+
+    const json = response.data || {};
+
+    if (
+      [1600300, 1603100].includes(json.code)
+    ) {
+      return {
+        ok: true,
+        found: false
+      };
+    }
+
+    if (
+      json.code !== 200 ||
+      json.result !== true ||
+      !json.data
+    ) {
+      return {
+        ok: false,
+        found: false,
+        errorCode: `CJ_${json.code || 'ORDER_LOOKUP_FAILED'}`
+      };
+    }
+
+    const data = json.data;
+    const supplierOrderId = String(
+      data.orderId ||
+      data.cjOrderId ||
+      ''
+    ).trim();
+
+    if (!supplierOrderId) {
+      return {
+        ok: false,
+        found: false,
+        errorCode: 'CJ_ORDER_ID_MISSING'
+      };
+    }
+
+    return {
+      ok: true,
+      found: true,
+      order: {
+        orderId: supplierOrderId,
+        customOrderNumber: String(
+          data.orderNumber ||
+          data.orderNum ||
+          orderNumber
+        ),
+        status: String(
+          data.orderStatus || ''
+        ).toUpperCase()
+      }
+    };
+
+  } catch (error) {
+    const cjCode =
+      error.response &&
+      error.response.data &&
+      typeof error.response.data.code === 'number'
+        ? error.response.data.code
+        : undefined;
+
+    if ([1600300, 1603100].includes(cjCode)) {
+      return {
+        ok: true,
+        found: false
+      };
+    }
+
+    return {
+      ok: false,
+      found: false,
+      errorCode:
+        cjCode !== undefined
+          ? `CJ_${cjCode}`
+          : (error.code || 'CJ_ORDER_LOOKUP_FAILED')
+    };
   }
 }
 
@@ -250,4 +692,8 @@ async function getShipmentStatus(ref) {
   }
 }
 
-module.exports = { sendOrder, getShipmentStatus };
+module.exports = {
+  sendOrder,
+  findOrderByCustomId,
+  getShipmentStatus
+};

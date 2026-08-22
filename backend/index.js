@@ -613,6 +613,26 @@ const reserveManualProductStock = async (productId, quantity) => {
   return attempt();
 };
 
+const KNOWN_SUPPLIER_IDS = new Set([
+  'printify',
+  'dropship',
+  'manual'
+]);
+
+const isValidProductSupplierRouting = (productType, supplierId) => {
+  if (!KNOWN_SUPPLIER_IDS.has(supplierId)) return false;
+
+  const type = String(productType || '').trim().toLowerCase();
+
+  if (type === 'printify') return supplierId === 'printify';
+  if (type === 'dropship') return supplierId === 'dropship';
+  if (type === 'local') return supplierId === 'manual';
+
+  // Unknown legacy product types may still route only through an
+  // explicitly configured, known supplier. Never invent one.
+  return true;
+};
+
 const resolveValidatedOrderItems = async (items = []) => {
   const validatedItems = [];
 
@@ -627,6 +647,20 @@ const resolveValidatedOrderItems = async (items = []) => {
     const product = await dbGetAsync(`SELECT id, title, type, price, priceUSD, printifyId, supplier_id, stock, access_token_hash, access_token_expires_at FROM products WHERE id = ?`, [productId]);
     if (!product) {
       throw new ClientValidationError(`Product ${productId} was not found`);
+    }
+
+    const supplierId =
+      typeof product.supplier_id === 'string'
+        ? product.supplier_id.trim()
+        : '';
+
+    // SECURITY: supplier identity is server-owned routing data.
+    // Missing, unknown, or type-incompatible routing must stop
+    // checkout BEFORE payment creation. Never guess Printify.
+    if (!isValidProductSupplierRouting(product.type, supplierId)) {
+      throw new ClientValidationError(
+        `Product ${productId} is not currently available`
+      );
     }
 
     // SECURITY: a type='printify' row with no real Printify product identity
@@ -708,7 +742,7 @@ const resolveValidatedOrderItems = async (items = []) => {
       printifyProductId: product.printifyId || null,
       printifyVariantId: resolvedVariant ? resolvedVariant.printifyVariantId : null,
       // Phase 3: snapshot supplier_id at order-creation time
-      supplier_id: product.supplier_id || 'printify',
+      supplier_id: supplierId,
       // Trusted (never client-supplied) — see calculateOrderPricing's
       // TEST_PRODUCT_SHIPPING_EXEMPT_ID check, which requires this exact
       // server-verified value, not rawItem.type.
@@ -878,14 +912,17 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
          OR fulfillment_status = 'pending'
          OR (
            fulfillment_status IN ('processing', 'failed')
-           AND COALESCE(supplier_id, 'printify') = 'printify'
+           AND COALESCE(supplier_id, 'printify') IN ('printify', 'dropship')
            AND NOT EXISTS (
              SELECT 1 FROM supplier_fulfillments sf
              WHERE sf.orderId = order_items.orderId
-               AND sf.supplierId = 'printify'
+               AND sf.supplierId = COALESCE(order_items.supplier_id, 'printify')
                AND (
                  sf.state IN ('submitted', 'reconcile_required')
-                 OR (sf.state IN ('reconciling', 'created', 'submitting') AND sf.updatedAt > datetime('now', '-5 minutes'))
+                 OR (
+                   sf.state IN ('reconciling', 'created', 'submitting')
+                   AND sf.updatedAt > datetime('now', '-5 minutes')
+                 )
                )
            )
          )
@@ -901,7 +938,20 @@ const processPaidOrderFulfillment = async (orderId, providerTag) => {
 
   const claimedIds = claimed.map((row) => row.id);
   const items = await dbAllAsync(
-    `SELECT oi.*, p.title, p.type, oi.supplier_id, p.printifyId AS printifyProductId, pv.printifyVariantId
+    `SELECT
+       oi.*,
+       p.title,
+       p.type,
+       oi.supplier_id,
+       p.printifyId AS printifyProductId,
+       CASE
+         WHEN oi.supplier_id = 'dropship'
+           THEN oi.supplier_variant_id
+         ELSE COALESCE(
+           oi.supplier_variant_id,
+           pv.printifyVariantId
+         )
+       END AS printifyVariantId
      FROM order_items oi
      LEFT JOIN products p ON p.id = oi.productId
      LEFT JOIN product_variants pv ON pv.id = oi.variantId
@@ -3120,8 +3170,18 @@ const createPendingOrder = async (shippingInput, items, couponCode) => {
 
   for (const item of validatedItems) {
     await dbRunAsync(
-      `INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [orderId, item.id, item.variantId || null, item.quantity, item.price, item.selectedColor || null, item.selectedSize || null, item.supplier_id || 'printify']
+      `INSERT INTO order_items (orderId, productId, variantId, quantity, price, selectedColor, selectedSize, supplier_id, supplier_variant_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        orderId,
+        item.id,
+        item.variantId || null,
+        item.quantity,
+        item.price,
+        item.selectedColor || null,
+        item.selectedSize || null,
+        item.supplier_id,
+        item.printifyVariantId || null
+      ]
     );
   }
 
@@ -4205,9 +4265,14 @@ if (require.main === module) {
         imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg',
         type: 'dropship',
         supplier_id: 'dropship',
-        printifyId: 'CJLX222053101AZ',
+        printifyId: 'CJLX2220531',
         stock: 999,
-        variant: { color: 'Gold', size: '20 Inch', price: 149.00, cost: 21.80, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+        variants: [
+          { color: 'Steel', colorHex: '#A7A7A7', size: '3mm / 50cm', price: 149.00, cost: 0.68, printifyVariantId: 'CJLX222053101AZ', stockQty: 999, isEnabled: 1, isAvailable: 1, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+          { color: 'Steel', colorHex: '#A7A7A7', size: '5mm / 50cm', price: 149.00, cost: 0.92, printifyVariantId: 'CJLX222053104DW', stockQty: 999, isEnabled: 1, isAvailable: 1, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+          { color: 'Steel', colorHex: '#A7A7A7', size: '5mm / 60cm', price: 149.00, cost: 1.11, printifyVariantId: 'CJLX222053105EV', stockQty: 999, isEnabled: 1, isAvailable: 1, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+          { color: 'Steel', colorHex: '#A7A7A7', size: '7mm / 60cm', price: 149.00, cost: 1.51, printifyVariantId: 'CJLX222053108HS', stockQty: 999, isEnabled: 1, isAvailable: 1, imageUrl: 'https://cf.cjdropshipping.com/f737cb87-9e26-4215-af24-032cb5bb980e.jpg' },
+        ],
       },
     ];
 
@@ -4216,7 +4281,15 @@ if (require.main === module) {
 
     CJ_CATALOG.forEach((product) => {
       const targetId = product.id;
-      const v = product.variant;
+      const variants = Array.isArray(product.variants)
+        ? product.variants
+        : (product.variant ? [product.variant] : []);
+
+      if (variants.length === 0) {
+        console.error(`[CJ Seed] No variants configured for ID:${targetId}`);
+        if (--pending === 0) resolve();
+        return;
+      }
 
       // Nuclear overwrite: always delete canonical product and its variants, then re-insert fresh.
       db.run(`DELETE FROM product_variants WHERE productId = ?`, [targetId], (deleteVariantErr) => {
@@ -4244,19 +4317,32 @@ if (require.main === module) {
                 return;
               }
 
-              db.run(
-                `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
-                [targetId, v.printifyVariantId, v.color, v.size, v.price, v.cost, v.stockQty, v.imageUrl],
-                (insertVariantErr) => {
-                  if (insertVariantErr) {
-                    console.error('[CJ Seed] Variant insert failed:', insertVariantErr.message);
-                  } else {
-                    console.log(`✅ [CJ Seed] Forced overwrite complete for ID:${targetId}`);
+              let remainingVariants = variants.length;
+              let hadVariantError = false;
+
+              variants.forEach((v) => {
+                db.run(
+                  `INSERT INTO product_variants (productId, printifyVariantId, color, size, price, cost, stockQty, isEnabled, isAvailable, imageUrl)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
+                  [targetId, v.printifyVariantId, v.color, v.size, v.price, v.cost, v.stockQty, v.imageUrl],
+                  (insertVariantErr) => {
+                    if (insertVariantErr) {
+                      hadVariantError = true;
+                      console.error('[CJ Seed] Variant insert failed:', insertVariantErr.message);
+                    }
+
+                    remainingVariants -= 1;
+
+                    if (remainingVariants === 0) {
+                      if (!hadVariantError) {
+                        console.log(`✅ [CJ Seed] Forced overwrite complete for ID:${targetId} with ${variants.length} variants`);
+                      }
+
+                      if (--pending === 0) resolve();
+                    }
                   }
-                  if (--pending === 0) resolve();
-                }
-              );
+                );
+              });
             }
           );
         });

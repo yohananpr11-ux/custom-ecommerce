@@ -278,12 +278,43 @@ function installPrintifySuccessMocks() {
 
 function installDropshipSuccessMock() {
   const calls = [];
-  const sendOrderMock = mock.method(dropship, 'sendOrder', async (orderId) => {
-    const ref = `CJ-REF-E2E-${orderId}-${crypto.randomUUID().slice(0, 8)}`;
-    calls.push({ orderId, ref });
-    return { ref };
-  });
-  return { calls, restore() { sendOrderMock.mock.restore(); } };
+
+  const lookupMock = mock.method(
+    dropship,
+    'findOrderByCustomId',
+    async () => ({
+      ok: true,
+      found: false
+    })
+  );
+
+  const sendOrderMock = mock.method(
+    dropship,
+    'sendOrder',
+    async (orderId, shippingDestination, items, options) => {
+      const ref =
+        `CJ-REF-E2E-${orderId}-${crypto.randomUUID().slice(0, 8)}`;
+
+      calls.push({
+        orderId,
+        ref,
+        shippingDestination,
+        items,
+        options
+      });
+
+      return { ref };
+    }
+  );
+
+  return {
+    calls,
+
+    restore() {
+      lookupMock.mock.restore();
+      sendOrderMock.mock.restore();
+    }
+  };
 }
 
 async function captureConsoleLogs(fn) {
@@ -933,15 +964,93 @@ test('mixed-supplier order: printify and dropship items in one paid order are ea
     const captureRes = await apiPost('/api/paypal/capture-order', { orderID: createRes.json.orderID });
     assert.equal(captureRes.json.success, true);
 
-    await waitForFulfillmentSettled(createRes.json.orderId);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    /*
+     * Mixed supplier semantics are intentionally different:
+     * Printify can reach submitted, while CJ payType=3 only proves
+     * the remote order was created, so CJ remains processing.
+     *
+     * Do not use waitForFulfillmentSettled() here because that helper
+     * correctly treats processing as unfinished and would wait until
+     * timeout for the CJ line.
+     */
+    const deadline =
+      Date.now() + 5000;
 
-    const items = await dbAll(`SELECT supplier_id, fulfillment_status FROM order_items WHERE orderId = ? ORDER BY id`, [createRes.json.orderId]);
-    assert.equal(items.length, 2);
-    assert.equal(items.find((i) => i.supplier_id === 'printify').fulfillment_status, 'submitted');
-    assert.equal(items.find((i) => i.supplier_id === 'dropship').fulfillment_status, 'submitted');
-    assert.equal(printifyMock.drafts.length, 1, 'only the printify item reaches Printify, not the dropship item');
-    assert.equal(dropshipMock.calls.length, 1, 'the dropship item reaches the dropship service exactly once');
+    let items = [];
+
+    while (Date.now() < deadline) {
+      items =
+        await dbAll(
+          `SELECT
+             supplier_id,
+             fulfillment_status
+           FROM order_items
+           WHERE orderId = ?
+           ORDER BY id`,
+          [createRes.json.orderId]
+        );
+
+      const printifyItem =
+        items.find(
+          (i) =>
+            i.supplier_id === 'printify'
+        );
+
+      const dropshipItem =
+        items.find(
+          (i) =>
+            i.supplier_id === 'dropship'
+        );
+
+      if (
+        printifyItem &&
+        dropshipItem &&
+        printifyItem.fulfillment_status ===
+          'submitted' &&
+        dropshipItem.fulfillment_status ===
+          'processing'
+      ) {
+        break;
+      }
+
+      await new Promise(
+        (resolve) =>
+          setTimeout(resolve, 25)
+      );
+    }
+
+    assert.equal(
+      items.length,
+      2
+    );
+
+    assert.equal(
+      items.find(
+        (i) =>
+          i.supplier_id === 'printify'
+      ).fulfillment_status,
+      'submitted'
+    );
+
+    assert.equal(
+      items.find(
+        (i) =>
+          i.supplier_id === 'dropship'
+      ).fulfillment_status,
+      'processing'
+    );
+
+    assert.equal(
+      printifyMock.drafts.length,
+      1,
+      'only the printify item reaches Printify, not the dropship item'
+    );
+
+    assert.equal(
+      dropshipMock.calls.length,
+      1,
+      'the dropship item reaches the dropship service exactly once'
+    );
   } finally {
     axiosMock.restore();
     printifyMock.restore();
@@ -1046,5 +1155,316 @@ test('unknown Printify status: a never-before-seen status blocks submission and 
     createMock.mock.restore();
     getMock.mock.restore();
     submitMock.mock.restore();
+  }
+});
+
+
+test('checkout rejects blank supplier routing before payment provider', async () => {
+  const product =
+    await seedPrintifyProduct({ price: 41 });
+
+  await dbRun(
+    "UPDATE products SET supplier_id = '' WHERE id = ?",
+    [product.productId]
+  );
+
+  const before =
+    (await dbGet('SELECT COUNT(*) AS n FROM orders')).n;
+
+  const axiosMock =
+    installAxiosPostMock();
+
+  try {
+    const res = await apiPost(
+      '/api/paypal/create-order',
+      {
+        ...SYNTHETIC_SHIPPING,
+        items: [{
+          id: product.productId,
+          quantity: 1,
+          selectedColor: 'Black',
+          selectedSize: 'M'
+        }],
+        currency: 'ILS'
+      }
+    );
+
+    assert.equal(res.status, 400);
+    assert.match(
+      res.json.error,
+      /not currently available/i
+    );
+
+    assert.equal(
+      axiosMock.calls.length,
+      0,
+      'payment provider must not be contacted'
+    );
+
+    assert.equal(
+      (await dbGet('SELECT COUNT(*) AS n FROM orders')).n,
+      before,
+      'rejected supplier routing must create no order'
+    );
+  } finally {
+    axiosMock.restore();
+  }
+});
+
+test('checkout rejects a dropship product carrying the legacy Printify supplier default', async () => {
+  const product =
+    await seedDropshipProduct({ price: 42 });
+
+  await dbRun(
+    "UPDATE products SET supplier_id = 'printify' WHERE id = ?",
+    [product.productId]
+  );
+
+  const before =
+    (await dbGet('SELECT COUNT(*) AS n FROM orders')).n;
+
+  const axiosMock =
+    installAxiosPostMock();
+
+  try {
+    const res = await apiPost(
+      '/api/paypal/create-order',
+      {
+        ...SYNTHETIC_SHIPPING,
+        items: [{
+          id: product.productId,
+          quantity: 1
+        }],
+        currency: 'ILS'
+      }
+    );
+
+    assert.equal(res.status, 400);
+    assert.match(
+      res.json.error,
+      /not currently available/i
+    );
+
+    assert.equal(
+      axiosMock.calls.length,
+      0,
+      'payment provider must not be contacted'
+    );
+
+    assert.equal(
+      (await dbGet('SELECT COUNT(*) AS n FROM orders')).n,
+      before
+    );
+  } finally {
+    axiosMock.restore();
+  }
+});
+
+test('checkout rejects an unknown supplier before payment provider', async () => {
+  const product =
+    await seedPrintifyProduct({ price: 43 });
+
+  await dbRun(
+    "UPDATE products SET supplier_id = 'mystery-supplier' WHERE id = ?",
+    [product.productId]
+  );
+
+  const before =
+    (await dbGet('SELECT COUNT(*) AS n FROM orders')).n;
+
+  const axiosMock =
+    installAxiosPostMock();
+
+  try {
+    const res = await apiPost(
+      '/api/paypal/create-order',
+      {
+        ...SYNTHETIC_SHIPPING,
+        items: [{
+          id: product.productId,
+          quantity: 1,
+          selectedColor: 'Black',
+          selectedSize: 'M'
+        }],
+        currency: 'ILS'
+      }
+    );
+
+    assert.equal(res.status, 400);
+    assert.match(
+      res.json.error,
+      /not currently available/i
+    );
+
+    assert.equal(
+      axiosMock.calls.length,
+      0,
+      'payment provider must not be contacted'
+    );
+
+    assert.equal(
+      (await dbGet('SELECT COUNT(*) AS n FROM orders')).n,
+      before
+    );
+  } finally {
+    axiosMock.restore();
+  }
+});
+
+
+test('CJ variant identity: internal variant id resolves to exact supplier SKU', async () => {
+  const product =
+    await seedDropshipProduct({ price: 55 });
+
+  const internalVariantId =
+    product.productId * 10 + 7;
+
+  const expectedCjSku =
+    'CJLX222053104DW';
+
+  await dbRun(
+    `INSERT INTO product_variants
+      (
+        id,
+        productId,
+        printifyVariantId,
+        color,
+        size,
+        price,
+        isEnabled,
+        isAvailable
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 1, 1)`,
+    [
+      internalVariantId,
+      product.productId,
+      expectedCjSku,
+      'Steel',
+      '5mm / 50cm',
+      product.price
+    ]
+  );
+
+  const axiosMock =
+    installAxiosPostMock();
+
+  installPaypalHappyPathMocks(
+    axiosMock
+  );
+
+  const dropshipMock =
+    installDropshipSuccessMock();
+
+  try {
+    const createRes =
+      await apiPost(
+        '/api/paypal/create-order',
+        {
+          ...SYNTHETIC_SHIPPING,
+          items: [
+            {
+              id: product.productId,
+              quantity: 1,
+              selectedColor: 'Steel',
+              selectedSize: '5mm / 50cm',
+              variantId: internalVariantId
+            }
+          ],
+          currency: 'ILS'
+        }
+      );
+
+    assert.equal(
+      createRes.status,
+      200,
+      'checkout must accept the selected CJ variant'
+    );
+
+    const localOrderId =
+      createRes.json.orderId;
+
+    const storedItem =
+      await dbGet(
+        `SELECT
+           variantId,
+           supplier_id,
+           supplier_variant_id
+         FROM order_items
+         WHERE orderId = ?`,
+        [localOrderId]
+      );
+
+    assert.equal(
+      Number(storedItem.variantId),
+      internalVariantId,
+      'order_items must keep the internal variant DB id'
+    );
+
+    assert.equal(
+      storedItem.supplier_id,
+      'dropship'
+    );
+
+    assert.equal(
+      storedItem.supplier_variant_id,
+      expectedCjSku,
+      'checkout must snapshot the exact CJ SKU before payment'
+    );
+
+    const captureRes =
+      await apiPost(
+        '/api/paypal/capture-order',
+        {
+          orderID:
+            createRes.json.orderID
+        }
+      );
+
+    assert.equal(
+      captureRes.status,
+      200
+    );
+
+    assert.equal(
+      captureRes.json.success,
+      true
+    );
+
+    await waitForFulfillmentSettled(
+      localOrderId
+    );
+
+    assert.equal(
+      dropshipMock.calls.length,
+      1,
+      'CJ supplier boundary must be reached exactly once'
+    );
+
+    const supplierItems =
+      dropshipMock.calls[0].items;
+
+    assert.ok(
+      Array.isArray(supplierItems)
+    );
+
+    assert.equal(
+      supplierItems.length,
+      1
+    );
+
+    assert.equal(
+      supplierItems[0].variantId,
+      internalVariantId,
+      'internal variant identity remains traceable'
+    );
+
+    assert.equal(
+      supplierItems[0].printifyVariantId,
+      expectedCjSku,
+      'supplier boundary must receive the exact real CJ SKU'
+    );
+  } finally {
+    axiosMock.restore();
+    dropshipMock.restore();
   }
 });

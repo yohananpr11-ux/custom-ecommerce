@@ -394,6 +394,9 @@ const readyPromise = new Promise((resolveReady, rejectReady) => {
             addColumnIfMissing('order_items', 'selectedSize', 'TEXT'),
             // Phase 3: Multi-Vendor — per-item supplier snapshot + fulfillment tracking
             addColumnIfMissing('order_items', 'supplier_id',        'TEXT'),
+            // Immutable supplier SKU snapshot captured at checkout.
+            // Never re-resolve a paid CJ order through mutable catalog PKs.
+            addColumnIfMissing('order_items', 'supplier_variant_id', 'TEXT'),
             addColumnIfMissing('order_items', 'fulfillment_status', "TEXT DEFAULT 'pending'"),
             addColumnIfMissing('order_items', 'fulfillment_ref',    'TEXT'),
             // leads

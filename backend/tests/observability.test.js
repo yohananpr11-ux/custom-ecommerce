@@ -42,7 +42,7 @@ test.after(() => {
 });
 
 test.before(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  await db.readyPromise;
 });
 
 // Captures every console.log call made during fn() and returns the lines.
@@ -383,4 +383,232 @@ test('an unrecognized/malicious source value is replaced with "unknown" in both 
   const syncEvents = opsLines(syncLines, 'OPS_PRINTIFY_SYNC');
   assert.equal(syncEvents.length, 1, 'a malicious multi-line source must not forge additional OPS lines');
   assert.match(syncEvents[0], /^OPS_PRINTIFY_SYNC source=unknown result=success products_seen=10 products_updated=10 duration_ms=\d+$/);
+});
+
+
+test('production Printify sync fails closed when credentials are missing', async () => {
+  const originalToken =
+    printify.token;
+
+  const originalShopId =
+    printify.shopId;
+
+  const originalNodeEnv =
+    process.env.NODE_ENV;
+
+  const originalHermetic =
+    process.env.HERMETIC_TEST_MODE;
+
+  printify.token = '';
+  printify.shopId = '';
+
+  process.env.NODE_ENV =
+    'production';
+
+  // Even if a test/simulation flag leaks into production,
+  // production must always win and fail closed.
+  process.env.HERMETIC_TEST_MODE =
+    'true';
+
+  const getMock =
+    mock.method(
+      axios,
+      'get',
+      async () => {
+        throw new Error(
+          'NETWORK_MUST_NOT_BE_CALLED'
+        );
+      }
+    );
+
+  let lines;
+
+  try {
+    lines =
+      await captureLogs(
+        async () => {
+          await assert.rejects(
+            () =>
+              printify.syncProducts(
+                'startup'
+              ),
+            (err) =>
+              err
+              && err.code ===
+                'PRINTIFY_CREDENTIALS_MISSING'
+          );
+        }
+      );
+
+    assert.equal(
+      getMock.mock.callCount(),
+      0,
+      'missing credentials must stop before HTTP'
+    );
+  } finally {
+    getMock.mock.restore();
+
+    printify.token =
+      originalToken;
+
+    printify.shopId =
+      originalShopId;
+
+    if (
+      originalNodeEnv === undefined
+    ) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV =
+        originalNodeEnv;
+    }
+
+    if (
+      originalHermetic === undefined
+    ) {
+      delete process.env.HERMETIC_TEST_MODE;
+    } else {
+      process.env.HERMETIC_TEST_MODE =
+        originalHermetic;
+    }
+  }
+
+  const events =
+    opsLines(
+      lines,
+      'OPS_PRINTIFY_SYNC'
+    );
+
+  assert.equal(
+    events.length,
+    1
+  );
+
+  assert.match(
+    events[0],
+    /^OPS_PRINTIFY_SYNC source=startup result=failed products_seen=0 products_updated=0 error_code=PRINTIFY_CREDENTIALS_MISSING duration_ms=\d+$/
+  );
+});
+
+test('production Printify fulfillment fails closed when credentials are missing', async () => {
+  const originalToken =
+    printify.token;
+
+  const originalShopId =
+    printify.shopId;
+
+  const originalNodeEnv =
+    process.env.NODE_ENV;
+
+  const originalHermetic =
+    process.env.HERMETIC_TEST_MODE;
+
+  printify.token = '';
+  printify.shopId = '';
+
+  process.env.NODE_ENV =
+    'production';
+
+  // Even if a test/simulation flag leaks into production,
+  // production must always win and fail closed.
+  process.env.HERMETIC_TEST_MODE =
+    'true';
+
+  const getMock =
+    mock.method(
+      axios,
+      'get',
+      async () => {
+        throw new Error(
+          'NETWORK_MUST_NOT_BE_CALLED'
+        );
+      }
+    );
+
+  const postMock =
+    mock.method(
+      axios,
+      'post',
+      async () => {
+        throw new Error(
+          'NETWORK_MUST_NOT_BE_CALLED'
+        );
+      }
+    );
+
+  try {
+    const results = [
+      await printify.createPrintifyOrderDraft({
+        externalId:
+          'missing-credentials-test',
+        shipping: {},
+        items: []
+      }),
+
+      await printify.getPrintifyOrder(
+        'missing-credentials-test'
+      ),
+
+      await printify.findPrintifyOrderByExternalId(
+        'missing-credentials-test'
+      ),
+
+      await printify.sendPrintifyOrderToProduction(
+        'missing-credentials-test'
+      )
+    ];
+
+    for (
+      const result
+      of results
+    ) {
+      assert.deepEqual(
+        result,
+        {
+          ok: false,
+          errorCode:
+            'PRINTIFY_CREDENTIALS_MISSING'
+        }
+      );
+    }
+
+    assert.equal(
+      getMock.mock.callCount(),
+      0,
+      'missing credentials must perform zero GET requests'
+    );
+
+    assert.equal(
+      postMock.mock.callCount(),
+      0,
+      'missing credentials must perform zero POST requests'
+    );
+  } finally {
+    getMock.mock.restore();
+    postMock.mock.restore();
+
+    printify.token =
+      originalToken;
+
+    printify.shopId =
+      originalShopId;
+
+    if (
+      originalNodeEnv === undefined
+    ) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV =
+        originalNodeEnv;
+    }
+
+    if (
+      originalHermetic === undefined
+    ) {
+      delete process.env.HERMETIC_TEST_MODE;
+    } else {
+      process.env.HERMETIC_TEST_MODE =
+        originalHermetic;
+    }
+  }
 });
