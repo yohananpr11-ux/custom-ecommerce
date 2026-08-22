@@ -35,9 +35,9 @@ test.after(() => {
 });
 
 test('two concurrent processPaidOrderFulfillment calls for the same order dispatch every item exactly once', async () => {
-  // Give the schema-migration block (async IIFE in db.js) a moment to finish
-  // creating tables/columns before we insert against them.
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Deterministically wait for the real schema + migrations.
+  // A fixed sleep can race on slower CI runners.
+  await db.readyPromise;
 
   const dispatchCalls = [];
   const routeOrderToSupplierMock = mock.method(
