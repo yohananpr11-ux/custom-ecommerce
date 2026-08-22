@@ -291,13 +291,16 @@ function installDropshipSuccessMock() {
   const sendOrderMock = mock.method(
     dropship,
     'sendOrder',
-    async (orderId) => {
+    async (orderId, shippingDestination, items, options) => {
       const ref =
         `CJ-REF-E2E-${orderId}-${crypto.randomUUID().slice(0, 8)}`;
 
       calls.push({
         orderId,
-        ref
+        ref,
+        shippingDestination,
+        items,
+        options
       });
 
       return { ref };
@@ -1227,5 +1230,156 @@ test('checkout rejects an unknown supplier before payment provider', async () =>
     );
   } finally {
     axiosMock.restore();
+  }
+});
+
+
+test('CJ variant identity: internal variant id resolves to exact supplier SKU', async () => {
+  const product =
+    await seedDropshipProduct({ price: 55 });
+
+  const internalVariantId =
+    product.productId * 10 + 7;
+
+  const expectedCjSku =
+    'CJLX222053104DW';
+
+  await dbRun(
+    `INSERT INTO product_variants
+      (
+        id,
+        productId,
+        printifyVariantId,
+        color,
+        size,
+        price,
+        isEnabled,
+        isAvailable
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 1, 1)`,
+    [
+      internalVariantId,
+      product.productId,
+      expectedCjSku,
+      'Steel',
+      '5mm / 50cm',
+      product.price
+    ]
+  );
+
+  const axiosMock =
+    installAxiosPostMock();
+
+  installPaypalHappyPathMocks(
+    axiosMock
+  );
+
+  const dropshipMock =
+    installDropshipSuccessMock();
+
+  try {
+    const createRes =
+      await apiPost(
+        '/api/paypal/create-order',
+        {
+          ...SYNTHETIC_SHIPPING,
+          items: [
+            {
+              id: product.productId,
+              quantity: 1,
+              selectedColor: 'Steel',
+              selectedSize: '5mm / 50cm',
+              variantId: internalVariantId
+            }
+          ],
+          currency: 'ILS'
+        }
+      );
+
+    assert.equal(
+      createRes.status,
+      200,
+      'checkout must accept the selected CJ variant'
+    );
+
+    const localOrderId =
+      createRes.json.orderId;
+
+    const storedItem =
+      await dbGet(
+        `SELECT
+           variantId,
+           supplier_id
+         FROM order_items
+         WHERE orderId = ?`,
+        [localOrderId]
+      );
+
+    assert.equal(
+      Number(storedItem.variantId),
+      internalVariantId,
+      'order_items must keep the internal variant DB id'
+    );
+
+    assert.equal(
+      storedItem.supplier_id,
+      'dropship'
+    );
+
+    const captureRes =
+      await apiPost(
+        '/api/paypal/capture-order',
+        {
+          orderID:
+            createRes.json.orderID
+        }
+      );
+
+    assert.equal(
+      captureRes.status,
+      200
+    );
+
+    assert.equal(
+      captureRes.json.success,
+      true
+    );
+
+    await waitForFulfillmentSettled(
+      localOrderId
+    );
+
+    assert.equal(
+      dropshipMock.calls.length,
+      1,
+      'CJ supplier boundary must be reached exactly once'
+    );
+
+    const supplierItems =
+      dropshipMock.calls[0].items;
+
+    assert.ok(
+      Array.isArray(supplierItems)
+    );
+
+    assert.equal(
+      supplierItems.length,
+      1
+    );
+
+    assert.equal(
+      supplierItems[0].variantId,
+      internalVariantId,
+      'internal variant identity remains traceable'
+    );
+
+    assert.equal(
+      supplierItems[0].printifyVariantId,
+      expectedCjSku,
+      'supplier boundary must receive the exact real CJ SKU'
+    );
+  } finally {
+    axiosMock.restore();
+    dropshipMock.restore();
   }
 });
