@@ -363,8 +363,8 @@ jobs:
             const sqlite3 = require('sqlite3').verbose();
             const db = new sqlite3.Database(process.env.DB_PATH);
             db.run(
-              'INSERT INTO products (id, title, description, price, stock, imageUrl) VALUES (?, ?, ?, ?, ?, ?)',
-              [9001, 'Strict Mode Fixture Product', 'A deterministic CI fixture.', 74.5, 999, '/images/ci-fixture-9001.jpg'],
+              'INSERT INTO products (id, title, description, price, stock, imageUrl, type, supplier_id, printifyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [9001, 'Strict Mode Fixture Product', 'A deterministic CI fixture.', 74.5, 999, '/images/ci-fixture-9001.jpg', 'printify', 'printify', 'ci-printify-fixture-9001'],
               (err) => { db.close(); if (err) { console.error(err); process.exit(1); } }
             );
           "
